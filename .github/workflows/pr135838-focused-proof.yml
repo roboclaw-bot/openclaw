@@ -11,7 +11,7 @@ on:
         description: Narrow regression suite
         required: true
         type: choice
-        options: [checkpoint, agent-input, identity]
+        options: [checkpoint, agent-input, identity, provider-behavior, transport-behavior]
 permissions:
   contents: read
 jobs:
@@ -55,6 +55,12 @@ jobs:
               ;;
             identity)
               pnpm test src/gateway/worker-environments/bootstrap.test.ts src/gateway/worker-environments/identity.test.ts src/gateway/worker-environments/provider-ssh-identity.test.ts src/gateway/worker-environments/ssh.test.ts src/gateway/worker-environments/tunnel.test.ts src/gateway/worker-environments/provider-bootstrap.test.ts src/gateway/worker-environments/desktop-tunnel.test.ts
+              ;;
+            provider-behavior)
+              pnpm test extensions/crabbox/src/crabbox-worker-invocation-baseline.test.ts
+              ;;
+            transport-behavior)
+              pnpm test src/gateway/worker-environments/transport-source-authority.test.ts
               ;;
             *) exit 2 ;;
           esac
