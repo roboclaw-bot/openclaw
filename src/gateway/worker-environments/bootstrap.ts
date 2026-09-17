@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { PROCESS_NODE_VERSION_CHECK } from "../../../node-version.mjs";
 import {
   type WorkerAdmissionHandshake,
@@ -9,18 +8,19 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { isExactSemverVersion } from "../../infra/npm-registry-spec.js";
 import { normalizeScpRemotePath } from "../../infra/scp-host.js";
-import { redactSensitiveText } from "../../logging/redact.js";
 import type { WorkerSshEndpoint, WorkerSshIdentity } from "../../plugins/types.js";
-import {
-  runCommandWithTimeout,
-  type CommandOptions,
-  type SpawnResult,
-} from "../../process/exec.js";
+import { runCommandWithTimeout, type SpawnResult } from "../../process/exec.js";
 import {
   WORKER_BUNDLE_ENTRY_PATH,
   WORKER_BUNDLE_GITHUB_EXEC_LAUNCHER_PATH,
   WORKER_BUNDLE_RSYNC_RECEIVER_PATH,
 } from "../../shared/worker-bundle-hash.js";
+import {
+  commandFailure,
+  isSuccess,
+  runSshScript,
+  type WorkerBootstrapCommandRunner,
+} from "./bootstrap-command.js";
 import { WORKER_BUNDLE_MANIFEST_VERSION, type WorkerInstallationArtifact } from "./bundle.js";
 import {
   prepareWorkerSsh,
@@ -28,7 +28,6 @@ import {
   runWorkerSshCandidates,
   workerSshCommandOptions,
   workerSshOptions,
-  workerSshRemoteCommand,
 } from "./ssh.js";
 
 const BOOTSTRAP_ROOT = ".openclaw-worker";
@@ -484,11 +483,6 @@ finish_with_receipt
 
 type ResolvedWorkerSshIdentity = WorkerSshIdentity;
 
-type WorkerBootstrapCommandRunner = (
-  argv: string[],
-  options: CommandOptions,
-) => Promise<SpawnResult>;
-
 type WorkerBootstrapRequest = {
   ssh: WorkerSshEndpoint;
   artifact: WorkerInstallationArtifact;
@@ -564,52 +558,6 @@ function parseReceiptJson(
     throw new Error("Worker bootstrap receipt does not match the requested artifact");
   }
   return parsed;
-}
-
-function commandFailure(phase: string, result: SpawnResult): Error {
-  const output = truncateUtf16Safe(
-    redactSensitiveText(result.stderr.trim() || result.stdout.trim(), {
-      mode: "tools",
-    }).replace(/\s+/gu, " "),
-    512,
-  );
-  const status =
-    result.termination === "exit" ? `exit ${result.code ?? "unknown"}` : result.termination;
-  return new Error(`Worker bootstrap ${phase} failed (${status})${output ? `: ${output}` : ""}`);
-}
-
-function isSuccess(result: SpawnResult): boolean {
-  return result.termination === "exit" && result.code === 0;
-}
-
-async function runSshScript(params: {
-  prepared: PreparedWorkerSsh;
-  runCommand: WorkerBootstrapCommandRunner;
-  script: string;
-  scriptArgs: readonly string[];
-  timeoutMs: number;
-  port?: number;
-  signal?: AbortSignal;
-}): Promise<SpawnResult> {
-  return await params.runCommand(
-    [
-      "ssh",
-      ...workerSshOptions(params.prepared, { forwarding: "disabled" }),
-      "-a",
-      "-x",
-      "-T",
-      "-p",
-      String(params.port ?? params.prepared.port),
-      "--",
-      params.prepared.sshTarget,
-      workerSshRemoteCommand(["sh", "-s", "--", ...params.scriptArgs]),
-    ],
-    workerSshCommandOptions({
-      input: params.script,
-      timeoutMs: params.timeoutMs,
-      signal: params.signal,
-    }),
-  );
 }
 
 function workerUploadFilename(bundleHash: string, operationToken: string): string {
