@@ -81,6 +81,31 @@ function deviceRuntime(params: {
 }
 
 describe("device worker provider", () => {
+  it("rejects invocation closure while paired-host availability is awaited", async () => {
+    let current = true;
+    const controller = new AbortController();
+    const closed = new Error("provision invocation closed");
+    const provider = deviceRuntime({
+      getPairedDevice: async () => {
+        current = false;
+        return pairedDevice();
+      },
+      listCurrentNodes: async () => [connectedNode()],
+    }).provider;
+    await expect(
+      provider.provision({ device: DEVICE_ID }, "closed-availability", {
+        signal: controller.signal,
+        assertCurrent: () => {
+          if (!current) {
+            throw closed;
+          }
+        },
+      }),
+    ).rejects.toBe(closed);
+    expect(provider.liveAuthorityVersion).toBe(1);
+    expect(controller.signal.aborted).toBe(false);
+  });
+
   it("binds targeted device reconciliation to the active worker service", async () => {
     const service = {};
     const reconcile = async (deviceId: string) => [`environment:${deviceId}`];
@@ -99,9 +124,15 @@ describe("device worker provider", () => {
     }).provider;
 
     expect(provider.supportedExecutionModes).toEqual(["worker-turn", "remote-exec"]);
-    const first = await provider.provision({ device: DEVICE_ID }, "operation-1");
-    const repeated = await provider.provision({ device: DEVICE_ID }, "operation-1");
-    const next = await provider.provision({ device: DEVICE_ID }, "operation-2");
+    const first = await provider.provision({ device: DEVICE_ID }, "operation-1", {
+      assertCurrent: vi.fn(),
+    });
+    const repeated = await provider.provision({ device: DEVICE_ID }, "operation-1", {
+      assertCurrent: vi.fn(),
+    });
+    const next = await provider.provision({ device: DEVICE_ID }, "operation-2", {
+      assertCurrent: vi.fn(),
+    });
 
     expect(first).toEqual({
       leaseId: expect.stringMatching(/^device:[a-f0-9]{64}:[a-f0-9]{32}$/u),
@@ -129,7 +160,9 @@ describe("device worker provider", () => {
     await expect(runtime.resolveAvailability(DEVICE_ID)).resolves.toMatchObject({
       available: true,
     });
-    await expect(runtime.provider.provision({ device: DEVICE_ID }, "remote-exec")).resolves.toEqual(
+    await expect(
+      runtime.provider.provision({ device: DEVICE_ID }, "remote-exec", { assertCurrent: vi.fn() }),
+    ).resolves.toEqual(
       expect.objectContaining({ node: { deviceId: DEVICE_ID }, sharedHost: true }),
     );
   });
@@ -151,7 +184,9 @@ describe("device worker provider", () => {
     "rejects $name during provision",
     async ({ getPairedDevice, listCurrentNodes, expectedMessage }) => {
       const provider = deviceRuntime({ getPairedDevice, listCurrentNodes }).provider;
-      const provision = provider.provision({ device: DEVICE_ID }, "operation");
+      const provision = provider.provision({ device: DEVICE_ID }, "operation", {
+        assertCurrent: vi.fn(),
+      });
 
       await expect(provision).rejects.toBeInstanceOf(WorkerProviderError);
       await expect(provision).rejects.toMatchObject({ message: expectedMessage });
@@ -165,7 +200,9 @@ describe("device worker provider", () => {
       getIssue: () => NODE_RUNNER_UPDATE_REQUIRED_ISSUE,
     }).provider;
 
-    await expect(provider.provision({ device: DEVICE_ID }, "operation")).rejects.toThrow(
+    await expect(
+      provider.provision({ device: DEVICE_ID }, "operation", { assertCurrent: vi.fn() }),
+    ).rejects.toThrow(
       `device worker node ${DEVICE_ID} requires an update before it can host sessions; run openclaw update, then reconnect it (for a headless node, run openclaw node restart)`,
     );
   });

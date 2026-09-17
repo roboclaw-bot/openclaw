@@ -2,9 +2,7 @@ import type { WorkerProvider } from "openclaw/plugin-sdk/plugin-entry";
 import { crabboxCommandError } from "./crabbox-worker-command-error.js";
 import { runCrabboxCommand, type CrabboxCommandRunner } from "./crabbox-worker-command.js";
 
-type ProjectPreparation = NonNullable<
-  NonNullable<Parameters<WorkerProvider["provision"]>[2]>["project"]
->;
+type ProjectPreparation = NonNullable<Parameters<WorkerProvider<1>["provision"]>[2]["project"]>;
 
 /** Core owns Git contents; this adapter owns only the existing lease's transport. */
 export async function prepareCrabboxProjectFiles(params: {

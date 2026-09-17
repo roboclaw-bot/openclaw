@@ -8,9 +8,7 @@ const CLOUD_SETUP_CODE_ENV = "CRABBOX_WORKER_SETUP_CODE";
 const CLOUD_BOOTSTRAP_TOKEN_ENV = "CRABBOX_WORKER_BOOTSTRAP_TOKEN";
 
 export type CrabboxWorkerNodeEnrollment = Awaited<
-  ReturnType<
-    NonNullable<NonNullable<Parameters<WorkerProvider["provision"]>[2]>["beginNodeEnrollment"]>
-  >
+  ReturnType<NonNullable<Parameters<WorkerProvider<1>["provision"]>[2]["beginNodeEnrollment"]>>
 >;
 
 export function createCrabboxNodeEnrollmentSetup(params: {
@@ -24,9 +22,7 @@ export function createCrabboxNodeEnrollmentSetup(params: {
 }
 
 export type CrabboxWorkerNodeRuntimePreparation = Awaited<
-  ReturnType<
-    NonNullable<NonNullable<Parameters<WorkerProvider["provision"]>[2]>["prepareNodeRuntime"]>
-  >
+  ReturnType<NonNullable<Parameters<WorkerProvider<1>["provision"]>[2]["prepareNodeRuntime"]>>
 >;
 
 export function createCrabboxNodeRuntimeSetup(params: {
