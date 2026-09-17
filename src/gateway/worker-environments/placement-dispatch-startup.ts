@@ -394,6 +394,7 @@ export function createWorkerPlacementDispatchStartup(options: {
       const tunnel = await environments.startTunnel({
         environmentId: provisioned.environmentId,
         ownerEpoch,
+        authorize: params.authorize,
       });
       params.signal?.throwIfAborted();
       params.authorize?.();
@@ -477,6 +478,7 @@ export function createWorkerPlacementDispatchStartup(options: {
               sessionKey: request.sessionKey,
               generation: placement.generation,
               ...(gitAuthor ? { gitAuthor } : {}),
+              authorize: assertSyncOwner,
             });
       assertSyncOwner();
       params.signal?.throwIfAborted();
