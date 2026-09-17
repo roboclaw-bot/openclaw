@@ -63,6 +63,7 @@ export const databaseWorkerExtensionTestFiles = [
   "extensions/crabbox/doctor-contract-api.test.ts",
   "extensions/crabbox/index.test.ts",
   "extensions/crabbox/src/crabbox-gateway-methods.test.ts",
+  "extensions/crabbox/src/crabbox-worker-invocation-baseline.test.ts",
   "extensions/crabbox/src/crabbox-worker-node-enrollment.test.ts",
   "extensions/crabbox/src/crabbox-worker-prepared-image.test.ts",
   "extensions/crabbox/src/crabbox-worker-project.test.ts",

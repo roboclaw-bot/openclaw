@@ -1,5 +1,6 @@
 // Shared tests-only overlay for the identity parent and the A+B candidate.
 // No V1 imports: baseline failures must describe effects, not missing SDK symbols.
+import { redactToolPayloadText } from "openclaw/plugin-sdk/logging-core";
 import { describe, expect, it } from "vitest";
 import { operationLeaseId } from "./crabbox-worker-profile.js";
 import {
@@ -9,6 +10,49 @@ import {
   createWarmProvider,
   openWarmImageStore,
 } from "./crabbox-worker-warm-image.test-support.js";
+
+function provisioningDiagnostic(
+  outcome: { kind: "lease" } | { kind: "error"; error: unknown },
+  calls: readonly { argv: string[] }[],
+): string {
+  const bounded = (value: string) =>
+    redactToolPayloadText(value).replace(/\s+/gu, " ").slice(0, 240);
+  const summarize = (value: unknown) => {
+    if (!(value instanceof Error)) {
+      return { name: typeof value };
+    }
+    return {
+      name: bounded(value.name),
+      message: bounded(value.message),
+      code: "code" in value && typeof value.code === "string" ? bounded(value.code) : undefined,
+    };
+  };
+  const error = outcome.kind === "error" ? outcome.error : undefined;
+  const actions = new Set([
+    "config",
+    "warmup",
+    "inspect",
+    "status",
+    "run",
+    "stop",
+    "heartbeat",
+    "checkpoint",
+  ]);
+  const checkpointActions = new Set(["create", "inspect", "fork", "delete"]);
+  return JSON.stringify({
+    outcome: outcome.kind,
+    error: error === undefined ? undefined : summarize(error),
+    cause: error instanceof Error && error.cause !== undefined ? summarize(error.cause) : undefined,
+    // Never log argv, scripts, options, or environment values. Only known action names.
+    actions: calls.slice(0, 16).map(({ argv }) => {
+      const action = argv[1];
+      if (action === "checkpoint") {
+        return checkpointActions.has(argv[2] ?? "") ? `checkpoint ${argv[2]}` : "checkpoint";
+      }
+      return action && actions.has(action) ? action : "other";
+    }),
+  });
+}
 
 describe("provider invocation behavioral differential", () => {
   it.each([false, true])(
@@ -55,7 +99,8 @@ describe("provider invocation behavioral differential", () => {
         (lease) => ({ kind: "lease" as const, lease }),
         (error: unknown) => ({ kind: "error" as const, error }),
       );
-      expect(captured).toBe(true);
+      const diagnostic = provisioningDiagnostic(outcome, calls);
+      expect(captured, diagnostic).toBe(true);
       expect(enrollmentCommands).toBe(1);
       expect(physical.signal.aborted).toBe(false);
       if (!revoked) {
@@ -126,7 +171,8 @@ describe("provider invocation behavioral differential", () => {
           (lease) => ({ kind: "lease" as const, lease }),
           (error: unknown) => ({ kind: "error" as const, error }),
         );
-      expect(setupObserved).toBe(true);
+      const diagnostic = provisioningDiagnostic(outcome, calls);
+      expect(setupObserved, diagnostic).toBe(true);
       expect(physical.signal.aborted).toBe(false);
       if (!revoked) {
         expect(outcome).toMatchObject({ kind: "lease", lease: { leaseId } });
