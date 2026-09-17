@@ -1,0 +1,60 @@
+name: PR 135838 focused proof
+run-name: proof ${{ inputs.suite }} ${{ inputs.target_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact task-fork commit to test
+        required: true
+        type: string
+      suite:
+        description: Narrow regression suite
+        required: true
+        type: choice
+        options: [checkpoint, agent-input, identity]
+permissions:
+  contents: read
+jobs:
+  proof:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Validate immutable target
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - name: Verify checked-out source
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          git rev-parse HEAD HEAD^{tree}
+      - name: Install declared toolchain and dependencies
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.x"
+          install-bun: "false"
+          cache-mode: "restore"
+      - name: Run selected regression suite
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          case "$SUITE" in
+            checkpoint)
+              pnpm test src/gateway/worker-environments/session-repository-checkpoints.test.ts src/gateway/worker-environments/workspace-result-ref-mutation.test.ts src/gateway/worker-environments/workspace-result-staging.concurrent.test.ts src/gateway/worker-environments/workspace-result-staging.reads.test.ts
+              ;;
+            agent-input)
+              pnpm test src/gateway/agent-turn/agent-run-user-turn.test.ts src/gateway/server-methods/agent.test.ts src/gateway/server-methods/agent-run-local-operator-authority.test.ts src/gateway/agent-turn/internal-facade.test.ts
+              ;;
+            identity)
+              pnpm test src/gateway/worker-environments/bootstrap.test.ts src/gateway/worker-environments/identity.test.ts src/gateway/worker-environments/provider-ssh-identity.test.ts src/gateway/worker-environments/ssh.test.ts src/gateway/worker-environments/tunnel.test.ts src/gateway/worker-environments/provider-bootstrap.test.ts src/gateway/worker-environments/desktop-tunnel.test.ts
+              ;;
+            *) exit 2 ;;
+          esac
