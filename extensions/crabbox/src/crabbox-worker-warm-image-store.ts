@@ -15,7 +15,7 @@ import {
 export type CrabboxState = Pick<OpenClawPluginApi["runtime"]["state"], "openKeyedStore">;
 
 type WorkerNodeRuntimeIdentity = NonNullable<
-  NonNullable<Parameters<WorkerProvider["provision"]>[2]>["nodeRuntimeIdentity"]
+  Parameters<WorkerProvider<1>["provision"]>[2]["nodeRuntimeIdentity"]
 >;
 
 export type WarmImageRecord = {

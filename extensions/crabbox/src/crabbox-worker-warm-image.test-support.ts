@@ -19,6 +19,9 @@ import { operationLeaseId } from "./crabbox-worker-profile.js";
 import { createCrabboxWorkerProvider } from "./crabbox-worker-provider.js";
 import type { WarmProfileRecord } from "./crabbox-worker-warm-image-store.js";
 
+type WorkerProviderV1 = WorkerProvider<1>;
+type WorkerProvisionOptionsV1 = Parameters<WorkerProviderV1["provision"]>[2];
+
 export { managedBinary };
 
 export const OPERATION_ID = `provision:v2:${"0".repeat(64)}`;
@@ -159,15 +162,16 @@ export function openWarmImageStore() {
 }
 
 export async function provisionWarmProfile(
-  provider: WorkerProvider,
+  provider: WorkerProviderV1,
   profile: WorkerProfile = PROFILE,
   operationId = OPERATION_ID,
   machineClass?: string,
-  options?: NonNullable<Parameters<WorkerProvider["provision"]>[2]>,
+  options?: Partial<WorkerProvisionOptionsV1>,
 ) {
   return provider.provision(profile, operationId, {
     nodeRuntimeIdentity: NODE_RUNTIME_IDENTITY,
     ...options,
+    assertCurrent: options?.assertCurrent ?? (() => {}),
     ...(machineClass ? { machineClass } : {}),
     beginNodeEnrollment:
       options?.beginNodeEnrollment ??
@@ -184,7 +188,7 @@ export async function provisionWarmProfile(
 }
 
 export async function captureWarmImage(
-  provider: WorkerProvider,
+  provider: WorkerProviderV1,
   profile: WorkerProfile = PROFILE,
   operationId = OPERATION_ID,
   machineClass?: string,
@@ -195,13 +199,14 @@ export async function captureWarmImage(
 
 export const PROJECT_KEY = "a".repeat(64);
 export const BASE_COMMIT = "b".repeat(40);
-type ProvisionOptions = NonNullable<Parameters<WorkerProvider["provision"]>[2]>;
+type ProvisionOptions = WorkerProvisionOptionsV1;
 
 export function createProjectOptions(
   events: string[],
   controller = new AbortController(),
   preparation?: NonNullable<NonNullable<ProvisionOptions["project"]>["preparation"]>,
 ) {
+  const sourceAuthority = new AbortController();
   let enrollmentStarted = false;
   const observe = ({ argv }: CommandCall) => {
     if (argv[1] === "run" && argv.includes("CRABBOX_WORKER_BOOTSTRAP_TOKEN")) {
@@ -213,6 +218,8 @@ export function createProjectOptions(
     return undefined;
   };
   const options = {
+    // Project/runtime grants can retire without revoking the initiating source.
+    assertCurrent: () => sourceAuthority.signal.throwIfAborted(),
     nodeRuntimeIdentity: {
       nodeBootstrapSha256: createNodeBootstrapFixture().sha256,
       executionMode: "worker-turn" as const,
@@ -253,5 +260,5 @@ export function createProjectOptions(
       };
     }),
   } satisfies ProvisionOptions;
-  return { options, observe };
+  return { options, observe, sourceAuthority };
 }

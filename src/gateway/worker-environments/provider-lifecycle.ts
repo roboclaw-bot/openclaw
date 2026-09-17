@@ -50,6 +50,7 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
 
   const {
     requireCurrentOwner,
+    requireCurrentProvisioningOwner,
     stopOwner,
     beginDrain,
     finishProvenDestroy,
@@ -152,10 +153,23 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
     let lease: WorkerLease;
     let attemptOpen = true;
     let preparationComplete = false;
+    const assertAttemptCurrent = () => {
+      if (!attemptOpen || options.isStopping()) {
+        throw new Error("Worker provisioning operation is closed");
+      }
+      cancellation?.assertActive();
+      beforeProvision?.();
+      const current = expirePrepared(requireCurrentProvisioningOwner(record));
+      if (current.destroyRequestedAtMs !== null) {
+        throw new Error("Worker provisioning operation is closed");
+      }
+      return current;
+    };
     let executionMode: WorkerExecutionMode | undefined;
     let enrollmentOperation: ReturnType<typeof nodeProvisioning.createEnrollmentOperation>;
     let projectOperation: Awaited<ReturnType<typeof prepareWorkerProviderProject>> | undefined;
     try {
+      assertAttemptCurrent();
       const profile = requireWorkerProfile(record.profileSnapshot.settings);
       const requestedExecutionMode = record.profileSnapshot.executionMode;
       if (
@@ -213,16 +227,8 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
           throw new Error("Worker provider cannot resume its prepared project contract");
         }
         const requireProjectOwner = () => {
-          cancellation?.assertActive();
-          beforeProvision?.();
-          const current = requireCurrentOwner(record);
-          if (
-            options.isStopping() ||
-            current.destroyRequestedAtMs !== null ||
-            current.provisionOperationId !== record.provisionOperationId ||
-            !isDeepStrictEqual(current.profileSnapshot.project, record.profileSnapshot.project) ||
-            (current.preparation?.consumedAtMs === null && current.preparation.expiresAtMs <= now())
-          ) {
+          const current = assertAttemptCurrent();
+          if (!isDeepStrictEqual(current.profileSnapshot.project, record.profileSnapshot.project)) {
             throw new Error("Worker project preparation owner is no longer current");
           }
         };
@@ -237,6 +243,7 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
         });
       }
       const provisionOptions = {
+        assertCurrent: assertAttemptCurrent,
         profileId: record.profileId,
         ...(machineClass ? { machineClass } : {}),
         ...(os ? { os } : {}),
@@ -253,25 +260,13 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
       };
       cancellation?.assertActive();
       const provision = async () => {
-        const assertCurrent = () => {
-          cancellation?.assertActive();
-          if (!attemptOpen || options.isStopping()) {
-            throw new Error("Worker provisioning operation is closed");
-          }
-          beforeProvision?.();
-          const current = expirePrepared(requireCurrentOwner(record));
-          if (current.destroyRequestedAtMs !== null) {
-            throw new Error("Worker provisioning operation is closed");
-          }
-          return current;
-        };
-        assertCurrent();
+        assertAttemptCurrent();
         const preparedProvision = await provider.prepareProvision?.(
           profile,
           record.provisionOperationId,
           provisionOptions,
         );
-        const current = assertCurrent();
+        const current = assertAttemptCurrent();
         if (provider.prepareProvision && typeof preparedProvision !== "function") {
           throw new Error("Worker provider preparation must return an allocation operation");
         }
