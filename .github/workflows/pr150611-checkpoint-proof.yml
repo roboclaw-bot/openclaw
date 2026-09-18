@@ -1,0 +1,96 @@
+name: PR 150611 checkpoint proof
+run-name: checkpoint-proof ${{ inputs.phase }} ${{ inputs.target_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact reviewed task-fork source commit
+        required: true
+        type: string
+      phase:
+        description: Baseline lifecycle proof or fixed complete proof
+        required: true
+        type: choice
+        options: [baseline, fixed]
+permissions:
+  contents: read
+jobs:
+  checkpoint:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Validate immutable target
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - name: Check out proof controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preserve reviewed compatibility driver
+        run: cp .github/proofs/pr150611-checkpoint-compatibility.mjs "$RUNNER_TEMP/checkpoint-compatibility.mjs"
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - name: Attest tested source
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          git rev-parse HEAD HEAD^{tree}
+      - name: Install declared toolchain and dependencies
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.x"
+          install-bun: "false"
+          cache-mode: "restore"
+      - name: Run production lifecycle and regression proof
+        env:
+          PHASE: ${{ inputs.phase }}
+        run: |
+          set -euo pipefail
+          case "$PHASE" in
+            baseline)
+              pnpm test src/gateway/worker-environments/workspace-result-repository.test.ts
+              ;;
+            fixed)
+              pnpm test src/gateway/worker-environments/session-repository-checkpoints.test.ts src/gateway/worker-environments/workspace-result-ref-mutation.test.ts src/gateway/worker-environments/workspace-result-staging.concurrent.test.ts src/gateway/worker-environments/workspace-result-staging.reads.test.ts src/gateway/worker-environments/workspace-result-repository.test.ts
+              ;;
+            *) exit 2 ;;
+          esac
+      - name: Verify unchanged persisted model and base-candidate interoperability
+        if: inputs.phase == 'fixed'
+        run: |
+          set -euo pipefail
+          base=3e8b396a7dc833185c0fdba33efadef6826eeda7
+          git fetch --no-tags --depth=1 origin "$base"
+          git diff --exit-code "$base" HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml packages src/state src/gateway/worker-environments/workspace-manifest.ts src/gateway/worker-environments/workspace-result-inventory.ts src/gateway/github-repository-publication-snapshot.ts
+          baseline="$RUNNER_TEMP/checkpoint-base-source"
+          git worktree add --detach "$baseline" "$base"
+          (cd "$baseline" && pnpm install --frozen-lockfile --ignore-scripts --filter openclaw)
+          mkdir -p "$RUNNER_TEMP/checkpoint-home"
+          export HOME="$RUNNER_TEMP/checkpoint-home"
+          export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+          driver="$RUNNER_TEMP/checkpoint-compatibility.mjs"
+          old_state="$RUNNER_TEMP/checkpoint-old-state"
+          new_state="$RUNNER_TEMP/checkpoint-new-state"
+          (cd "$baseline" && node --import ./scripts/tsx.mjs "$driver" produce "$old_state" base-producer)
+          node --import ./scripts/tsx.mjs "$driver" consume "$old_state" candidate-reads-base
+          node --import ./scripts/tsx.mjs "$driver" produce "$new_state" candidate-producer
+          (cd "$baseline" && node --import ./scripts/tsx.mjs "$driver" consume "$new_state" base-reads-candidate)
+          node --import ./scripts/tsx.mjs "$driver" consume "$new_state" candidate-reopen
+          git worktree remove --force "$baseline"
+      - name: Validate changed test graph and ratchets
+        if: inputs.phase == 'fixed'
+        run: |
+          set -euo pipefail
+          pnpm check:line-cap-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
+          pnpm check:max-lines-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
+          node scripts/run-tsgo-core-test-shards.mjs --changed-paths-json '["src/gateway/worker-environments/workspace-result-repository.test.ts"]'
+          ./node_modules/.bin/oxfmt --check src/gateway/worker-environments/workspace-result-repository.test.ts
+          git diff --check 3e8b396a7dc833185c0fdba33efadef6826eeda7 HEAD
