@@ -33,6 +33,9 @@ on:
             credential-authority-red,
             custody-authority,
             execution-authority,
+            desktop-authority-red,
+            desktop-authority-full,
+            provider-process-authority,
           ]
 permissions:
   contents: read
@@ -55,7 +58,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|provider-process-authority) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -116,6 +119,14 @@ jobs:
             execution-authority)
               subject="test(workers): exercise real prepared execution owner closure"
               detail="Observe agent, worker and repository owners across retained-callback boundaries."
+              ;;
+            desktop-authority-red|desktop-authority-full)
+              subject="fix(workers): stop desktop identity preparation with its owner"
+              detail="Bind preparation to desktop stop, replacement and timeout while preserving independent cleanup."
+              ;;
+            provider-process-authority)
+              subject="test(workers): prove provider lifetime with real host owners and local process I/O"
+              detail="Exercise actual returned closures and service stop with explicit synthetic CLI boundaries."
               ;;
             provider-full)
               subject="fix(workers): reject provider work after invocation closes"
