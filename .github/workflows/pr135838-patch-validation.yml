@@ -1,0 +1,129 @@
+name: PR 135838 reviewed patch validation
+run-name: pr135838-patch ${{ inputs.suite }} ${{ inputs.expected_tree }}
+on:
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Exact reviewed parent commit
+        required: true
+        type: string
+      expected_tree:
+        description: Exact reviewed candidate index tree
+        required: true
+        type: string
+      patch_id:
+        description: Reviewed proof-input patch identifier
+        required: true
+        type: string
+      patch_sha256:
+        description: Exact full-index patch digest
+        required: true
+        type: string
+      suite:
+        description: Fixed validation command set
+        required: true
+        type: choice
+        options: [input-full]
+permissions:
+  contents: read
+jobs:
+  proof:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      BASE_SHA: ${{ inputs.base_sha }}
+      EXPECTED_TREE: ${{ inputs.expected_tree }}
+      PATCH_ID: ${{ inputs.patch_id }}
+      PATCH_SHA256: ${{ inputs.patch_sha256 }}
+      SUITE: ${{ inputs.suite }}
+    steps:
+      - name: Validate immutable inputs
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
+          test "$SUITE" = input-full
+      - name: Check out reviewed controller and patch data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preserve and verify patch data
+        run: |
+          set -euo pipefail
+          base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
+          test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
+      - name: Check out exact parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.base_sha }}
+          fetch-depth: 16
+          persist-credentials: false
+      - name: Materialize only the reviewed candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git diff --quiet HEAD
+          git apply --index --check "$RUNNER_TEMP/candidate.patch"
+          git apply --index "$RUNNER_TEMP/candidate.patch"
+          test "$(git write-tree)" = "$EXPECTED_TREE"
+          git diff --quiet
+          git diff --cached --check
+          git merge-base --is-ancestor 3e8b396a7dc833185c0fdba33efadef6826eeda7 HEAD
+      - name: Install declared dependencies in the isolated normal checkout
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.x"
+          install-bun: "false"
+          cache-mode: "restore"
+      - name: Commit exact reviewed tree with normal hooks enabled
+        run: |
+          set -euo pipefail
+          test "$(git write-tree)" = "$EXPECTED_TREE"
+          git diff --quiet
+          test -z "$(git config --get hooks.blockedLiteralsFile || true)"
+          cat > "$RUNNER_TEMP/commit-message.txt" <<'MESSAGE'
+          test(gateway): keep reset authority coverage within file budgets
+
+          Preserve case names, order, hooks, mocks and assertions while moving
+          the authority cases to their focused test-support owner.
+
+          Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
+          Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
+          MESSAGE
+          git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com commit --file "$RUNNER_TEMP/commit-message.txt"
+          test "$(git rev-parse HEAD^)" = "$BASE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          git diff --quiet HEAD
+          git log -1 --format="%H%n%T%n%B"
+      - name: Run fixed input/reset validation
+        run: |
+          set -euo pipefail
+          test "$SUITE" = input-full
+          pnpm test src/gateway/agent-turn/agent-run-user-turn.test.ts src/gateway/server-methods/agent.test.ts src/gateway/server-methods/agent-run-local-operator-authority.test.ts src/gateway/agent-turn/internal-facade.test.ts
+          pnpm check:line-cap-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
+          pnpm check:max-lines-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
+          node scripts/run-oxlint.mjs --tsconfig config/tsconfig/oxlint.core.json src/gateway/server-methods/agent.reset-and-identity.test-utils.ts src/gateway/server-methods/agent.reset-authority.test-support.ts
+          node scripts/run-tsgo-core-test-shards.mjs --changed-paths-json '["src/gateway/server-methods/agent.reset-and-identity.test-utils.ts","src/gateway/server-methods/agent.reset-authority.test-support.ts"]'
+          ./node_modules/.bin/oxfmt --check src/gateway/server-methods/agent.reset-and-identity.test-utils.ts src/gateway/server-methods/agent.reset-authority.test-support.ts
+          git diff --check "$BASE_SHA" HEAD
+          git diff --quiet HEAD
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+      - name: Export verified commit without repository write credentials
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/candidate.bundle" "$BASE_SHA..HEAD"
+          git bundle verify "$RUNNER_TEMP/candidate.bundle"
+          jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite}' > "$RUNNER_TEMP/candidate.json"
+          cat "$RUNNER_TEMP/candidate.json"
+      - name: Upload the verified commit artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: verified-candidate
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/candidate.bundle
+            ${{ runner.temp }}/candidate.json
