@@ -23,7 +23,15 @@ on:
         description: Fixed validation command set
         required: true
         type: choice
-        options: [input-full, provider-full, transport-full]
+        options:
+          [
+            input-full,
+            provider-full,
+            transport-full,
+            input-authority-red,
+            input-authority-full,
+            credential-authority-red,
+          ]
 permissions:
   contents: read
 jobs:
@@ -45,7 +53,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -90,6 +98,14 @@ jobs:
             input-full)
               subject="test(gateway): keep reset authority coverage within file budgets"
               detail="Preserve case names, order, hooks, mocks and assertions in focused test support."
+              ;;
+            input-authority-red|input-authority-full)
+              subject="test(gateway): prove input custody with real run authority"
+              detail="Observe real owner closure and final effects while preserving accepted custody and reset retries."
+              ;;
+            credential-authority-red)
+              subject="test(workers): reproduce attachment after admitted authority closes"
+              detail="Observe queue and bundle waits with real admission closure and persisted attachment effects."
               ;;
             provider-full)
               subject="fix(workers): reject provider work after invocation closes"
