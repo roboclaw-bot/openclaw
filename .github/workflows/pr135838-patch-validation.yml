@@ -23,7 +23,7 @@ on:
         description: Fixed validation command set
         required: true
         type: choice
-        options: [input-full]
+        options: [input-full, provider-full, transport-full]
 permissions:
   contents: read
 jobs:
@@ -45,7 +45,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          test "$SUITE" = input-full
+          case "$SUITE" in input-full|provider-full|transport-full) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -56,6 +56,7 @@ jobs:
           set -euo pipefail
           base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
           test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
+          cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
       - name: Check out exact parent
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -85,12 +86,23 @@ jobs:
           test "$(git write-tree)" = "$EXPECTED_TREE"
           git diff --quiet
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
-          cat > "$RUNNER_TEMP/commit-message.txt" <<'MESSAGE'
-          test(gateway): keep reset authority coverage within file budgets
-
-          Preserve case names, order, hooks, mocks and assertions while moving
-          the authority cases to their focused test-support owner.
-
+          case "$SUITE" in
+            input-full)
+              subject="test(gateway): keep reset authority coverage within file budgets"
+              detail="Preserve case names, order, hooks, mocks and assertions in focused test support."
+              ;;
+            provider-full)
+              subject="fix(workers): reject provider work after invocation closes"
+              detail="Bind provider work to live invocation authority while preserving independent cleanup."
+              ;;
+            transport-full)
+              subject="fix(workers): reject stale workspace transfer operations"
+              detail="Carry caller authority through initialization and transfer; preserve established custody."
+              ;;
+            *) exit 2 ;;
+          esac
+          printf '%s\n\n%s\n\n' "$subject" "$detail" > "$RUNNER_TEMP/commit-message.txt"
+          cat >> "$RUNNER_TEMP/commit-message.txt" <<'MESSAGE'
           Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
           Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
           MESSAGE
@@ -99,17 +111,10 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
           git diff --quiet HEAD
           git log -1 --format="%H%n%T%n%B"
-      - name: Run fixed input/reset validation
+      - name: Run the controller-owned validation recipe
         run: |
           set -euo pipefail
-          test "$SUITE" = input-full
-          pnpm test src/gateway/agent-turn/agent-run-user-turn.test.ts src/gateway/server-methods/agent.test.ts src/gateway/server-methods/agent-run-local-operator-authority.test.ts src/gateway/agent-turn/internal-facade.test.ts
-          pnpm check:line-cap-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
-          pnpm check:max-lines-ratchet --base 3e8b396a7dc833185c0fdba33efadef6826eeda7
-          node scripts/run-oxlint.mjs --tsconfig config/tsconfig/oxlint.core.json src/gateway/server-methods/agent.reset-and-identity.test-utils.ts src/gateway/server-methods/agent.reset-authority.test-support.ts
-          node scripts/run-tsgo-core-test-shards.mjs --changed-paths-json '["src/gateway/server-methods/agent.reset-and-identity.test-utils.ts","src/gateway/server-methods/agent.reset-authority.test-support.ts"]'
-          ./node_modules/.bin/oxfmt --check src/gateway/server-methods/agent.reset-and-identity.test-utils.ts src/gateway/server-methods/agent.reset-authority.test-support.ts
-          git diff --check "$BASE_SHA" HEAD
+          bash "$RUNNER_TEMP/validate-candidate.sh"
           git diff --quiet HEAD
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
       - name: Export verified commit without repository write credentials
@@ -127,3 +132,5 @@ jobs:
           path: |
             ${{ runner.temp }}/candidate.bundle
             ${{ runner.temp }}/candidate.json
+            ${{ runner.temp }}/candidate-sdk-api.json
+            ${{ runner.temp }}/candidate-sdk-api.txt
