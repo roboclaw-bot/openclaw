@@ -31,6 +31,8 @@ on:
             input-authority-red,
             input-authority-full,
             credential-authority-red,
+            custody-authority,
+            execution-authority,
           ]
 permissions:
   contents: read
@@ -53,7 +55,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -106,6 +108,14 @@ jobs:
             credential-authority-red)
               subject="test(workers): reproduce attachment after admitted authority closes"
               detail="Observe queue and bundle waits with real admission closure and persisted attachment effects."
+              ;;
+            custody-authority)
+              subject="test(workers): exercise retained result custody through real lifecycle transitions"
+              detail="Observe drain, cancellation, recovery and nonce cleanup without replacing owner assertions."
+              ;;
+            execution-authority)
+              subject="test(workers): exercise real prepared execution owner closure"
+              detail="Observe agent, worker and repository owners across retained-callback boundaries."
               ;;
             provider-full)
               subject="fix(workers): reject provider work after invocation closes"
