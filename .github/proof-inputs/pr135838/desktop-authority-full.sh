@@ -1,5 +1,5 @@
 set -euo pipefail
-test "$BASE_SHA" = aeea6d749c6a82d456c707623dae34ad41c8c096
+test "$BASE_SHA" = eeb450c9cf2dd0a29243089a7042a3f0c5882717
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
 test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
 base="$BASE_SHA"
@@ -22,8 +22,6 @@ for file in "${typescript[@]}"; do
     time pnpm test "$file" --maxWorkers=1
   fi
 done
-pnpm tsgo:core
-changed=$(git diff --name-only "$base" HEAD | jq -Rsc 'split("\n")|map(select(length>0))')
-node scripts/run-tsgo-core-test-shards.mjs --changed-paths-json "$changed"
 git diff --quiet HEAD
-# Build and SDK compatibility are a separate exact-tree identity-sdk run.
+# Type checks and build/SDK compatibility run separately on this exact base/tree.
+# All fixed lanes are required; splitting preserves the 40-minute per-job budget.
