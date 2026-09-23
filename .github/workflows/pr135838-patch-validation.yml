@@ -37,6 +37,9 @@ on:
             desktop-authority-full,
             identity-sdk,
             identity-types,
+            native-fixture-red,
+            native-gateway-16,
+            native-gateway-30,
             provider-process-authority,
           ]
 permissions:
@@ -60,7 +63,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-types|provider-process-authority) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|provider-process-authority) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -92,8 +95,8 @@ jobs:
       - name: Install declared dependencies in the isolated normal checkout
         uses: ./.github/actions/setup-node-env
         with:
-          node-version: "24.21.0"
-          install-bun: "false"
+          node-version: "24.19.0"
+          install-bun: "true"
           cache-mode: "restore"
       - name: Commit exact reviewed tree with normal hooks enabled
         run: |
@@ -125,6 +128,10 @@ jobs:
             desktop-authority-red|desktop-authority-full|identity-sdk|identity-types)
               subject="fix(workers): stop desktop identity preparation with its owner"
               detail="Bind preparation to desktop stop, replacement and timeout while preserving independent cleanup."
+              ;;
+            native-fixture-red|native-gateway-16|native-gateway-30)
+              subject="test(gateway): drain fixture storage before resetting task owners"
+              detail="Preserve live native borrowers and original Gateway shard assertions."
               ;;
             provider-process-authority)
               subject="test(workers): prove provider lifetime with real host owners and local process I/O"

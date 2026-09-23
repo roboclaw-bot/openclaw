@@ -1,5 +1,5 @@
 set -euo pipefail
-test "$BASE_SHA" = eeb450c9cf2dd0a29243089a7042a3f0c5882717
+test "$BASE_SHA" = 7a66ecd22a43e6132cfc7e7209a58c86bbafda3c
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
 test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
 base="$BASE_SHA"
