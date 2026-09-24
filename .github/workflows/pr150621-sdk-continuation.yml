@@ -1,0 +1,260 @@
+name: PR 150621 bounded SDK continuation
+run-name: pr150621-sdk-continuation f3e4f3d660702 ${{ github.sha }}
+"on":
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  warm:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out reviewed proof controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preserve immutable proof inputs
+        run: 'set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/sdk-proof"
+
+          cp .github/proof-inputs/pr135838/sdk-continuation/manifest.json .github/proof-inputs/pr135838/sdk-continuation/dependency-inputs.json
+          .github/proof-inputs/pr135838/sdk-continuation/run-phase.mjs "$RUNNER_TEMP/sdk-proof/"
+
+          base64 --decode .github/proof-inputs/pr135838/sdk-continuation/candidate.bundle.b64
+          > "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          test "$(sha256sum "$RUNNER_TEMP/sdk-proof/candidate.bundle" | cut -d'' ''
+          -f1)" = 15936112772cd92570138bd8158e53f97f2040f11066871a48aef1370589d3d2'
+      - name: Check out exact source parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore previously tested normal-hook commit
+        run: 'set -euo pipefail
+
+          git bundle verify "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git bundle unbundle "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git checkout --detach 3884a45c25cc6d5cd06581bb5db41886e692903c
+
+          test "$(git rev-parse HEAD^)" = f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+
+          test "$(git rev-parse HEAD^{tree})" = f3e4f3d6607023597442115350f80acc3761af85
+
+          git diff --quiet HEAD
+
+          git log -1 --format=''%H%n%T%n%P%n%B'''
+      - name: Install the same declared dependencies
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: 24.19.0
+          install-bun: "true"
+          cache-mode: restore
+      - name: Warm canonical package declaration caches
+        run: node --import ./scripts/tsx.mjs "$RUNNER_TEMP/sdk-proof/run-phase.mjs"
+          warm
+      - name: Transfer only sealed canonical cache outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sdk-cache-warm-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdk-proof/out
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+        id: publish
+    outputs:
+      artifact_id: ${{ steps.publish.outputs.artifact-id }}
+      artifact_digest: ${{ steps.publish.outputs.artifact-digest }}
+      attempt: ${{ github.run_attempt }}
+  full:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    needs:
+      - warm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out reviewed proof controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preserve immutable proof inputs
+        run: 'set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/sdk-proof"
+
+          cp .github/proof-inputs/pr135838/sdk-continuation/manifest.json .github/proof-inputs/pr135838/sdk-continuation/dependency-inputs.json
+          .github/proof-inputs/pr135838/sdk-continuation/run-phase.mjs "$RUNNER_TEMP/sdk-proof/"
+
+          base64 --decode .github/proof-inputs/pr135838/sdk-continuation/candidate.bundle.b64
+          > "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          test "$(sha256sum "$RUNNER_TEMP/sdk-proof/candidate.bundle" | cut -d'' ''
+          -f1)" = 15936112772cd92570138bd8158e53f97f2040f11066871a48aef1370589d3d2'
+      - name: Check out exact source parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore previously tested normal-hook commit
+        run: 'set -euo pipefail
+
+          git bundle verify "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git bundle unbundle "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git checkout --detach 3884a45c25cc6d5cd06581bb5db41886e692903c
+
+          test "$(git rev-parse HEAD^)" = f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+
+          test "$(git rev-parse HEAD^{tree})" = f3e4f3d6607023597442115350f80acc3761af85
+
+          git diff --quiet HEAD
+
+          git log -1 --format=''%H%n%T%n%P%n%B'''
+      - name: Install the same declared dependencies
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: 24.19.0
+          install-bun: "true"
+          cache-mode: restore
+      - name: Require the exact successful producer receipt
+        env:
+          PRODUCER_ARTIFACT: ${{ needs.warm.outputs.artifact_id }}
+          PRODUCER_DIGEST: ${{ needs.warm.outputs.artifact_digest }}
+        run: 'set -euo pipefail
+
+          [[ "$PRODUCER_ARTIFACT" =~ ^[0-9]+$ ]]
+
+          [[ "$PRODUCER_DIGEST" =~ ^[0-9a-f]{64}$ ]]'
+      - name: Download successful canonical cache
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.warm.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
+          path: ${{ runner.temp }}/sdk-proof/carry
+      - name: Verify and restore cache receipt
+        run: node --import ./scripts/tsx.mjs "$RUNNER_TEMP/sdk-proof/run-phase.mjs"
+          restore warm
+        env:
+          PRODUCER_ATTEMPT: ${{ needs.warm.outputs.attempt }}
+          PRODUCER_ARTIFACT: ${{ needs.warm.outputs.artifact_id }}
+          PRODUCER_DIGEST: ${{ needs.warm.outputs.artifact_digest }}
+      - name: Run complete canonical full build
+        run: node --import ./scripts/tsx.mjs "$RUNNER_TEMP/sdk-proof/run-phase.mjs"
+          full
+      - name: Transfer only sealed canonical cache outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sdk-cache-full-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdk-proof/out
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+        id: publish
+    outputs:
+      artifact_id: ${{ steps.publish.outputs.artifact-id }}
+      artifact_digest: ${{ steps.publish.outputs.artifact-digest }}
+      attempt: ${{ github.run_attempt }}
+  sdk:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    needs:
+      - full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out reviewed proof controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preserve immutable proof inputs
+        run: 'set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/sdk-proof"
+
+          cp .github/proof-inputs/pr135838/sdk-continuation/manifest.json .github/proof-inputs/pr135838/sdk-continuation/dependency-inputs.json
+          .github/proof-inputs/pr135838/sdk-continuation/run-phase.mjs "$RUNNER_TEMP/sdk-proof/"
+
+          base64 --decode .github/proof-inputs/pr135838/sdk-continuation/candidate.bundle.b64
+          > "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          test "$(sha256sum "$RUNNER_TEMP/sdk-proof/candidate.bundle" | cut -d'' ''
+          -f1)" = 15936112772cd92570138bd8158e53f97f2040f11066871a48aef1370589d3d2'
+      - name: Check out exact source parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore previously tested normal-hook commit
+        run: 'set -euo pipefail
+
+          git bundle verify "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git bundle unbundle "$RUNNER_TEMP/sdk-proof/candidate.bundle"
+
+          git checkout --detach 3884a45c25cc6d5cd06581bb5db41886e692903c
+
+          test "$(git rev-parse HEAD^)" = f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+
+          test "$(git rev-parse HEAD^{tree})" = f3e4f3d6607023597442115350f80acc3761af85
+
+          git diff --quiet HEAD
+
+          git log -1 --format=''%H%n%T%n%P%n%B'''
+      - name: Install the same declared dependencies
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: 24.19.0
+          install-bun: "true"
+          cache-mode: restore
+      - name: Require the exact successful producer receipt
+        env:
+          PRODUCER_ARTIFACT: ${{ needs.full.outputs.artifact_id }}
+          PRODUCER_DIGEST: ${{ needs.full.outputs.artifact_digest }}
+        run: 'set -euo pipefail
+
+          [[ "$PRODUCER_ARTIFACT" =~ ^[0-9]+$ ]]
+
+          [[ "$PRODUCER_DIGEST" =~ ^[0-9a-f]{64}$ ]]'
+      - name: Download successful canonical cache
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.full.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
+          path: ${{ runner.temp }}/sdk-proof/carry
+      - name: Verify and restore cache receipt
+        run: node --import ./scripts/tsx.mjs "$RUNNER_TEMP/sdk-proof/run-phase.mjs"
+          restore full
+        env:
+          PRODUCER_ATTEMPT: ${{ needs.full.outputs.attempt }}
+          PRODUCER_ARTIFACT: ${{ needs.full.outputs.artifact_id }}
+          PRODUCER_DIGEST: ${{ needs.full.outputs.artifact_digest }}
+      - name: Run complete SDK strict smoke and compatibility checks
+        run: node --import ./scripts/tsx.mjs "$RUNNER_TEMP/sdk-proof/run-phase.mjs"
+          sdk
+      - name: Export SDK report awaiting parent acceptance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sdk-proof-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdk-proof/out
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+        id: publish
+env:
+  GIT_COMMIT: 3884a45c25cc6d5cd06581bb5db41886e692903c
+  OPENCLAW_BUILD_TIMESTAMP: "2026-09-24T14:45:30.000Z"
