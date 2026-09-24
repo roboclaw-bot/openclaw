@@ -1,5 +1,5 @@
 set -euo pipefail
-test "$BASE_SHA" = f7dc8adeeec2ee608d1d58846bbd4c7d30533bdb
+test "$BASE_SHA" = d9d8f0829d87bcedd2b3ab6735334289c83defb0
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
 test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
 # Original job30 order except the reset-only test retired with its owner by main b1f980feb5c (#156377). All remaining selectors and controls are preserved.
