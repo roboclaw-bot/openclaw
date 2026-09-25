@@ -36,6 +36,7 @@ on:
             desktop-authority-red,
             desktop-authority-full,
             identity-sdk,
+            identity-api,
             identity-types,
             native-fixture-red,
             native-gateway-16,
@@ -70,7 +71,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -132,7 +133,7 @@ jobs:
               subject="test(workers): exercise real prepared execution owner closure"
               detail="Observe agent, worker and repository owners across retained-callback boundaries."
               ;;
-            desktop-authority-red|desktop-authority-full|identity-sdk|identity-types)
+            desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types)
               subject="fix(workers): stop desktop identity preparation with its owner"
               detail="Bind preparation to desktop stop, replacement and timeout while preserving independent cleanup."
               ;;
@@ -180,10 +181,10 @@ jobs:
           git bundle create "$RUNNER_TEMP/candidate.bundle" "$BASE_SHA..HEAD"
           git bundle verify "$RUNNER_TEMP/candidate.bundle"
           sdk_report_sha=""
-          if [[ "$SUITE" == identity-sdk ]]; then
+          if [[ "$SUITE" == identity-sdk || "$SUITE" == identity-api ]]; then
             sdk_report_sha="$(sha256sum "$RUNNER_TEMP/candidate-sdk-api.json" | cut -d " " -f1)"
           fi
-          jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if $suite == "identity-sdk" then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
       - name: Upload the verified commit artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

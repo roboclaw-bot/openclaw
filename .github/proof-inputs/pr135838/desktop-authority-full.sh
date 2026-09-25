@@ -1,5 +1,5 @@
 set -euo pipefail
-test "$BASE_SHA" = f9da9a55a1ddb12b874b62ee1129b6bbb9edbd3d
+test "$BASE_SHA" = 8681a848844a05afd0f944c1ad1900332d5d80bc
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
 test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
 base="$BASE_SHA"
@@ -12,7 +12,7 @@ pnpm check:line-cap-ratchet --base "$base"
 pnpm check:max-lines-ratchet --base "$base"
 pnpm check:assertion-safety --base "$base"
 pnpm check:env-var-count --base "$base"
-pnpm test src/gateway/worker-environments/desktop-ssh-identity.test.ts src/gateway/worker-environments/bootstrap.test.ts src/gateway/worker-environments/identity.test.ts src/gateway/worker-environments/provider-ssh-identity.test.ts src/gateway/worker-environments/ssh.test.ts src/gateway/worker-environments/tunnel.test.ts src/gateway/worker-environments/provider-bootstrap.test.ts src/gateway/worker-environments/desktop-tunnel.test.ts src/gateway/worker-environments/environment-access.test.ts src/gateway/worker-environments/provider-runtime-refresh.test.ts src/gateway/worker-environments/provider-owner-revocation.test.ts src/gateway/worker-environments/store-worker.test.ts src/gateway/worker-environments/store-projection.test.ts test/vitest-projects-config.test.ts src/gateway/test-helpers.server-storage.test.ts src/gateway/test-helpers.server-env.test.ts src/gateway/test-helpers.server-rpc.test.ts src/gateway/test-helpers.acquisition.test.ts src/gateway/server.sessions.create.worktrees.test.ts src/gateway/server.sessions.create.worktree-selection.test.ts src/gateway/server.sessions.create.workspace-policy.test.ts src/gateway/server.sessions.create.spawn.test.ts src/gateway/server-methods/sessions-read-fixture-lifetime.test.ts src/gateway/server.sessions.store-paths.test.ts
+pnpm test src/gateway/worker-environments/desktop-ssh-identity.test.ts src/gateway/worker-environments/bootstrap.test.ts src/gateway/worker-environments/identity.test.ts src/gateway/worker-environments/provider-ssh-identity.test.ts src/gateway/worker-environments/ssh.test.ts src/gateway/worker-environments/tunnel.test.ts src/gateway/worker-environments/provider-bootstrap.test.ts src/gateway/worker-environments/desktop-tunnel.test.ts src/gateway/worker-environments/environment-access.test.ts src/gateway/worker-environments/provider-runtime-refresh.test.ts src/gateway/worker-environments/provider-owner-revocation.test.ts src/gateway/worker-environments/service-lifetime.test.ts src/gateway/worker-environments/store-worker.test.ts src/gateway/worker-environments/store-projection.test.ts test/vitest-projects-config.test.ts src/gateway/server-import-boundary.test.ts
 
 # Record the current repository-required per-changed-test wall cost.
 TIMEFORMAT='elapsed_seconds=%3R'
@@ -23,5 +23,5 @@ for file in "${typescript[@]}"; do
   fi
 done
 git diff --quiet HEAD
-# Type checks and build/SDK compatibility run separately on this exact base/tree.
-# All fixed lanes are required; splitting preserves the 40-minute per-job budget.
+# Type and source SDK checks run separately; ordinary exact-head PR CI owns
+# its canonical runtime/build gates. No full-build success is implied by this lane.
