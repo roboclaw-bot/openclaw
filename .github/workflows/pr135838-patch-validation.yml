@@ -26,6 +26,20 @@ on:
         options:
           [
             input-full,
+            provider-resume-red,
+            provider-resume-full,
+            provider-resume-types,
+            provider-resume-test-types-a,
+            provider-resume-test-types-b,
+            provider-resume-plugin-test-types,
+            provider-resume-api,
+            provider-resume-build,
+            provider-resume-process,
+            transport-resume-red,
+            transport-resume-full,
+            transport-resume-types,
+            transport-resume-build,
+            provider-resume-smoke,
             input-delivery-red,
             input-delivery-full,
             input-delivery-types,
@@ -91,7 +105,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          case "$SUITE" in provider-resume-red|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -133,6 +147,14 @@ jobs:
           git diff --quiet
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
           case "$SUITE" in
+            provider-resume-red|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-smoke|provider-resume-process)
+              subject="fix(workers): reject provider effects after invocation closes"
+              detail="Carry existing live host authority through bundled provider effects while preserving independent cleanup and compatible legacy calls."
+              ;;
+            transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build)
+              subject="fix(workers): stop workspace transfers after caller authority closes"
+              detail="Preserve initiating authority through node and SSH startup and transfer while joining disposal under independent workspace custody."
+              ;;
             input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build)
               subject="fix(gateway): retain strict reset delivery failures on replay"
               detail="Preserve committed reset idempotency without converting failed confirmation delivery into successful retry responses."
@@ -225,10 +247,10 @@ jobs:
           git bundle create "$RUNNER_TEMP/candidate.bundle" "$BASE_SHA..HEAD"
           git bundle verify "$RUNNER_TEMP/candidate.bundle"
           sdk_report_sha=""
-          if [[ "$SUITE" == identity-sdk || "$SUITE" == identity-api ]]; then
+          if [[ "$SUITE" == identity-sdk || "$SUITE" == identity-api || "$SUITE" == provider-resume-api ]]; then
             sdk_report_sha="$(sha256sum "$RUNNER_TEMP/candidate-sdk-api.json" | cut -d " " -f1)"
           fi
-          jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api" or $suite == "provider-resume-api") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
       - name: Upload the verified commit artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
