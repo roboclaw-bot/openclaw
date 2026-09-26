@@ -54,6 +54,9 @@ on:
             checkpoint-types,
             checkpoint-integration,
             checkpoint-sql-red,
+            checkpoint-sql-full,
+            checkpoint-sql-types,
+            checkpoint-sql-build,
           ]
 permissions:
   contents: read
@@ -76,7 +79,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -149,6 +152,10 @@ jobs:
             settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35)
               subject="fix(gateway): retain prepared placement facts through row admission"
               detail="Preserve exact-read custody and synchronize maintenance fixtures with their producing owners."
+              ;;
+            checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build)
+              subject="refactor(workers): prepare publication checkpoint inputs off-thread"
+              detail="Remove redundant Gateway payload copies while retaining current revision, import, and final-input fences."
               ;;
             checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red)
               subject="fix(workers): stop checkpoint writes after authority closes"
