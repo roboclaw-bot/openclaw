@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           [
+            transport-ci-replay,
             checkpoint,
             agent-input,
             identity,
@@ -34,7 +35,20 @@ jobs:
         env:
           TARGET_SHA: ${{ inputs.target_sha }}
         run: |
+          set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - name: Preserve original failing CI plan
+        if: inputs.suite == 'transport-ci-replay'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Bind original plan bytes
+        if: inputs.suite == 'transport-ci-replay'
+        run: |
+          set -euo pipefail
+          cp .github/proof-inputs/pr135838/transport-ci-original-groups.json "$RUNNER_TEMP/transport-ci-original-groups.json"
+          test "$(sha256sum "$RUNNER_TEMP/transport-ci-original-groups.json" | cut -d " " -f1)" = 3aad0a524a13cec6bf1fbaaf540b48c14df64e5197caaacf36edffbd8a29b204
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.target_sha }}
@@ -45,11 +59,24 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           git rev-parse HEAD HEAD^{tree}
+      - name: Verify original public composition or its exact base
+        if: inputs.suite == 'transport-ci-replay'
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          case "$TARGET_SHA" in
+            2ca5baaf004d96508797906ef737235d84401770) expected_tree=1573b533eb9e421c1fa039a4da6ca306934e8281 ;;
+            2b2ae319c923751bc9621af6942867ccf4f3302e) expected_tree=fb3daac40cef1e3ba8b287dbba2227cd52c9b8a9 ;;
+            *) exit 2 ;;
+          esac
+          test "$(git rev-parse HEAD^{tree})" = "$expected_tree"
+          git diff --quiet HEAD
       - name: Install declared toolchain and dependencies
         uses: ./.github/actions/setup-node-env
         with:
-          node-version: "24.x"
-          install-bun: "false"
+          node-version: ${{ inputs.suite == 'transport-ci-replay' && '24.19.0' || '24.x' }}
+          install-bun: ${{ inputs.suite == 'transport-ci-replay' && 'true' || 'false' }}
           cache-mode: "restore"
       - name: Run selected regression suite
         env:
@@ -57,6 +84,22 @@ jobs:
         run: |
           set -euo pipefail
           case "$SUITE" in
+            transport-ci-replay)
+              # Replay the recorded job plan, not isolated test files or a newly selected shard.
+              export OPENCLAW_NODE_TEST_GROUPS_JSON="$(cat "$RUNNER_TEMP/transport-ci-original-groups.json")"
+              export OPENCLAW_NODE_TEST_GROUPS_GZIP_BASE64=""
+              export OPENCLAW_NODE_TEST_CONFIGS_JSON=null OPENCLAW_NODE_TEST_ENV_JSON=null
+              export OPENCLAW_NODE_TEST_INCLUDE_PATTERNS_JSON=null OPENCLAW_NODE_TEST_TARGETS_JSON=null
+              export OPENCLAW_NODE_TEST_VITEST_ARGS_JSON='[]'
+              export OPENCLAW_VITEST_SHARD_NAME=changed-config-compact-large-27
+              export OPENCLAW_VITEST_MAX_WORKERS=2 OPENCLAW_NODE_TEST_PLAN_CONCURRENCY=1
+              export OPENCLAW_CI_TEST_RUNTIME_POLICY=bun-compatible FROZEN_TARGET=false
+              export OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS=300000 OPENCLAW_VITEST_WORKER_CACHE=1
+              export NODE_OPTIONS=--max-old-space-size=8192
+              # This isolated runner starts cold; do not claim the original Blacksmith cache/hardware.
+              time -p node --import tsx scripts/ci-run-node-test-shard.mts
+              git diff --quiet HEAD
+              ;;
             checkpoint)
               pnpm test src/gateway/worker-environments/session-repository-checkpoints.test.ts src/gateway/worker-environments/workspace-result-ref-mutation.test.ts src/gateway/worker-environments/workspace-result-staging.concurrent.test.ts src/gateway/worker-environments/workspace-result-staging.reads.test.ts
               ;;
