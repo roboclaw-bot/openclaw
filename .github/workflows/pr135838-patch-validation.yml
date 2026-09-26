@@ -57,6 +57,7 @@ on:
             checkpoint-sql-full,
             checkpoint-sql-types,
             checkpoint-sql-test-types,
+            checkpoint-git-fixture,
             checkpoint-sql-build,
           ]
 permissions:
@@ -80,7 +81,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -153,6 +154,10 @@ jobs:
             settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35)
               subject="fix(gateway): retain prepared placement facts through row admission"
               detail="Preserve exact-read custody and synchronize maintenance fixtures with their producing owners."
+              ;;
+            checkpoint-git-fixture)
+              subject="fix(tests): construct checkpoint blob identities with Git"
+              detail="Use the native Git object-id fixture helper without changing production cryptography or the SQL-cost oracle."
               ;;
             checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types)
               subject="refactor(workers): prepare publication checkpoint inputs off-thread"
