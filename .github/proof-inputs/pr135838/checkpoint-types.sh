@@ -1,5 +1,5 @@
 set -euo pipefail
-test "$BASE_SHA" = 1408b924c23843d8b8f21aae50d705e1aef925a2
+test "$BASE_SHA" = 9aa26763b8de8d8350220e5bb9002448db707422
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
 test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
 pnpm tsgo:core
