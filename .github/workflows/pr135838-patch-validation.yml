@@ -26,6 +26,10 @@ on:
         options:
           [
             input-full,
+            input-delivery-red,
+            input-delivery-full,
+            input-delivery-types,
+            input-delivery-build,
             input-refresh-red,
             input-refresh-full,
             input-refresh-types,
@@ -87,7 +91,7 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          case "$SUITE" in input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
       - name: Check out reviewed controller and patch data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -129,6 +133,10 @@ jobs:
           git diff --quiet
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
           case "$SUITE" in
+            input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build)
+              subject="fix(gateway): retain strict reset delivery failures on replay"
+              detail="Preserve committed reset idempotency without converting failed confirmation delivery into successful retry responses."
+              ;;
             input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build)
               subject="fix(gateway): stop input effects after caller authority closes"
               detail="Preserve current caller and accepted-input custody, retain committed reset receipts, and prove the real authority boundaries."
