@@ -47,6 +47,7 @@ on:
             provider-resume-api,
             provider-sdk-repair,
             provider-type-inventory,
+            provider-routing-repair,
             provider-upgrade-harness,
             provider-upgrade-harness-red,
             provider-resume-build,
@@ -126,7 +127,13 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          case "$SUITE" in provider-routing-repair|provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          if [[ "$SUITE" == provider-routing-repair ]]; then
+            test "$BASE_SHA" = e53ea87c66cb5d1deaefe5046069de4adbcde09a
+            test "$PATCH_ID" = provider-routing-repair-20260927
+            test "$EXPECTED_TREE" = 8d016974aecaddff23a9a86ff502f500980cbb4d
+            test "$PATCH_SHA256" = 388710246627cfef1f16e41f34cfd4461e7a1a0f0eebfde7eb690e63ffacaba7
+          fi
           if [[ "$SUITE" == provider-type-inventory ]]; then
             test "$BASE_SHA" = e0c476d18d326d05468135a37ed108e07eb8a466
             test "$PATCH_ID" = provider-type-inventory-20260927
@@ -214,6 +221,10 @@ jobs:
           git diff --quiet
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
           case "$SUITE" in
+            provider-routing-repair)
+              subject="test: keep worker invocation registration in canonical order"
+              detail="Preserve every Gateway worker test while placing the invocation regression in the sorted routing inventory."
+              ;;
             provider-type-inventory)
               subject="test: record worker-provider negative type assertions"
               detail="Keep the two intentional V1 compile-error fixtures explicit in the exact type-suppression inventory without weakening its scanner."
