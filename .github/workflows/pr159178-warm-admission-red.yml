@@ -1,5 +1,5 @@
-name: PR 159178 warm-state capture-custody RED capture
-run-name: pr159178 warm-state capture-custody RED capture ${{ inputs.controller_sha }}
+name: PR 159178 warm-state capture-recovery RED capture
+run-name: pr159178 warm-state capture-recovery RED capture ${{ inputs.controller_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -23,15 +23,10 @@ jobs:
     env:
       CONTROLLER_SHA: ${{ inputs.controller_sha }}
       WORKFLOW_SHA: ${{ github.workflow_sha }}
-      BASE_SHA: bb394585807555813b24f43eb3ceea018134df10
-      COMPOSED_TREE: 0b278af65b8bc9c80e52fa81feda2aa4628a5abf
-      ORIGINAL_RED_TREE: 04c66892960db7a41be3aaa495e41feccba9490c
-      SIBLING_RED_TREE: 772e21f56df84f1eb8e9528c848300a8b2cbc030
-      CANDIDATE_TREE: 26fb535ac52db550591d49b6de4b5846c2e21b1b
-      CUSTODY_RED_TREE: 3d8fb85a1c1277767a2b9e93fdf4565226eaa085
-      FIXED_CUSTODY_TREE: 85b6ac8d1285d8e0b2f134236a7243325eef8558
-      RED_TREE: bafe6f4a8d5da82e89c6c030ce8c6031cf511f87
-      CAPTURE_SHA256: 822d5d8b7d0ec28060be0a9ada43797cfd2b3d745f0ed4a81872b69bd7d5b0ce
+      BASE_SHA: 0edae198d278686e16426f7ad254d0341bd6e3d3
+      CANDIDATE_TREE: f5d2357d3b627de4ddc7d249e630acd8620f127b
+      RED_TREE: 9700a99108547ead6e56c131cbde10cb2cc54914
+      CAPTURE_SHA256: 1b4373509d5249e8af57fdb4b9ac3f5791dad42afba238193308e3c4c7078c4d
     steps:
       - name: Record run identity and guard execution
         id: guard
@@ -39,15 +34,15 @@ jobs:
           HOST_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-capture-custody-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-capture-recovery-red"
           mkdir -p "$evidence"
           jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
             --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg base "$BASE_SHA" \
-            --arg originalRed "$ORIGINAL_RED_TREE" --arg composed "$COMPOSED_TREE" --arg red "$RED_TREE" \
+            --arg candidate "$CANDIDATE_TREE" --arg red "$RED_TREE" \
             '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
-              workflowSha:$workflow,baseSha:$base,composedTree:$composed,originalRedTree:$originalRed,redTree:$red,
-              classification:"UNCLASSIFIED capture-custody; known-unfixed candidate plus corrected test, not green validation"}' \
+              workflowSha:$workflow,baseSha:$base,candidateTree:$candidate,redTree:$red,
+              classification:"UNCLASSIFIED capture-recovery; exact f5 production plus test-only recovery oracle, not rebase or green validation"}' \
             > "$evidence/identity.json"
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$CONTROLLER_SHA" = "$GITHUB_SHA"
@@ -64,115 +59,68 @@ jobs:
           ref: ${{ inputs.controller_sha }}
           fetch-depth: 2
           persist-credentials: false
-      - name: Preserve hashed inputs and exclude previously published changes
+      - name: Preserve hashed inputs and verify controller-only delta
         id: preserve
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-capture-custody-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-capture-recovery-red"
           test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
-          test "$(git rev-parse HEAD^)" = 7737b58b8156ea394c210b5204693b16c40032f4
+          test "$(git rev-parse HEAD^)" = 787fdcee31a4bf783f12817025dcc3baaf245e17
           git diff --quiet HEAD
           git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
-          printf 'A\t%s\nM\t%s\nA\t%s\nM\t%s\n' \
-            .github/proof-inputs/pr159178-warm-admission-red/capture-dispatch-tests.patch.b64 \
+          printf 'M\t%s\nA\t%s\nA\t%s\nM\t%s\n' \
             .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
-            .github/proof-inputs/pr159178-warm-admission-red/retirement-result-repair.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/f5-candidate.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/recovery-tests.patch.b64 \
             .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
           cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
           input=.github/proof-inputs/pr159178-warm-admission-red
           cp "$input/capture.sh" "$evidence/capture.sh"
           cp .github/workflows/pr159178-warm-admission-red.yml "$evidence/workflow.yml"
-          base64 --decode "$input/composed-main.patch.b64" > "$evidence/composed-main.patch"
-          base64 --decode "$input/warm-admission-red.patch.b64" > "$evidence/warm-admission-red.patch"
-          base64 --decode "$input/native-routing.patch.b64" > "$evidence/native-routing.patch"
-          base64 --decode "$input/sibling-tests.patch.b64" > "$evidence/sibling-tests.patch"
-          base64 --decode "$input/fixed-production.patch.b64" > "$evidence/fixed-production.patch"
-          base64 --decode "$input/retirement-custody-test.patch.b64" > "$evidence/retirement-custody-test.patch"
-          base64 --decode "$input/retirement-result-repair.patch.b64" > "$evidence/retirement-result-repair.patch"
-          base64 --decode "$input/capture-dispatch-tests.patch.b64" > "$evidence/capture-dispatch-tests.patch"
+          base64 --decode "$input/f5-candidate.patch.b64" > "$evidence/f5-candidate.patch"
+          base64 --decode "$input/recovery-tests.patch.b64" > "$evidence/recovery-tests.patch"
           cd "$evidence"
           printf '%s  %s\n' \
-            765f3b6116214240bac770e2ee33600f084ddbd9989530b4e18491e8f02e0ef5 composed-main.patch \
-            e8f583d31349bf535549185a22f2d51c906a25d91483ce080426f10bc0789cf6 warm-admission-red.patch \
-            02af5dbd7076628edc2acc57eba1fb8aefe69d24eeec26d9c1cd496879809912 native-routing.patch \
-            fefd19439ef39e0793588393727ec62723727cd7636d919adabe753844bc07b1 sibling-tests.patch \
-            bbc08edc0989fe07c3096bf55eec33ccb600c2cbfeae03287c3604b4f7539a7e fixed-production.patch \
-            f662e474f9e6c4772f99c81dfdffc206bf900444cf28fdfcf72f6d81a3c07fe6 retirement-custody-test.patch \
-            2c1664d91ad2e196f18f15cfe35b8d91eb42615ee94e811f765eb3c3bb9e2e38 retirement-result-repair.patch \
-            01d5442973a5f58bb28ed985223f72eed90997aeaec805841f8731124509b34a capture-dispatch-tests.patch \
+            5fc116ddfffefc7f7df1b7eea38cd88f84cf6c79264484fc2f832633a6887481 f5-candidate.patch \
+            edc08645653d065287bc6fc1a5d8140c291565b5330f6cf147656b50d05a1cf1 recovery-tests.patch \
             "$CAPTURE_SHA256" capture.sh > inputs.sha256
           sha256sum --check inputs.sha256
       - name: Check out frozen main without persistent credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: openclaw/openclaw
-          ref: bb394585807555813b24f43eb3ceea018134df10
+          ref: 0edae198d278686e16426f7ad254d0341bd6e3d3
           fetch-depth: 1
           persist-credentials: false
-      - name: Materialize known candidate then corrected custody oracle without production repair
+      - name: Materialize exact f5 plus recovery tests without production repair
         id: materialize
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-capture-custody-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-capture-recovery-red"
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           git diff --quiet HEAD
-          git apply --index --check "$evidence/composed-main.patch"
-          git apply --index "$evidence/composed-main.patch"
-          test "$(git write-tree)" = "$COMPOSED_TREE"
-          git apply --index --check "$evidence/warm-admission-red.patch"
-          git apply --index "$evidence/warm-admission-red.patch"
-          git apply --index --check "$evidence/native-routing.patch"
-          git apply --index "$evidence/native-routing.patch"
-          test "$(git write-tree)" = "$ORIGINAL_RED_TREE"
+          git apply --index --check "$evidence/f5-candidate.patch"
+          git apply --index "$evidence/f5-candidate.patch"
+          test "$(git write-tree)" = "$CANDIDATE_TREE"
           git diff --quiet
           git diff --cached --check
-          test_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
-          routing_file=test/vitest/vitest.extension-database-workers-paths.mjs
-          test "$(git diff --cached --name-status "$COMPOSED_TREE")" = "$(printf 'A\t%s\nM\t%s' "$test_file" "$routing_file")"
-          test "$(git hash-object "$routing_file")" = 921dfb1364ab72151d5193bf7d93e189a7a70fdf
-          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = c85ebafc5ebb241b70072ccafab5c894933282a6a785bb70bcc7778f9930e385
-          git apply --index --check "$evidence/sibling-tests.patch"
-          git apply --index "$evidence/sibling-tests.patch"
-          test "$(git write-tree)" = "$SIBLING_RED_TREE"
-          git diff --quiet
-          git diff --cached --check
+          git apply --index --check "$evidence/recovery-tests.patch"
+          git apply --index "$evidence/recovery-tests.patch"
+          test "$(git write-tree)" = "$RED_TREE"
           test_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
           support_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
           fixture_file=extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
-          test "$(git diff --cached --name-status "$ORIGINAL_RED_TREE")" = "$(printf 'A\t%s\nA\t%s\nM\t%s\nM\t%s' "$support_file" "$test_file" "$fixture_file" "$routing_file")"
-          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = edafc537f967058f7a1fcbe889dfde0c412fd9d7da8580935466c299ffa644d1
-          test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = bef9a018fce8be6f958d1bae221f197bf9b84d6c0f771ac5a42a34d335a95ff1
-          test "$(sha256sum "$fixture_file" | cut -d ' ' -f1)" = c6f92d601b575a336b610e8734fed0c450625ed64f77f44c168169ffa69c3996
-          test "$(git hash-object "$routing_file")" = 3a94eb3b717df33b745226ddc07f809345e2739e
-          git diff --cached --numstat "$ORIGINAL_RED_TREE" > "$evidence/sibling-red-delta.numstat"
-          git apply --index --check "$evidence/fixed-production.patch"
-          git apply --index "$evidence/fixed-production.patch"
-          test "$(git write-tree)" = "$CANDIDATE_TREE"
-          git apply --index --check "$evidence/retirement-custody-test.patch"
-          git apply --index "$evidence/retirement-custody-test.patch"
-          test "$(git write-tree)" = "$CUSTODY_RED_TREE"
-          test "$(git diff --cached --name-only "$CANDIDATE_TREE")" = "$test_file"
-          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 642aa11e3ad313667d798a110328f6b8b5fcd3d928111049fa62d8e8d5da6153
+          routing_file=test/vitest/vitest.extension-database-workers-paths.mjs
+          owner_file=extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
+          test "$(git diff --cached --name-only "$CANDIDATE_TREE")" = "$(printf '%s\n%s' "$support_file" "$test_file")"
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = aae513314c2fbc711a07748bd08dbcef255edc350a5639b5180caba14de182b4
+          test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = a73d5f9b531762a5a9c1ca3f016b37f922d515957af7118a206c8a25be9e3db8
+          test "$(sha256sum "$owner_file" | cut -d ' ' -f1)" = 1134161a9cf7b0272505f1d5c9dd00a7b3f9b66a9ef213a83e340cc709e83a91
           git diff --quiet
           git diff --cached --check
-          git diff --cached --numstat "$CANDIDATE_TREE" > "$evidence/custody-test-delta.numstat"
-          git apply --index --check "$evidence/retirement-result-repair.patch"
-          git apply --index "$evidence/retirement-result-repair.patch"
-          test "$(git write-tree)" = "$FIXED_CUSTODY_TREE"
-          git apply --index --check "$evidence/capture-dispatch-tests.patch"
-          git apply --index "$evidence/capture-dispatch-tests.patch"
-          test "$(git write-tree)" = "$RED_TREE"
-          test "$(git diff --cached --name-only "$FIXED_CUSTODY_TREE")" = "$(printf '%s\n%s' "$support_file" "$test_file")"
-          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 946d2ea7debe010d8c6566bc0456f622e8569643a81a92cf77f236132b4bdc99
-          test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = a1a0793e383f3e71ba245d11dd0e251ca3637f3f1ea30a808e2126353d706f7d
-          git diff --quiet
-          git diff --cached --check
-          git diff --cached --numstat "$FIXED_CUSTODY_TREE" > "$evidence/capture-test-delta.numstat"
+          git diff --cached --numstat "$CANDIDATE_TREE" > "$evidence/recovery-test-delta.numstat"
           printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
-          cp "$test_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test.ts"
-          cp "$support_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test-support.ts"
-          cp "$fixture_file" "$evidence/crabbox-worker-warm-image-store.test.ts"
-          cp "$routing_file" "$evidence/vitest.extension-database-workers-paths.mjs"
+          cp "$test_file" "$support_file" "$fixture_file" "$routing_file" "$owner_file" "$evidence/"
       - name: Install declared dependencies with canonical setup action
         id: setup
         uses: ./.github/actions/setup-node-env
@@ -184,27 +132,35 @@ jobs:
           cache-mode: "off"
       # No commit: a failing reproduction must run before production repair/hooks.
       # This does not waive or suppress later production candidate commit hooks.
-      - name: Capture five dispatch and claim-delivery custody cases with native status
+      - name: Capture recovery cases and unchanged custody controls with native status
         id: custody
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-warm-capture-custody-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-warm-capture-recovery-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe"
+      - name: Capture canonical plugin production types after native test settlement
+        id: types
+        if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          recipe="$RUNNER_TEMP/pr159178-warm-capture-recovery-red/capture.sh"
+          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
+          bash "$recipe" types
       - name: Record native workflow step outcomes
         if: ${{ always() }}
         env:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-capture-custody-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-capture-recovery-red"
           mkdir -p "$evidence"
           printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
-          printf '%s\n' 'Unclassified capture-custody capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Always upload capture-custody RED evidence, including failures
+          printf '%s\n' 'Unclassified capture-recovery capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload capture-recovery RED evidence, including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr159178-warm-capture-custody-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: pr159178-warm-capture-recovery-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: error
-          path: ${{ runner.temp }}/pr159178-warm-capture-custody-red/
+          path: ${{ runner.temp }}/pr159178-warm-capture-recovery-red/
