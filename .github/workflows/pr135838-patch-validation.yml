@@ -46,6 +46,8 @@ on:
             provider-resume-plugin-test-types,
             provider-resume-api,
             provider-sdk-repair,
+            provider-upgrade-harness,
+            provider-upgrade-harness-red,
             provider-resume-build,
             provider-resume-process,
             transport-fixture-repair,
@@ -123,7 +125,13 @@ jobs:
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          case "$SUITE" in provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          if [[ "$SUITE" == provider-upgrade-harness || "$SUITE" == provider-upgrade-harness-red ]]; then
+            test "$BASE_SHA" = d06b334112a2fae431d2ddd5450ebc2064469317
+            test "$PATCH_ID" = provider-upgrade-harness-v2
+            test "$EXPECTED_TREE" = 625a9731ffbf0bc7b2ff8c582ccb02cfdea7f201
+            test "$PATCH_SHA256" = a29747046e227f613b5982247374316a6e9a380d37269d9b76ca5aa888a308d3
+          fi
           if [[ "$SUITE" == custody-resume-* ]]; then
             test "$BASE_SHA" = 24c7bd68b4bb683c0f2eb55c278534d635a50403
             case "$PATCH_ID:$EXPECTED_TREE:$PATCH_SHA256" in
@@ -160,6 +168,10 @@ jobs:
           base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
           test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
           cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
+          if [[ "$SUITE" == provider-upgrade-harness-red ]]; then
+            base64 --decode .github/proof-inputs/pr135838/provider-upgrade-harness-regression-owners.patch.b64 > "$RUNNER_TEMP/harness-regression-owners.patch"
+            test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = 31b892506778bf9b5278da161f096907fd13b8acb68466b2a4a9ea25970c8c2e
+          fi
           if [[ "$SUITE" == transport-fixture-repair ]]; then
             cp .github/proof-inputs/pr135838/transport-ci-original-groups.json "$RUNNER_TEMP/transport-ci-original-groups.json"
             test "$(sha256sum "$RUNNER_TEMP/transport-ci-original-groups.json" | cut -d " " -f1)" = 3aad0a524a13cec6bf1fbaaf540b48c14df64e5197caaacf36edffbd8a29b204
@@ -194,6 +206,10 @@ jobs:
           git diff --quiet
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
           case "$SUITE" in
+            provider-upgrade-harness|provider-upgrade-harness-red)
+              subject="test(workers): prove legacy provider state survives published upgrade"
+              detail="Exercise the published updater, unchanged external provider and native worker custody with owned TLS nodes and joined cleanup."
+              ;;
             custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows)
               subject="fix(workers): retain quiescence cleanup after caller authority closes"
               detail="Separate caller admission from acknowledged nonce cleanup and retain failed release custody without reviving the caller."
