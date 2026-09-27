@@ -3,8 +3,8 @@ set -euo pipefail
 trap 'status=$?; for metric in "$RUNNER_TEMP"/harness-*.time; do if [ -f "$metric" ]; then printf "%s\n" "--- $metric ---"; cat "$metric"; fi; done; exit "$status"' EXIT
 test "$BASE_SHA" = d06b334112a2fae431d2ddd5450ebc2064469317
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
-test "$(git rev-parse HEAD^{tree})" = 625a9731ffbf0bc7b2ff8c582ccb02cfdea7f201
-test "$EXPECTED_TREE" = 625a9731ffbf0bc7b2ff8c582ccb02cfdea7f201
+test "$(git rev-parse HEAD^{tree})" = 1c6d2d6a440e1a3bf44f8b26c71b2e1324d06c75
+test "$EXPECTED_TREE" = 1c6d2d6a440e1a3bf44f8b26c71b2e1324d06c75
 pnpm docs:list > "$RUNNER_TEMP/harness-docs-list.txt"
 node scripts/check-changed.mjs --base "$BASE_SHA" --head HEAD --dry-run > "$RUNNER_TEMP/harness-changed-plan.txt"
 cat "$RUNNER_TEMP/harness-changed-plan.txt"
