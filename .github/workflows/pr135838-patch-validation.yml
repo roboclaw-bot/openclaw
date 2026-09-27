@@ -37,6 +37,7 @@ on:
             attachment-main-refresh,
             attachment-resume-types,
             attachment-resume-build,
+            provider-rebase-focused,
             provider-resume-red,
             provider-resume-focused,
             provider-resume-full,
@@ -119,15 +120,31 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
+      REBASE_RECIPE_SHA256: e316561a43c8b4ebf3bfbb18dfbc75292fff4f33d8ceb18ddc76d27096ef1952
+      REBASE_HOSTED: ${{ runner.environment }}
+      REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Validate immutable inputs
+        id: input_guard
         run: |
           set -euo pipefail
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
-          case "$SUITE" in provider-routing-repair|provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          case "$SUITE" in provider-rebase-focused|provider-routing-repair|provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
+          if [[ "$SUITE" == provider-rebase-focused ]]; then
+            mkdir -p "$RUNNER_TEMP/pr159178-rebase"
+            test "$BASE_SHA" = d247932b3075cf3a3975f64275e3eab9cd1d37d0
+            test "$PATCH_ID" = provider-rebase-current
+            test "$EXPECTED_TREE" = cdbaa9538bb44c651813b6bf777aec07883176d3
+            test "$PATCH_SHA256" = 4a2b158131f49538744f4e1398be0b9ce66a773a31f75b7bbe40b97cfc77702a
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
+            test "$REBASE_HOSTED" = github-hosted
+            test "$RUNNER_OS" = Linux
+          fi
           if [[ "$SUITE" == provider-routing-repair ]]; then
             test "$BASE_SHA" = e53ea87c66cb5d1deaefe5046069de4adbcde09a
             test "$PATCH_ID" = provider-routing-repair-20260927
@@ -175,22 +192,44 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: ${{ inputs.suite == 'provider-rebase-focused' && 2 || 1 }}
           persist-credentials: false
       - name: Preserve and verify patch data
+        id: preserve_inputs
         run: |
           set -euo pipefail
-          base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
-          test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
-          cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
-          if [[ "$SUITE" == provider-upgrade-harness-red ]]; then
-            base64 --decode .github/proof-inputs/pr135838/provider-upgrade-harness-regression-owners.patch.b64 > "$RUNNER_TEMP/harness-regression-owners.patch"
-            test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = 2c8b578e6364c1506b92038093082014cfd7c45b6b7d4dbf8a85539ad6014f2f
-          fi
-          if [[ "$SUITE" == transport-fixture-repair ]]; then
-            cp .github/proof-inputs/pr135838/transport-ci-original-groups.json "$RUNNER_TEMP/transport-ci-original-groups.json"
-            test "$(sha256sum "$RUNNER_TEMP/transport-ci-original-groups.json" | cut -d " " -f1)" = 3aad0a524a13cec6bf1fbaaf540b48c14df64e5197caaacf36edffbd8a29b204
+          if [[ "$SUITE" == provider-rebase-focused ]]; then
+            evidence="$RUNNER_TEMP/pr159178-rebase"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            test "$(git show -s --format=%P HEAD)" = 7a707991716c4bddef6c3452ee9a3a77b1977e15
+            git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
+            printf 'A\t%s\nA\t%s\nM\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
+            cp .github/proof-inputs/pr135838/provider-rebase-current.payload.json "$RUNNER_TEMP/rebase-payload.json"
+            cp .github/proof-inputs/pr135838/provider-rebase-focused.sh "$RUNNER_TEMP/validate-candidate.sh"
+            test "$(sha256sum "$RUNNER_TEMP/rebase-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
+            test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
+            cp "$RUNNER_TEMP/rebase-payload.json" "$evidence/"
+            cp "$RUNNER_TEMP/validate-candidate.sh" "$evidence/controller-recipe.sh"
+            cp .github/workflows/pr135838-patch-validation.yml "$evidence/controller-workflow.yml"
+            git show -s --format='%H%n%P%n%T' HEAD > "$evidence/controller-identity.txt"
+          else
+            base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
+            test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
+            cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
+            if [[ "$SUITE" == provider-upgrade-harness-red ]]; then
+              base64 --decode .github/proof-inputs/pr135838/provider-upgrade-harness-regression-owners.patch.b64 > "$RUNNER_TEMP/harness-regression-owners.patch"
+              test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = 2c8b578e6364c1506b92038093082014cfd7c45b6b7d4dbf8a85539ad6014f2f
+            fi
+            if [[ "$SUITE" == transport-fixture-repair ]]; then
+              cp .github/proof-inputs/pr135838/transport-ci-original-groups.json "$RUNNER_TEMP/transport-ci-original-groups.json"
+              test "$(sha256sum "$RUNNER_TEMP/transport-ci-original-groups.json" | cut -d " " -f1)" = 3aad0a524a13cec6bf1fbaaf540b48c14df64e5197caaacf36edffbd8a29b204
+            fi
           fi
       - name: Check out exact parent
+        id: base_checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.base_sha }}
@@ -198,23 +237,34 @@ jobs:
           filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
           persist-credentials: false
       - name: Materialize only the reviewed candidate
+        id: materialize
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$BASE_SHA"
-          git diff --quiet HEAD
-          git apply --index --check "$RUNNER_TEMP/candidate.patch"
-          git apply --index "$RUNNER_TEMP/candidate.patch"
-          test "$(git write-tree)" = "$EXPECTED_TREE"
-          git diff --quiet
-          git diff --cached --check
-          git merge-base --is-ancestor 3e8b396a7dc833185c0fdba33efadef6826eeda7 HEAD
+          if [[ "$SUITE" == provider-rebase-focused ]]; then
+            bash "$RUNNER_TEMP/validate-candidate.sh" materialize
+          else
+            test "$(git rev-parse HEAD)" = "$BASE_SHA"
+            git diff --quiet HEAD
+            git apply --index --check "$RUNNER_TEMP/candidate.patch"
+            git apply --index "$RUNNER_TEMP/candidate.patch"
+            test "$(git write-tree)" = "$EXPECTED_TREE"
+            git diff --quiet
+            git diff --cached --check
+            git merge-base --is-ancestor 3e8b396a7dc833185c0fdba33efadef6826eeda7 HEAD
+          fi
       - name: Install declared dependencies in the isolated normal checkout
+        id: dependencies
         uses: ./.github/actions/setup-node-env
         with:
           node-version: ${{ inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
           install-bun: ${{ inputs.suite == 'custody-resume-windows' && 'false' || 'true' }}
-          cache-mode: "restore"
+          cache-mode: ${{ inputs.suite == 'provider-rebase-focused' && 'off' || 'restore' }}
+      - name: Check formatting before the ordinary repair commit
+        id: format
+        if: inputs.suite == 'provider-rebase-focused'
+        run: bash "$RUNNER_TEMP/validate-candidate.sh" format
       - name: Commit exact reviewed tree with normal hooks enabled
+        if: inputs.suite != 'provider-rebase-focused'
         run: |
           set -euo pipefail
           test "$(git write-tree)" = "$EXPECTED_TREE"
@@ -338,13 +388,19 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
           git diff --quiet HEAD
           git log -1 --format="%H%n%T%n%B"
+      - name: Native rebase commit
+        id: commit
+        if: inputs.suite == 'provider-rebase-focused'
+        run: bash "$RUNNER_TEMP/validate-candidate.sh" commit
       - name: Run the controller-owned validation recipe
+        id: tests
         run: |
           set -euo pipefail
           bash "$RUNNER_TEMP/validate-candidate.sh"
           git diff --quiet HEAD
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
       - name: Export verified commit without repository write credentials
+        if: inputs.suite != 'provider-rebase-focused'
         run: |
           set -euo pipefail
           git bundle create "$RUNNER_TEMP/candidate.bundle" "$BASE_SHA..HEAD"
@@ -355,6 +411,10 @@ jobs:
           fi
           jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api" or $suite == "provider-resume-api" or $suite == "provider-sdk-repair") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
+      - name: Native rebase export
+        id: export
+        if: inputs.suite == 'provider-rebase-focused'
+        run: bash "$RUNNER_TEMP/validate-candidate.sh" export
       - name: Upload the verified commit artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -365,3 +425,39 @@ jobs:
             ${{ runner.temp }}/candidate.json
             ${{ runner.temp }}/candidate-sdk-api.json
             ${{ runner.temp }}/candidate-sdk-api.txt
+      - name: Preserve native rebase evidence on every outcome
+        if: always() && inputs.suite == 'provider-rebase-focused'
+        env:
+          REBASE_STEP_OUTCOMES: ${{ toJSON(steps) }}
+          REBASE_JOB_STATUS: ${{ job.status }}
+        run: |
+          set +e
+          set -u
+          evidence="$RUNNER_TEMP/pr159178-rebase"
+          mkdir -p "$evidence/always"
+          printf '%s\n' "$REBASE_STEP_OUTCOMES" > "$evidence/step-outcomes.json"
+          jq -n --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg controller "$GITHUB_SHA" --arg status "$REBASE_JOB_STATUS" '{runId:$run,attempt:$attempt,controller:$controller,status:$status}' > "$evidence/run.json"
+          git rev-parse HEAD > "$evidence/always/HEAD.txt" 2>&1
+          git status --porcelain=v1 --untracked-files=no > "$evidence/always/tracked-status.txt" 2>&1
+          git diff --binary HEAD > "$evidence/always/tracked-diff.patch" 2>&1
+          git ls-files --stage > "$evidence/always/index-entries.txt" 2>&1
+          if git cat-file -e "$EXPECTED_TREE^{tree}" 2>/dev/null; then
+            git diff --binary "$EXPECTED_TREE" > "$evidence/always/expected-tree-diff.patch" 2>&1
+          fi
+          git ls-files --unmerged > "$evidence/always/unmerged-stages.txt" 2>&1
+          for state in REBASE_HEAD ORIG_HEAD MERGE_HEAD CHERRY_PICK_HEAD AUTO_MERGE rebase-merge rebase-apply sequencer; do
+            source="$(git rev-parse --git-path "$state")"
+            if [[ -e "$source" ]]; then cp -R -- "$source" "$evidence/always/$state"; fi
+          done
+          if [[ -f "$RUNNER_TEMP/rebase-payload.json" ]]; then
+            jq -r '.sourceChecks[] | "\(.sha256)  \(.path)"' "$RUNNER_TEMP/rebase-payload.json" > "$evidence/always/source-checks.sha256"
+            sha256sum --check "$evidence/always/source-checks.sha256" > "$evidence/always/source-checks.result.txt" 2>&1
+            printf '%s\n' "$?" > "$evidence/always/source-checks.exit.txt"
+          fi
+      - name: Upload native rebase evidence on every outcome
+        if: always() && inputs.suite == 'provider-rebase-focused'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr159178-rebase-evidence
+          if-no-files-found: error
+          path: ${{ runner.temp }}/pr159178-rebase
