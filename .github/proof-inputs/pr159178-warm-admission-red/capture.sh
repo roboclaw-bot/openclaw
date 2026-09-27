@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Hosted-only retirement-custody test capture. This recipe never converts a failing test to success.
+# Hosted-only capture-custody test capture. This recipe never converts a failing test to success.
 set -euo pipefail
-mode=retirement-custody
-evidence="$RUNNER_TEMP/pr159178-warm-retirement-custody-red"
+mode=capture-custody
+evidence="$RUNNER_TEMP/pr159178-warm-capture-custody-red"
 test_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
 support_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
 fixture_file=extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
 base=bb394585807555813b24f43eb3ceea018134df10
-tree=3d8fb85a1c1277767a2b9e93fdf4565226eaa085
+tree=bafe6f4a8d5da82e89c6c030ce8c6031cf511f87
 assert_source() {
   test "$(git rev-parse HEAD)" = "$base" &&
     test "$(git write-tree)" = "$tree" &&
     git diff --quiet &&
-    test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 642aa11e3ad313667d798a110328f6b8b5fcd3d928111049fa62d8e8d5da6153 &&
-    test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = bef9a018fce8be6f958d1bae221f197bf9b84d6c0f771ac5a42a34d335a95ff1 &&
+    test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 946d2ea7debe010d8c6566bc0456f622e8569643a81a92cf77f236132b4bdc99 &&
+    test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = a1a0793e383f3e71ba245d11dd0e251ca3637f3f1ea30a808e2126353d706f7d &&
     test "$(sha256sum "$fixture_file" | cut -d ' ' -f1)" = c6f92d601b575a336b610e8734fed0c450625ed64f77f44c168169ffa69c3996
 }
 assert_source
 { node --version; pnpm --version; bun --version; git --version; } > "$evidence/$mode.toolchain.txt"
 # No user, provider, publishing, or hydrated credentials are supplied to this job.
 test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}"
-command=(pnpm test "$test_file" --maxWorkers=1 --reporter=verbose -t 'settles confirmed single-catalog deletion')
+command=(pnpm test "$test_file" --maxWorkers=1 --reporter=verbose -t 'capture (dispatch|claim delivery) custody')
 printf '%q ' "${command[@]}" > "$evidence/$mode.command.txt"
 printf '\n' >> "$evidence/$mode.command.txt"
 started="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
@@ -39,7 +39,7 @@ jq -n --arg mode "$mode" --arg started "$started" --arg ended "$ended" \
   --argjson sourceStatus "$source_status" \
   '{mode:$mode,startedAt:$started,endedAt:$ended,baseSha:$base,tree:$tree,
     nativeExitStatus:$nativeStatus,teeExitStatus:$logStatus,sourceCheckExitStatus:$sourceStatus,
-    classification:"UNCLASSIFIED retirement-custody: inspect both named failure boundaries and retained durable debt; a nonzero exit alone is not RED"}' \
+    classification:"UNCLASSIFIED capture-custody: inspect all five named scenarios, actual admission/runner boundaries, original error identity, durable claims and both controls; a nonzero exit alone is not RED"}' \
   > "$evidence/$mode.result.json"
 cat "$evidence/$mode.result.json"
 cat "$evidence/$mode.time.txt"
