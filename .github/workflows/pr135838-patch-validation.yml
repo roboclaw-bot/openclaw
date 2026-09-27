@@ -142,11 +142,12 @@ jobs:
           case "$SUITE" in
             provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types)
               echo 'same_commit=true' >> "$GITHUB_OUTPUT"
+              echo 'SAME_COMMIT_SOURCE_SHA256=8fdefcaa0f55eb00930d0c4316df1bd74cfea8ade1bea8f865dc18f35b6974dc' >> "$GITHUB_ENV"
               mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
               test "$BASE_SHA" = 0edae198d278686e16426f7ad254d0341bd6e3d3
-              test "$EXPECTED_TREE" = ab1b49cd3e7f05a5253f5b12828c236384b9a671
+              test "$EXPECTED_TREE" = b1c1331382cae5f993b46cc0e1495e9ba60d690d
               test "$PATCH_ID" = provider-same-commit
-              test "$PATCH_SHA256" = 'a27406ea27fa53d745f8c3782425ef6ffea839383f7a6b0372b2dd55f78f8491'
+              test "$PATCH_SHA256" = '011c2882a415726a045a059515417b5601179a8a50fa73b3147737a604b036df'
               test "$GITHUB_EVENT_NAME" = workflow_dispatch
               test "$GITHUB_REF" = refs/heads/main
               test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -239,7 +240,8 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'b24c8317e10691ed02e478ab2cc6e79bd36fa376'
+            test "$(git show -s --format=%P HEAD)" = '49586e7f99f93ff4ee26d3fd2d6992fb3bb2029a'
+            test "$(git rev-parse HEAD^1^{tree})" = '182c3dd55503f4c69df7977a7e14401c4a725ed3'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             cat > "$evidence/expected-controller-paths.txt" <<'PATHS'
           M	.github/proof-inputs/pr135838/provider-resume-api.sh
@@ -247,8 +249,8 @@ jobs:
           M	.github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh
           M	.github/proof-inputs/pr135838/provider-resume-test-types-a.sh
           M	.github/proof-inputs/pr135838/provider-resume-test-types-b.sh
-          A	.github/proof-inputs/pr135838/provider-same-commit-source.sh
-          A	.github/proof-inputs/pr135838/provider-same-commit.payload.json
+          M	.github/proof-inputs/pr135838/provider-same-commit-source.sh
+          M	.github/proof-inputs/pr135838/provider-same-commit.payload.json
           M	.github/workflows/pr135838-patch-validation.yml
           PATHS
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
@@ -261,11 +263,11 @@ jobs:
             test "$(sha256sum "$RUNNER_TEMP/same-commit-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
-              provider-resume-build) recipe_sha='ee007225b07d4f9c81e4be5d03d560336caa5094f2e5e40abf77b5fdf5059c06' ;;
-              provider-resume-api) recipe_sha='f92634629916061733e8feb11dd1e9f00cb59d7314dcaea00f2a4032cee1ac57' ;;
-              provider-resume-test-types-a) recipe_sha='c1d1214f443637641671e6aaae5078c61191a75b789dc7db648a23d00495b76d' ;;
-              provider-resume-test-types-b) recipe_sha='fb7890a67ed3ecac88d79d3e233a2660210fe31f479808205f0f4bddbbc2ff6f' ;;
-              provider-resume-plugin-test-types) recipe_sha='3549f0d5dcc9097f9d334cfb1453c298e685e94a468ab7db131cc68ba84104b7' ;;
+              provider-resume-build) recipe_sha='f8217fcb99ac0fa8ae646baa6fda092269da0e43acbac8fce8e6915f73b7af96' ;;
+              provider-resume-api) recipe_sha='ed6ef4306ec538b1e6c57a2d568dad4c8c61b251c39d92ad9c23e982b2ad7e78' ;;
+              provider-resume-test-types-a) recipe_sha='c0be0af97fd19d29968113012d08add40aceb46a210d566c51ed95a29e734f00' ;;
+              provider-resume-test-types-b) recipe_sha='aa425411ee7bace607667eaba009aa6f72167ece864f2e9eb8819f08dc84b411' ;;
+              provider-resume-plugin-test-types) recipe_sha='caf5d01bf8f4e5fed43afb265ea67a8e40fe755c6596040e10298f5685f1cb68' ;;
             esac
             test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = "$recipe_sha"
             cp "$RUNNER_TEMP/same-commit-payload.json" "$RUNNER_TEMP/same-commit-source.sh" "$RUNNER_TEMP/validate-candidate.sh" "$evidence/"

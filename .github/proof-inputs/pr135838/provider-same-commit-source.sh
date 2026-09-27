@@ -3,9 +3,9 @@
 # C is imported once per isolated job from the producer's identical bundle bytes.
 set -euo pipefail
 base=0edae198d278686e16426f7ad254d0341bd6e3d3
-replayed_head=7365e3003e1c6ab9e372fc5b1fe673f82c18389e
-tree=ab1b49cd3e7f05a5253f5b12828c236384b9a671
-candidate='fd0b54a58f93b68a49eb07695705cd770ebb91b1'
+replayed_head=fd0b54a58f93b68a49eb07695705cd770ebb91b1
+tree='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
+candidate='a95aa9917bedf89d80d41f089b508a3a1658c4ae'
 payload="$RUNNER_TEMP/same-commit-payload.json"
 evidence="$RUNNER_TEMP/pr159178-same-commit"
 phase="${1:-source}"
@@ -45,7 +45,7 @@ case "$SUITE" in provider-resume-build|provider-resume-api|provider-resume-test-
 test "$BASE_SHA" = "$base"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-same-commit
-test "$PATCH_SHA256" = 'a27406ea27fa53d745f8c3782425ef6ffea839383f7a6b0372b2dd55f78f8491'
+test "$PATCH_SHA256" = '011c2882a415726a045a059515417b5601179a8a50fa73b3147737a604b036df'
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -136,7 +136,7 @@ from pathlib import Path
 import base64,hashlib,json,sys
 m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);r=e/'retained';r.mkdir(exist_ok=False)
 assert m['schema']==1 and m['status']=='PARENT_REVIEWED_SAME_COMMIT'
-assert m['commit']=='fd0b54a58f93b68a49eb07695705cd770ebb91b1' and m['tree']=='ab1b49cd3e7f05a5253f5b12828c236384b9a671'
+assert m['commit']=='a95aa9917bedf89d80d41f089b508a3a1658c4ae' and m['tree']=='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
 for x in m['retained']:
     assert set(x)=={'path','mode','bytes','sha256','base64'} and x['mode']=='100644'
     assert Path(x['path']).name==x['path'] and x['path'] not in ('','.','..')
@@ -157,9 +157,9 @@ REQUIRED=[
  'controller-workflow.yml','controller-recipe.sh','rebase-payload.json','controller-identity.txt',
  'run.json','step-outcomes.json','actual-replay-chain.json',
 ]
-MESSAGE=b'''fix(workers): retain warm-image custody through caller closure
+MESSAGE=b'''fix(workers): repair warm-image lint and private test boundaries
 
-Preserve physical settlement and cleanup after invocation closure on the rebased provider series.
+Preserve native worker admission coverage through the existing private SQLite test facade; make capture skip returns explicit without changing behavior.
 
 Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
 Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
@@ -218,7 +218,7 @@ def verify_retained(m,files):
     assert len(starts)==1
     start=starts[0]
     assert any(x.get('event')=='child_exit' and x.get('sid')==start['sid'] and x.get('child_id')==start['child_id'] and x.get('code')==0 for x in trace)
-    replay=j('actual-replay-chain.json');assert len(replay)==5
+    replay=j('actual-replay-chain.json');assert len(replay)==6
     for actual,s in zip(replay,m['history'],strict=True):
         assert actual['actual']==s['commit'] and actual['original']==s['original'] and actual['tree']==s['expectedRebasedTree']
         assert actual['authorAndMessagePreserved'] is True
@@ -240,7 +240,7 @@ import base64,hashlib,json,subprocess,sys
 m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2])
 def git(*a):return subprocess.check_output(['git',*a])
 actual=git('rev-list','--reverse',m['base']+'..'+m['commit']).decode().splitlines()
-assert actual==[s['commit'] for s in m['history']]+[m['commit']] and len(actual)==6
+assert actual==[s['commit'] for s in m['history']]+[m['commit']] and len(actual)==7
 assert not git('rev-list','--merges',m['base']+'..'+m['commit'])
 parent=m['base'];rows=[]
 for i,sha in enumerate(actual):
@@ -249,7 +249,7 @@ for i,sha in enumerate(actual):
     headers,msg=raw.split(bytes([10,10]),1);lines=headers.splitlines()
     assert [x[7:].decode() for x in lines if x.startswith(b'parent ')]==[parent]
     tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '))
-    if i<5:
+    if i<6:
         s=m['history'][i]
         assert raw==base64.b64decode(s['rawBase64'],validate=True)
         assert tree==s['expectedRebasedTree']
@@ -263,7 +263,7 @@ for i,sha in enumerate(actual):
             assert identity[0]==b'roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>'
     rows.append(dict(commit=sha,parent=parent,tree=tree));parent=sha
 assert rows[1]['tree']==rows[2]['tree']
-(e/'six-commit-chain.json').write_text(json.dumps(rows,indent=2)+chr(10))
+(e/'seven-commit-chain.json').write_text(json.dumps(rows,indent=2)+chr(10))
 # Attribute activation is checked at B and every admitted actual object before
 # checkout. Configured filter names alone are not activation or an LFS ban.
 def fields(data):
@@ -299,7 +299,7 @@ for ref in refs:
     for p,a,v in zip(triples[::3],triples[1::3],triples[2::3],strict=True):
         assert p in paths and a and (p,a) not in seen and a not in (b'filter',b'merge');seen.add((p,a))
 paths=git('diff','--name-only','-z',m['base'],m['commit']).split(bytes([0]))
-assert paths[-1]==b'' and [p.decode() for p in paths[:-1]]==m['changedPaths'] and len(paths)==51
+assert paths[-1]==b'' and [p.decode() for p in paths[:-1]]==m['changedPaths'] and len(paths)==len(m['changedPaths'])+1
 (e/'full-pr-changed-paths.nul').write_bytes(bytes([0]).join(paths))
 PY
     run_logged checkout-committed-candidate git checkout --detach "$candidate"
