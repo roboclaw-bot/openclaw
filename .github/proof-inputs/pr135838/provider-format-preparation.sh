@@ -1,25 +1,31 @@
 #!/usr/bin/env bash
 # REVIEWED CI RECIPE: preparation only; never commit, rebase, adopt, or validate runtime.
 set -Eeuo pipefail
-export GIT_OPTIONAL_LOCKS=0
+export GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
 export FORMAT_EVIDENCE="$RUNNER_TEMP/pr159178-format-preparation"
 mkdir -p "$FORMAT_EVIDENCE"
 mode="${1:-prepare}"
 case "$mode:$#" in before-setup:1|prepare:0|prepare:1) ;; *) exit 2 ;; esac
 files=(
+  extensions/crabbox/src/crabbox-worker-warm-image-admission.test-support.ts
   extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
   extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
   extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
   extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
-  extensions/crabbox/src/crabbox-worker-warm-image.ts
+  extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
+  src/plugin-sdk/sqlite-runtime-testing.ts
+  test/helpers/sqlite-worker-admission.ts
 )
 printf '%s\n' "${files[@]}" > "$FORMAT_EVIDENCE/allowed-paths.txt"
-cat > "$FORMAT_EVIDENCE/before-five.sha256" <<'HASHES'
-c85ebafc5ebb241b70072ccafab5c894933282a6a785bb70bcc7778f9930e385  extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
-af6c7783dadcf9c8f402fef1138c808700c63ba1ca30318aa0ddbaa0343aa523  extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
-4e0d94d4a9df8bf50e1d8b86885bc48731beddbfbf76c9a979a14135e9295f57  extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
-6b36b46b2fe82189336912ba7a859d05ac73704f145638de8caa6655e22ea2ce  extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
-ac7784a6221044752095607adbe062a6bd42dc8e33b74c364a9976fcba849a2a  extensions/crabbox/src/crabbox-worker-warm-image.ts
+cat > "$FORMAT_EVIDENCE/before-eight.sha256" <<'HASHES'
+0a35c10e67ffd6caa77bcd86707ef7639d0a503c9a4895029fc414d56b3bb94c  extensions/crabbox/src/crabbox-worker-warm-image-admission.test-support.ts
+38fcc1e2c7584ff30b61cd0e43dbce7648724db7bff7abc6b5774cda803b103f  extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
+d8b950dbf93c5447dd4a2964c5baae92c3200cd88ba600f24807fc43ac36e102  extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
+4cd401b936bb5cdb81f099eb978c5d9c631f811c8722a2bbe72d153c1ce06484  extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
+33da919d109d279fdac327f18005e64f80b858d2fe4807ebab6c756d677be089  extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
+cd9ed6dc1459d4cb7b44c26c04b3a09993bc6a285f2b86313a0b732b39010047  extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
+9bdc44ada90697a0c4abadae6e4bbebe32f1b42c2cbcc6efa3d33920b017149d  src/plugin-sdk/sqlite-runtime-testing.ts
+2288e34c223bf0621cb969dd16498340abbb5a2e2ba5874590ef3a4246e627bc  test/helpers/sqlite-worker-admission.ts
 HASHES
 
 # Hash every tracked source byte and executable/symlink mode, not mtimes or
@@ -82,7 +88,7 @@ require_input_tree() {
   test -z "$(git ls-files --unmerged)"
   git diff --quiet
   git diff --cached --check
-  sha256sum --check "$FORMAT_EVIDENCE/before-five.sha256"
+  sha256sum --check "$FORMAT_EVIDENCE/before-eight.sha256"
 }
 
 run_record() {
@@ -123,7 +129,7 @@ finish() {
     fi
   done
   if (( rc == 0 )); then
-    (cd "$FORMAT_EVIDENCE/after-files" && sha256sum --check ../after-five.sha256) || rc=1
+    (cd "$FORMAT_EVIDENCE/after-files" && sha256sum --check ../after-eight.sha256) || rc=1
   fi
   git diff --binary --full-index "$EXPECTED_TREE" > "$FORMAT_EVIDENCE/actual-worktree.patch" || rc=1
   git diff --binary --full-index --cached "$EXPECTED_TREE" > "$FORMAT_EVIDENCE/actual-index.patch" || rc=1
@@ -149,16 +155,18 @@ receipt = {
     'base': os.environ['BASE_SHA'], 'beforeTree': os.environ['EXPECTED_TREE'],
     'head': final['head'] if final else None, 'headIsOnlyMaterializationBase': True,
     'formattedIndexTree': final['indexTree'] if final else None,
+    'noOp': final['indexTree'] == os.environ['EXPECTED_TREE'] if sys.argv[1] == '0' and final else None,
+    'actualChangedPaths': load('actual-changed-paths.json'),
     'format': load('format.exit.json'), 'formatCheck': load('format-check.exit.json'),
     'inputPatchSha256': os.environ['PATCH_SHA256'],
     'formattingPatchSha256': digest('formatting.patch'),
-    'beforeFiveManifestSha256': digest('before-five.sha256'),
-    'afterFiveManifestSha256': digest('after-five.sha256'),
+    'beforeEightManifestSha256': digest('before-eight.sha256'),
+    'afterEightManifestSha256': digest('after-eight.sha256'),
     'sourceBeforeSetupSha256': digest('before-setup/source.json'),
     'sourceBeforeFormatSha256': digest('before-format/source.json'),
     'sourceAfterFormatSha256': digest('after-format/source.json'),
     'sourceFinalSha256': digest('final/source.json'),
-    'next': 'Parent review/adoption only; then resume actual 7365e3003e1c6ab9e372fc5b1fe673f82c18389e history and ordinary sixth commit/validation separately.',
+    'next': 'Parent review/adoption only, including a valid empty delta; normal hooks and actual-candidate validation remain separate. No automatic adoption or publication-policy decision.',
 }
 (root / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 PY
@@ -170,9 +178,9 @@ if [[ "$mode" == prepare ]]; then trap finish EXIT; fi
 
 test "$SUITE" = provider-format-preparation
 test "$PATCH_ID" = provider-format-preparation
-test "$BASE_SHA" = 0edae198d278686e16426f7ad254d0341bd6e3d3
-test "$EXPECTED_TREE" = 2596c1fa0781b0d2d28b23186da2a429151d1fc7
-test "$PATCH_SHA256" = 6879b9a11abfc16f09db4c334a8fc061ecf782d6e426daa40904ccdd91c21659
+test "$BASE_SHA" = fd0b54a58f93b68a49eb07695705cd770ebb91b1
+test "$EXPECTED_TREE" = b1c1331382cae5f993b46cc0e1495e9ba60d690d
+test "$PATCH_SHA256" = ab6489032d4c91fa7a897ba4a159779b39bb9cf1b4170b7976ab19265ea07dab
 test "$GITHUB_EVENT_NAME" = workflow_dispatch
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
 test "$GITHUB_REF" = refs/heads/main
@@ -201,10 +209,10 @@ assert p['scripts']['format:check'] == 'oxfmt --check'
 assert p['devDependencies']['oxfmt'] == '0.68.0'
 assert p['packageManager'] == 'pnpm@12.5.0+sha512.9cdbaa34ffacae1768635ac0d23e94db6201c7d59bf3da236b23d67c8f6b794d1dab323bcd5bcc51b55c8cafbf6f19a24e4aa61d6ab7772aa3b5cc85e325dc4d'
 PY
-git diff --name-only --no-renames -z "$BASE_SHA" "$EXPECTED_TREE" > "$FORMAT_EVIDENCE/check-paths.z"
-test "$(sha256sum "$FORMAT_EVIDENCE/check-paths.z" | cut -d ' ' -f1)" = b68cc4d5a9384d4c20c5b309925cca55fd28be14941582521fd09f520b90f67d
+git diff --name-only --no-renames -z 0edae198d278686e16426f7ad254d0341bd6e3d3 "$EXPECTED_TREE" > "$FORMAT_EVIDENCE/check-paths.z"
+test "$(sha256sum "$FORMAT_EVIDENCE/check-paths.z" | cut -d ' ' -f1)" = 25e952f5418ada9bcbea0cff045fc698eee7ba087647e5003f662fbe8f30885e
 mapfile -d '' -t check_paths < "$FORMAT_EVIDENCE/check-paths.z"
-test "${#check_paths[@]}" = 50
+test "${#check_paths[@]}" = 53
 for path in "${check_paths[@]}"; do test -s "$path"; done
 run_record format pnpm format "${files[@]}"
 snapshot after-format
@@ -222,7 +230,7 @@ assert old.keys() == new.keys()
 changed = sorted(path for path in old if old[path] != new[path])
 allowed = set((root / 'allowed-paths.txt').read_text().splitlines())
 (root / 'actual-changed-paths.json').write_text(json.dumps(changed, indent=2) + '\n')
-assert changed and set(changed) <= allowed, 'Empty or unexpected formatter source delta'
+assert set(changed) <= allowed, 'Unexpected formatter source delta'
 for path in allowed:
     assert old[path]['mode'] == new[path]['mode'] == '100644'
     assert old[path]['bytes'] > 0 and new[path]['bytes'] > 0
@@ -230,16 +238,15 @@ PY
 run_record format-check pnpm format:check "${check_paths[@]}"
 snapshot after-check
 cmp "$FORMAT_EVIDENCE/after-format/source.json" "$FORMAT_EVIDENCE/after-check/source.json"
-# Stage only the five reviewed paths in this disposable CI checkout. No commit.
+# Stage only the eight reviewed paths in this disposable CI checkout. No commit.
+# A no-op is valid: retain the equal tree, empty patch and exact file hashes.
 git add -- "${files[@]}"
 final_tree="$(git write-tree)"
-test "$final_tree" != "$EXPECTED_TREE"
 printf '%s\n' "$final_tree" > "$FORMAT_EVIDENCE/formatted-index-tree.txt"
 git diff --quiet
 test "$(git rev-parse HEAD)" = "$BASE_SHA"
 test -z "$(git ls-files --unmerged)"
 git diff --binary --full-index "$EXPECTED_TREE" "$final_tree" > "$FORMAT_EVIDENCE/formatting.patch"
-test -s "$FORMAT_EVIDENCE/formatting.patch"
 git diff --name-only --no-renames -z "$EXPECTED_TREE" "$final_tree" > "$FORMAT_EVIDENCE/proposal-paths.z"
 python3 - <<'PY'
 import json, os
@@ -247,7 +254,10 @@ from pathlib import Path
 root = Path(os.environ['FORMAT_EVIDENCE'])
 paths = (root / 'proposal-paths.z').read_bytes().decode().split(chr(0))[:-1]
 assert paths == json.loads((root / 'actual-changed-paths.json').read_text())
+final_tree = (root / 'formatted-index-tree.txt').read_text().strip()
+assert (final_tree == os.environ['EXPECTED_TREE']) == (not paths)
+assert bool((root / 'formatting.patch').read_bytes()) == bool(paths)
 PY
 git diff --check "$EXPECTED_TREE" "$final_tree"
-sha256sum "${files[@]}" > "$FORMAT_EVIDENCE/after-five.sha256"
+sha256sum "${files[@]}" > "$FORMAT_EVIDENCE/after-eight.sha256"
 # EXIT collects complete after-files and a proposal-only receipt; it must succeed too.

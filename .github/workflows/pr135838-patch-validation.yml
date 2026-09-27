@@ -123,8 +123,8 @@ jobs:
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
       REBASE_RECIPE_SHA256: '17632863711f598a78ac35bf921965976d1700d5adf17b5430729379aef6d9c9'
-      FORMAT_RECIPE_SHA256: ea0f274d21253746b50c8c18fb32eae5eb514926ab7c96987feaaaae608bc698
-      FORMAT_PATCH_DATA_SHA256: bb1077638b3694c427ff7f9efdef3102174c9fa455250edc9c1a6f5891d23301
+      FORMAT_RECIPE_SHA256: 219f4b7fcf81cdbacd7d4e592555c54d86c194a65c925678b8b7c1e6b88e3634
+      FORMAT_PATCH_DATA_SHA256: cfdbab83be0c4ff107c96aad7ed193bee8ad08b9aad4183502627cfe614c4a71
       SAME_COMMIT_SOURCE_SHA256: '17e6e7a52e2a7c8072af6ec6e439438acb3d76ca056b54c8ac390cccd3a6db77'
       REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
@@ -172,10 +172,10 @@ jobs:
           fi
           if [[ "$SUITE" == provider-format-preparation ]]; then
             mkdir -p "$RUNNER_TEMP/pr159178-format-preparation"
-            test "$BASE_SHA" = 0edae198d278686e16426f7ad254d0341bd6e3d3
-            test "$EXPECTED_TREE" = 2596c1fa0781b0d2d28b23186da2a429151d1fc7
+            test "$BASE_SHA" = fd0b54a58f93b68a49eb07695705cd770ebb91b1
+            test "$EXPECTED_TREE" = b1c1331382cae5f993b46cc0e1495e9ba60d690d
             test "$PATCH_ID" = provider-format-preparation
-            test "$PATCH_SHA256" = 6879b9a11abfc16f09db4c334a8fc061ecf782d6e426daa40904ccdd91c21659
+            test "$PATCH_SHA256" = ab6489032d4c91fa7a897ba4a159779b39bb9cf1b4170b7976ab19265ea07dab
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -295,9 +295,10 @@ jobs:
             if [[ "$SUITE" == provider-format-preparation ]]; then
               evidence="$RUNNER_TEMP/pr159178-format-preparation"
               test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-              test "$(git show -s --format=%P HEAD)" = 7abdc079306c4595170616f274c44c149982ce95
+              test "$(git show -s --format=%P HEAD)" = 32d78d0b9db8d689b963a921fb3c3cf14f745785
+              test "$(git rev-parse HEAD^1^{tree})" = 36fed26af68d786307a7f8fad0bd08d85f476925
               git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-              printf 'A\t%s\n' .github/proof-inputs/pr135838/provider-format-preparation.patch.b64 .github/proof-inputs/pr135838/provider-format-preparation.sh > "$evidence/expected-controller-paths.txt"
+              printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-format-preparation.patch.b64 .github/proof-inputs/pr135838/provider-format-preparation.sh > "$evidence/expected-controller-paths.txt"
               printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml >> "$evidence/expected-controller-paths.txt"
               cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
               for path in .github/proof-inputs/pr135838/provider-format-preparation.patch.b64 .github/proof-inputs/pr135838/provider-format-preparation.sh .github/workflows/pr135838-patch-validation.yml; do
