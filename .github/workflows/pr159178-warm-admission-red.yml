@@ -1,5 +1,5 @@
-name: PR 159178 warm-state RED capture
-run-name: pr159178 warm-state RED capture ${{ inputs.controller_sha }}
+name: PR 159178 warm-state sibling-fixture22 RED capture
+run-name: pr159178 warm-state sibling-fixture22 RED capture ${{ inputs.controller_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -25,8 +25,9 @@ jobs:
       WORKFLOW_SHA: ${{ github.workflow_sha }}
       BASE_SHA: bb394585807555813b24f43eb3ceea018134df10
       COMPOSED_TREE: 0b278af65b8bc9c80e52fa81feda2aa4628a5abf
-      RED_TREE: 04c66892960db7a41be3aaa495e41feccba9490c
-      CAPTURE_SHA256: 37a732cda12703378269009ec734d941e61451ade61b6ba1c9ea73b2f9333748
+      ORIGINAL_RED_TREE: 04c66892960db7a41be3aaa495e41feccba9490c
+      RED_TREE: 772e21f56df84f1eb8e9528c848300a8b2cbc030
+      CAPTURE_SHA256: f903969e14e3ef8e02deaf4280c8bc98312c08f3b6f3a50f843b3b88f90fd8bc
     steps:
       - name: Record run identity and guard execution
         id: guard
@@ -34,15 +35,15 @@ jobs:
           HOST_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
           mkdir -p "$evidence"
           jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
             --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg base "$BASE_SHA" \
-            --arg composed "$COMPOSED_TREE" --arg red "$RED_TREE" \
+            --arg originalRed "$ORIGINAL_RED_TREE" --arg composed "$COMPOSED_TREE" --arg red "$RED_TREE" \
             '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
-              workflowSha:$workflow,baseSha:$base,composedTree:$composed,redTree:$red,
-              classification:"UNCLASSIFIED; test-only capture, not production validation"}' \
+              workflowSha:$workflow,baseSha:$base,composedTree:$composed,originalRedTree:$originalRed,redTree:$red,
+              classification:"UNCLASSIFIED sibling-fixture22; test-only capture, not production validation"}' \
             > "$evidence/identity.json"
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$CONTROLLER_SHA" = "$GITHUB_SHA"
@@ -63,16 +64,14 @@ jobs:
         id: preserve
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
           test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
-          test "$(git rev-parse HEAD^)" = 83573279b6fe6d5460eca71c34e8ee3889dc0cc4
+          test "$(git rev-parse HEAD^)" = 3493e9dd9685361029b90f259435c183cd45c328
           git diff --quiet HEAD
           git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
-          printf 'A\t%s\n' \
+          printf 'M\t%s\nA\t%s\nM\t%s\n' \
             .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
-            .github/proof-inputs/pr159178-warm-admission-red/composed-main.patch.b64 \
-            .github/proof-inputs/pr159178-warm-admission-red/native-routing.patch.b64 \
-            .github/proof-inputs/pr159178-warm-admission-red/warm-admission-red.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/sibling-tests.patch.b64 \
             .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
           cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
           input=.github/proof-inputs/pr159178-warm-admission-red
@@ -81,11 +80,13 @@ jobs:
           base64 --decode "$input/composed-main.patch.b64" > "$evidence/composed-main.patch"
           base64 --decode "$input/warm-admission-red.patch.b64" > "$evidence/warm-admission-red.patch"
           base64 --decode "$input/native-routing.patch.b64" > "$evidence/native-routing.patch"
+          base64 --decode "$input/sibling-tests.patch.b64" > "$evidence/sibling-tests.patch"
           cd "$evidence"
           printf '%s  %s\n' \
             765f3b6116214240bac770e2ee33600f084ddbd9989530b4e18491e8f02e0ef5 composed-main.patch \
             e8f583d31349bf535549185a22f2d51c906a25d91483ce080426f10bc0789cf6 warm-admission-red.patch \
             02af5dbd7076628edc2acc57eba1fb8aefe69d24eeec26d9c1cd496879809912 native-routing.patch \
+            fefd19439ef39e0793588393727ec62723727cd7636d919adabe753844bc07b1 sibling-tests.patch \
             "$CAPTURE_SHA256" capture.sh > inputs.sha256
           sha256sum --check inputs.sha256
       - name: Check out frozen main without persistent credentials
@@ -95,11 +96,11 @@ jobs:
           ref: bb394585807555813b24f43eb3ceea018134df10
           fetch-depth: 1
           persist-credentials: false
-      - name: Materialize composed candidate plus RED test and canonical routing
+      - name: Materialize original RED then fixture-inclusive test-only inputs
         id: materialize
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           git diff --quiet HEAD
           git apply --index --check "$evidence/composed-main.patch"
@@ -109,7 +110,7 @@ jobs:
           git apply --index "$evidence/warm-admission-red.patch"
           git apply --index --check "$evidence/native-routing.patch"
           git apply --index "$evidence/native-routing.patch"
-          test "$(git write-tree)" = "$RED_TREE"
+          test "$(git write-tree)" = "$ORIGINAL_RED_TREE"
           git diff --quiet
           git diff --cached --check
           test_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
@@ -117,9 +118,24 @@ jobs:
           test "$(git diff --cached --name-status "$COMPOSED_TREE")" = "$(printf 'A\t%s\nM\t%s' "$test_file" "$routing_file")"
           test "$(git hash-object "$routing_file")" = 921dfb1364ab72151d5193bf7d93e189a7a70fdf
           test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = c85ebafc5ebb241b70072ccafab5c894933282a6a785bb70bcc7778f9930e385
-          git diff --cached --numstat "$COMPOSED_TREE" > "$evidence/red-delta.numstat"
+          git apply --index --check "$evidence/sibling-tests.patch"
+          git apply --index "$evidence/sibling-tests.patch"
+          test "$(git write-tree)" = "$RED_TREE"
+          git diff --quiet
+          git diff --cached --check
+          test_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
+          support_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
+          fixture_file=extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
+          test "$(git diff --cached --name-status "$ORIGINAL_RED_TREE")" = "$(printf 'A\t%s\nA\t%s\nM\t%s\nM\t%s' "$support_file" "$test_file" "$fixture_file" "$routing_file")"
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = edafc537f967058f7a1fcbe889dfde0c412fd9d7da8580935466c299ffa644d1
+          test "$(sha256sum "$support_file" | cut -d ' ' -f1)" = bef9a018fce8be6f958d1bae221f197bf9b84d6c0f771ac5a42a34d335a95ff1
+          test "$(sha256sum "$fixture_file" | cut -d ' ' -f1)" = c6f92d601b575a336b610e8734fed0c450625ed64f77f44c168169ffa69c3996
+          test "$(git hash-object "$routing_file")" = 3a94eb3b717df33b745226ddc07f809345e2739e
+          git diff --cached --numstat "$ORIGINAL_RED_TREE" > "$evidence/sibling-red-delta.numstat"
           printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
-          cp "$test_file" "$evidence/crabbox-worker-warm-image-authority.test.ts"
+          cp "$test_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test.ts"
+          cp "$support_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test-support.ts"
+          cp "$fixture_file" "$evidence/crabbox-worker-warm-image-store.test.ts"
           cp "$routing_file" "$evidence/vitest.extension-database-workers-paths.mjs"
       - name: Install declared dependencies with canonical setup action
         id: setup
@@ -132,19 +148,19 @@ jobs:
           cache-mode: "off"
       # No commit: a failing reproduction must run before production repair/hooks.
       # This does not waive or suppress later production candidate commit hooks.
-      - name: Capture exact commit-revocation case with native status
+      - name: Capture exact post-fork sibling case with native status
         id: focused
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-warm-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" focused
-      - name: Capture all 17 cases sequentially even after focused failure
+      - name: Capture all 22 companion and fixture cases sequentially even after focused failure
         id: full
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' }}
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-warm-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" full
       - name: Record native workflow step outcomes
@@ -153,14 +169,14 @@ jobs:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
           mkdir -p "$evidence"
           printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
-          printf '%s\n' 'Unclassified capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Always upload RED capture evidence, including failures
+          printf '%s\n' 'Unclassified sibling-fixture22 capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload sibling-fixture22 RED evidence, including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr159178-warm-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: pr159178-warm-sibling-fixture22-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: error
-          path: ${{ runner.temp }}/pr159178-warm-red/
+          path: ${{ runner.temp }}/pr159178-warm-sibling-fixture22-red/
