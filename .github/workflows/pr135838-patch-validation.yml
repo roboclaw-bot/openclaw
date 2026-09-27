@@ -122,7 +122,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: '17632863711f598a78ac35bf921965976d1700d5adf17b5430729379aef6d9c9'
+      REBASE_RECIPE_SHA256: '9286c51b4eb60c49cbc283a4b5171848f2a022edb3fcd8c264a0f8aeed7723ef'
       FORMAT_RECIPE_SHA256: 219f4b7fcf81cdbacd7d4e592555c54d86c194a65c925678b8b7c1e6b88e3634
       FORMAT_PATCH_DATA_SHA256: cfdbab83be0c4ff107c96aad7ed193bee8ad08b9aad4183502627cfe614c4a71
       SAME_COMMIT_SOURCE_SHA256: '17e6e7a52e2a7c8072af6ec6e439438acb3d76ca056b54c8ac390cccd3a6db77'
@@ -157,10 +157,10 @@ jobs:
           esac
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             mkdir -p "$RUNNER_TEMP/pr159178-rebase"
-            test "$BASE_SHA" = d247932b3075cf3a3975f64275e3eab9cd1d37d0
+            test "$BASE_SHA" = fd0b54a58f93b68a49eb07695705cd770ebb91b1
             test "$PATCH_ID" = provider-rebase-current
-            test "$EXPECTED_TREE" = 'ab1b49cd3e7f05a5253f5b12828c236384b9a671'
-            test "$PATCH_SHA256" = '5b43132a7decae69a1a3983a4cfd56fe02f52dfa165de252261d3afd6a0c33a7'
+            test "$EXPECTED_TREE" = 'b1c1331382cae5f993b46cc0e1495e9ba60d690d'
+            test "$PATCH_SHA256" = '22498b31782f4ef7155f3804bc931b6e68a0ae7801fe15552e5931a993d46fa9'
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -274,7 +274,8 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 27211ec8c166f78e969f2bc7cd647cc226ef682c
+            test "$(git show -s --format=%P HEAD)" = '75be3442acb80703b6bde5f77e076894ee567853'
+            test "$(git rev-parse HEAD^1^{tree})" = 'c7322e64fb6ef95e7d7fec8853a465e956861410'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
@@ -325,7 +326,7 @@ jobs:
         id: base_checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ${{ (inputs.suite == 'provider-format-preparation' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
+          repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
           ref: ${{ inputs.base_sha }}
           fetch-depth: 0
           filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
@@ -356,6 +357,9 @@ jobs:
         id: same_commit_source_before_setup
         if: steps.input_guard.outputs.same_commit == 'true'
         run: bash "$RUNNER_TEMP/same-commit-source.sh" before-setup
+      - name: Record repaired source before dependency setup
+        if: inputs.suite == 'provider-rebase-focused'
+        run: bash "$RUNNER_TEMP/validate-candidate.sh" before-setup
       - name: Install declared dependencies in the isolated normal checkout
         id: dependencies
         uses: ./.github/actions/setup-node-env
@@ -363,6 +367,9 @@ jobs:
           node-version: ${{ inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
           install-bun: ${{ inputs.suite == 'custody-resume-windows' && 'false' || 'true' }}
           cache-mode: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || steps.input_guard.outputs.same_commit == 'true') && 'off' || 'restore' }}
+      - name: Verify repaired source after dependency setup
+        if: inputs.suite == 'provider-rebase-focused'
+        run: bash "$RUNNER_TEMP/validate-candidate.sh" after-setup
       - name: Verify same committed source after dependency setup
         id: same_commit_source_after_setup
         if: steps.input_guard.outputs.same_commit == 'true'
@@ -500,7 +507,7 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
           git diff --quiet HEAD
           git log -1 --format="%H%n%T%n%B"
-      - name: Ordinary sixth commit after retained native history
+      - name: Ordinary seventh lint repair after public history
         id: commit
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" commit
@@ -524,7 +531,7 @@ jobs:
           fi
           jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api" or $suite == "provider-sdk-repair") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
-      - name: Export the same retained sixth commit after proof
+      - name: Export the same retained seventh commit after native proof
         id: export
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" export

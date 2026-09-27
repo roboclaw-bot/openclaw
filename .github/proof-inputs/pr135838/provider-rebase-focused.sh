@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Hosted continuation of the settled native five-commit history; never replay it.
+# Hosted continuation of public six-commit fd0; never replay or reproduce it.
 set -euo pipefail
 old=d247932b3075cf3a3975f64275e3eab9cd1d37d0
-common=c0e6951d6f02d3eabd4bc13cf8e9fa9e77d290ac
 base=0edae198d278686e16426f7ad254d0341bd6e3d3
-replayed_head=7365e3003e1c6ab9e372fc5b1fe673f82c18389e
-replayed_tree=ebce62a4c472c28acc06d629403d6570eb9bbb61
-tree='ab1b49cd3e7f05a5253f5b12828c236384b9a671'
+replayed_head=fd0b54a58f93b68a49eb07695705cd770ebb91b1
+replayed_tree=ab1b49cd3e7f05a5253f5b12828c236384b9a671
+tree='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -44,10 +43,10 @@ finish() {
 trap finish EXIT
 
 test "$SUITE" = provider-rebase-focused
-test "$BASE_SHA" = "$old"
+test "$BASE_SHA" = "$replayed_head"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = '5b43132a7decae69a1a3983a4cfd56fe02f52dfa165de252261d3afd6a0c33a7'
+test "$PATCH_SHA256" = '22498b31782f4ef7155f3804bc931b6e68a0ae7801fe15552e5931a993d46fa9'
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -81,6 +80,9 @@ run_logged() {
       exit 1
     fi
   fi
+  if [[ -f "$evidence/committed-head.txt" ]]; then
+    assert_commit || exit $?
+  fi
   if (( last_tee != 0 )); then exit "$last_tee"; fi
   return "$last_native"
 }
@@ -109,8 +111,8 @@ for item in json.loads(Path(sys.argv[1]).read_text())['sourceChecks']:
 PY
 }
 # Compare raw original author (including date/timezone) and message bytes.
-# Each actual commit must be one parent in the exact five-commit tree chain.
-assert_replay() {
+# Each public commit must be one parent in the exact six-commit tree chain.
+assert_public_history() {
   python3 - "$payload" "$1" <<'PY'
 from pathlib import Path
 import json,subprocess,base64,sys
@@ -118,10 +120,11 @@ m=json.loads(Path(sys.argv[1]).read_text()); head=sys.argv[2]
 assert head==m['replayedHead']
 def git(*a):return subprocess.check_output(['git',*a])
 actual=git('rev-list','--reverse',m['newMain']+'..'+head).decode().splitlines()
-assert len(actual)==len(m['steps'])==5, actual
+assert len(actual)==len(m['steps'])==6, actual
 parent=m['newMain']; result=[]
 for sha,s in zip(actual,m['steps'],strict=True):
-    raw=git('cat-file','commit',sha); headers,msg=raw.split(bytes([10,10]),1)
+    raw=git('cat-file','commit',sha); assert raw==base64.b64decode(s['rawBase64'],validate=True)
+    headers,msg=raw.split(bytes([10,10]),1)
     lines=headers.splitlines()
     parents=[x[7:].decode() for x in lines if x.startswith(b'parent ')]
     actual_tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '))
@@ -143,8 +146,8 @@ assert_commit() {
   test "$(git show -s --format=%P HEAD)" = "$(cat "$evidence/rebased-head.txt")"
   test "$(git show -s --format='%an <%ae>|%cn <%ce>' HEAD)" = 'roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>|roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>'
   git diff --quiet HEAD
-  assert_replay "$(cat "$evidence/rebased-head.txt")" > "$evidence/actual-replay-chain.json"
-  test "$(git rev-list --count "$base..HEAD")" = 6
+  assert_public_history "$(cat "$evidence/rebased-head.txt")" > "$evidence/actual-replay-chain.json"
+  test "$(git rev-list --count "$base..HEAD")" = 7
   test -z "$(git rev-list --merges "$base..HEAD")"
   git cat-file commit HEAD | python3 -c 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read().split(bytes([10,10]),1)[1])' > "$evidence/final-message.txt"
   cmp "$RUNNER_TEMP/commit-message.txt" "$evidence/final-message.txt"
@@ -154,7 +157,7 @@ case "$phase" in
   materialize)
     test "$(pwd -P)" = "$(realpath "$GITHUB_WORKSPACE")"
     test -d .git
-    test "$(git rev-parse HEAD)" = "$old"
+    test "$(git rev-parse HEAD)" = "$replayed_head"
     test -z "$(git status --porcelain --untracked-files=all)"
     assert_no_operation
     # Reject custom semantics, do not disable them to force a desired outcome.
@@ -184,62 +187,26 @@ import base64,hashlib,json,sys
 r=json.loads(Path(sys.argv[1]).read_text())['repair']
 assert set(r)=={'path','mode','sha256','bytes','base64'} and r['path']=='post-rebase-repair.patch' and r['mode']=='100644'
 data=base64.b64decode(r['base64'],validate=True)
-assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='2c3e083b6e639b0c5632b2550f5d1b383ffe45e1130094a51e53cf9ced99dad8'
+assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='ab6489032d4c91fa7a897ba4a159779b39bb9cf1b4170b7976ab19265ea07dab'
 Path(sys.argv[2]).write_bytes(data)
 PY
-    run_logged fetch-main git fetch --no-tags https://github.com/openclaw/openclaw.git "$base"
-    test "$(git rev-parse FETCH_HEAD)" = "$base"
-    test "$(git cat-file -t "$base")" = commit
-    test "$(git merge-base --all "$base" "$old")" = "$common"
-    python3 - "$payload" "$evidence" <<'PY'
-from pathlib import Path
-import base64,hashlib,json,sys
-m=json.loads(Path(sys.argv[1]).read_text()); e=Path(sys.argv[2])
-assert m['schema']==2 and m['mode']=='retained-native-history-continuation'
-assert m['status']=='PARENT_REVIEWED_FORMAT_ADOPTED'
-assert m['finalTree']=='ab1b49cd3e7f05a5253f5b12828c236384b9a671'
-assert m['formatAdoption']['parentReviewedAndAdopted'] is True
-c=m['nativeCustody']
-assert c['repository']=='roboclaw-bot/openclaw' and c['runId']==36329006184 and c['attempt']==1
-assert c['artifactId']==10934549851 and c['artifactDigest']=='sha256:e20a1ed2fdd82486fa2e54806279c673cc45dc2d9be2cffbcdbc900d658759de'
-assert c['controller']=='7abdc079306c4595170616f274c44c149982ce95'
-expected=['replayed-history.bundle','replay-provenance.json','native-rebase.command.txt','native-rebase.result.json','native-rebase.log','native-continue.command.txt','native-continue.result.json','native-continue.log','replay-history-bundle.result.json','replay-history-verify.result.json','controller-identity.txt','run.json']
-assert [x['path'] for x in m['retained']]==expected
-r=e/'retained'; r.mkdir(exist_ok=False)
-for x in m['retained']:
-    assert set(x)=={'path','mode','sha256','bytes','base64'} and x['mode']=='100644'
-    data=base64.b64decode(x['base64'],validate=True)
-    assert len(data)==x['bytes'] and hashlib.sha256(data).hexdigest()==x['sha256']
-    (r/x['path']).write_bytes(data)
-bundle=(r/'replayed-history.bundle').read_bytes()
-assert len(bundle)==27646 and hashlib.sha256(bundle).hexdigest()=='192ddc3033ade962b2d6084c65d41a2b01aa9c1789f2347d62fb6771e7859767'
-header=bundle.split(bytes([10,10]),1)[0].splitlines()
-assert len(header)==3 and header[0]==b'# v2 git bundle'
-assert header[1].split(b' ',1)[0]==('-'+m['newMain']).encode()
-assert header[2]==(m['replayedHead']+' HEAD').encode()
-(e/'bundle-header.txt').write_bytes(bytes([10]).join(header)+bytes([10]))
-p=json.loads((r/'replay-provenance.json').read_text())
-assert (p['head'],p['tree'],p['base'],p['bundleSha256'])==(m['replayedHead'],m['rebasedTree'],m['newMain'],c['bundleSha256'])
-for label,status in [('native-rebase',1),('native-continue',0),('replay-history-bundle',0),('replay-history-verify',0)]:
-    result=json.loads((r/(label+'.result.json')).read_text())
-    assert result['command']==label and result['nativeExitStatus']==status and result['teeExitStatus']==0
-run=json.loads((r/'run.json').read_text())
-assert run['runId']=='36329006184' and run['attempt']=='1' and run['controller']==c['controller']
-(e/'retained-custody.json').write_text(json.dumps(c,indent=2)+chr(10))
-PY
-    # Native verify checks prerequisite connectivity; unbundle imports objects,
-    # not newly created history. No reference/sequence state is manufactured.
-    run_logged retained-bundle-verify git bundle verify "$evidence/retained/replayed-history.bundle"
-    run_logged retained-bundle-import git bundle unbundle "$evidence/retained/replayed-history.bundle"
-    assert_replay "$replayed_head" > "$evidence/actual-replay-chain.json"
-    python3 - "$evidence" <<'PY'
+    # Exact public checkout already has all six objects and B prerequisites.
+    git merge-base --is-ancestor "$base" "$replayed_head"
+    python3 - "$payload" <<'PY'
 from pathlib import Path
 import json,sys
-p=Path(sys.argv[1]); assert json.loads((p/'actual-replay-chain.json').read_text())==json.loads((p/'retained/replay-provenance.json').read_text())['replay']
+m=json.loads(Path(sys.argv[1]).read_text())
+assert m['schema']==2 and m['mode']=='public-six-history-lint-continuation'
+assert m['status']=='PARENT_REVIEWED_FORMAT_ADOPTED'
+assert m['finalTree']=='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
+assert m['formatAdoption']['parentReviewedAndAdopted'] is True
+assert m['replayedHead']=='fd0b54a58f93b68a49eb07695705cd770ebb91b1'
+assert len(m['steps'])==6
 PY
-    # One union covers old, base, replay and future repair paths at every source.
-    # Original commits and repair cannot change attributes; all merged states
-    # therefore use the target base's audited attribute inventory.
+    assert_public_history "$replayed_head" > "$evidence/actual-replay-chain.json"
+    # One union covers the base, all six public states, and future repair paths.
+    # Every public state must retain the audited base attribute inventory;
+    # the repair cannot change attributes.
     python3 - "$payload" "$evidence" "$RUNNER_TEMP/post-rebase-repair.patch" <<'PY'
 from pathlib import Path
 import json,subprocess,base64,sys
@@ -251,19 +218,14 @@ def fields(data):
 def save(name,data):
     (evidence/name).write_bytes(data)
     return data
-assert git('rev-list','--reverse',m['oldBase']+'..'+m['oldHead']).decode().splitlines()==[s['original'] for s in m['steps']]
-parent=m['oldBase']
-for s in m['steps']:
-    h,msg=git('cat-file','commit',s['original']).split(bytes([10,10]),1)
-    assert [x[7:].decode() for x in h.splitlines() if x.startswith(b'parent ')]==[parent]
-    assert next(x for x in h.splitlines() if x.startswith(b'author '))==base64.b64decode(s['authorBase64'])
-    assert msg==base64.b64decode(s['messageBase64'])
-    parent=s['original']
 metadata=fields((evidence/'configured-filter-metadata.nul').read_bytes())
 assert len(metadata)%3==0
 for scope,origin,name in zip(metadata[::3],metadata[1::3],metadata[2::3],strict=True):
     assert scope and origin and name.startswith(b'filter.'), 'invalid filter metadata'
-refs=[m['newMain'],m['oldBase'],*[s['original'] for s in m['steps']],*[s['expectedActual'] for s in m['steps']]]
+# This continuation never checks out or replays original pre-rebase commits.
+# Their native custody is retained by the prior producer; verify every public
+# source commit byte here and audit only states this operation can materialize.
+refs=[m['newMain'],*[s['expectedActual'] for s in m['steps']]]
 paths=set(); inventories={}
 for ref in refs:
     entries=fields(save(ref+'.entries.nul',git('ls-tree','-r','-z',ref)))
@@ -283,7 +245,6 @@ for ref in refs:
     hooks=save(ref+'.hooks.txt',git('ls-tree','-r',ref,'git-hooks'))
     assert hooks==b'100755 blob 00d02f1353abd2745357b955c9c222977c833c24'+bytes([9])+b'git-hooks/pre-commit'+bytes([10]), ref
 for s in m['steps']:
-    assert inventories[s['original']]==inventories[m['oldBase']], 'historical attribute change'
     assert inventories[s['expectedActual']]==inventories[m['newMain']], 'replayed attribute change'
 # --numstat alone is inert. Git emits the new name (old for deletions);
 # reverse also covers rename/copy source names, without parsing diff headers.
@@ -334,13 +295,12 @@ PY
     test "$(git rev-parse --is-shallow-repository)" = false
     git ls-files --others --directory -z > "$evidence/untracked-before-rebase.nul"
     test ! -s "$evidence/untracked-before-rebase.nul"
-    # The native five-commit result is settled. Check out exactly that object.
-    run_logged checkout-retained-history git checkout --detach "$replayed_head"
+    # Public six-commit source is already checked out; do not reconstruct it.
     assert_no_operation
     test "$(git rev-parse HEAD)" = "$replayed_head"
     test "$(git rev-parse HEAD^{tree})" = "$replayed_tree"
     git diff --quiet HEAD
-    assert_replay "$replayed_head" > "$evidence/actual-replay-chain.json"
+    assert_public_history "$replayed_head" > "$evidence/actual-replay-chain.json"
     printf '%s\n' "$replayed_head" > "$evidence/rebased-head.txt"
     run_logged repair-check git apply --index --check "$RUNNER_TEMP/post-rebase-repair.patch"
     run_logged repair-apply git apply --index "$RUNNER_TEMP/post-rebase-repair.patch"
@@ -348,12 +308,20 @@ PY
     git diff --cached --check
     printf '%s\n' "$tree" > "$evidence/source-admitted.txt"
     ;;
+  before-setup|after-setup)
+    assert_candidate
+    test "$(git rev-parse HEAD)" = "$replayed_head"
+    if [[ "$phase" == after-setup ]]; then
+      test "$(node --version)" = v24.19.0
+      test "$(pnpm --version)" = 12.5.0
+    fi
+    ;;
   format)
     assert_candidate
     test "$(git rev-parse HEAD)" = "$(cat "$evidence/rebased-head.txt")"
     git diff --cached --name-only --diff-filter=ACMR -z "$base" > "$evidence/format-paths.nul"
     mapfile -d '' -t files < "$evidence/format-paths.nul"
-    test "${#files[@]}" -eq 50
+    test "${#files[@]}" -eq 53
     python3 - "$payload" "$evidence/format-paths.nul" <<'PY'
 from pathlib import Path
 import json,sys
@@ -374,9 +342,9 @@ PY
     hook_path="$(git config --get core.hooksPath || true)"
     test -z "$hook_path" || test "$hook_path" = git-hooks
     cat > "$RUNNER_TEMP/commit-message.txt" <<'MESSAGE'
-fix(workers): retain warm-image custody through caller closure
+fix(workers): repair warm-image lint and private test boundaries
 
-Preserve physical settlement and cleanup after invocation closure on the rebased provider series.
+Preserve native worker admission coverage through the existing private SQLite test facade; make capture skip returns explicit without changing behavior.
 
 Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
 Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
@@ -385,7 +353,15 @@ MESSAGE
     git rev-parse HEAD > "$evidence/committed-head.txt"
     assert_commit
     # Trace records real pre-commit invocation; canonical source calls the formatter.
-    jq -s -e 'any(.[]; .event == "child_start" and .hook_name == "pre-commit")' "$evidence/final-commit.trace2.jsonl"
+    python3 - "$evidence/final-commit.trace2.jsonl" <<'PY'
+from pathlib import Path
+import json,sys
+trace=[json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines() if x]
+starts=[x for x in trace if x.get('event')=='child_start' and x.get('hook_name')=='pre-commit']
+assert len(starts)==1
+s=starts[0]
+assert any(x.get('event')=='child_exit' and x.get('sid')==s['sid'] and x.get('child_id')==s['child_id'] and x.get('code')==0 for x in trace)
+PY
     git show -s --format='%H%n%P%n%T%n%B' HEAD > "$evidence/final-commit.txt"
     # Capture C at its producer before any tests/types can fail. It is retained
     # history, not a passing candidate; later lanes must consume this exact C.
@@ -394,23 +370,23 @@ MESSAGE
     jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$replayed_head" --arg base "$base" --arg tree "$tree" \
       --arg bundle "$(sha256sum "$evidence/committed-candidate.bundle" | cut -d ' ' -f1)" \
       --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
-      '{commit:$commit,parent:$parent,base:$base,tree:$tree,bundleSha256:$bundle,controller:$controller,runId:$run,attempt:$attempt,normalHookCommit:true,runtimeValidation:"NOT YET ESTABLISHED",scope:"Exact sixth commit retained at producer; not verified-candidate proof"}' \
+      '{commit:$commit,parent:$parent,base:$base,tree:$tree,bundleSha256:$bundle,controller:$controller,runId:$run,attempt:$attempt,normalHookCommit:true,runtimeValidation:"NOT YET ESTABLISHED",scope:"Exact seventh commit retained at producer; not verified-candidate proof"}' \
       > "$evidence/committed-candidate.json"
     ;;
   tests)
     assert_commit
-    run_logged focused pnpm test extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts --maxWorkers=1 --reporter=verbose -t 'record allocation honors invocation closure at commit with a live physical signal'
+    run_logged focused pnpm test extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage -t 'record allocation honors invocation closure at commit with a live physical signal'
     assert_commit
-    run_logged retirement-custody pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose -t 'settles confirmed single-catalog deletion'
+    run_logged retirement-custody pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage -t 'settles confirmed single-catalog deletion'
     assert_commit
-    run_logged capture-custody pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose -t 'capture (recovery precedence|(dispatch|claim delivery) custody)'
+    run_logged capture-custody pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage -t 'capture (recovery precedence|(dispatch|claim delivery) custody)'
     assert_commit
-    run_logged post-publication-control pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose -t 'keeps a live project capture successful when post-publication retirement settlement is refused'
+    run_logged post-publication-control pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage -t 'keeps a live project capture successful when post-publication retirement settlement is refused'
     assert_commit
     run_logged authority52 pnpm test \
       extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts --maxWorkers=1 --reporter=verbose
+      extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage
     assert_commit
     run_logged warm-provider-siblings pnpm test \
       extensions/crabbox/src/crabbox-worker-warm-image-allocation.test.ts \
@@ -425,16 +401,23 @@ MESSAGE
       extensions/crabbox/src/crabbox-worker-read-budget.test.ts \
       extensions/crabbox/src/crabbox-worker-provision-commands.test.ts \
       extensions/crabbox/src/crabbox-worker-stop-lifetime.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image.test.ts --maxWorkers=1 --reporter=verbose
+      extensions/crabbox/src/crabbox-worker-warm-image.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage
     assert_commit
     run_logged core-custody-siblings pnpm test \
       src/gateway/worker-environments/provider-invocation.test.ts \
-      src/gateway/worker-environments/provider-allocation-cleanup.test.ts --maxWorkers=1 --reporter=verbose
+      src/gateway/worker-environments/provider-allocation-cleanup.test.ts --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage
     assert_commit
     run_logged extensions-types pnpm tsgo:extensions
     assert_commit
-    # Last lane uses only the existing job budget; timeout/failure is not proof.
+    # Native proof plus production types stays within this existing job budget.
     run_logged core-types pnpm tsgo:core
+    assert_commit
+    run_logged test-core-imports pnpm run lint:plugins:no-extension-test-core-imports
+    assert_commit
+    run_logged sdk-subpaths pnpm run lint:plugins:plugin-sdk-subpaths-exported
+    assert_commit
+    # No test-types ownership transfer: run the complete canonical boundary set.
+    run_logged additional-boundaries node --import tsx scripts/run-additional-boundary-checks.mts
     assert_commit
     ;;
   export)
@@ -445,10 +428,10 @@ MESSAGE
     run_logged bundle-verify git bundle verify "$RUNNER_TEMP/candidate.bundle"
     jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$(cat "$evidence/rebased-head.txt")"       --arg base "$base" --arg old "$old" --arg tree "$tree" --arg payload "$PATCH_SHA256"       --arg suite "$SUITE" --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT"       --arg bundle "$(sha256sum "$RUNNER_TEMP/candidate.bundle" | cut -d ' ' -f1)"       --slurpfile replay "$evidence/actual-replay-chain.json"       '{commit:$commit,parent:$parent,base:$base,oldHead:$old,tree:$tree,payloadSha256:$payload,suite:$suite,
         controller:$controller,runId:$run,attempt:$attempt,bundleSha256:$bundle,replay:$replay[0],
-        scope:"retained native five-commit history plus ordinary sixth repair commit and focused provider proof; includes canonical plugin/core production types; not build/SDK/new-updater/native PR CI",
+        scope:"public six-commit history plus ordinary seventh lint repair and native provider/production-type/boundary proof; full lint and plugin/root test types remain a separate same-commit gate; not build/SDK/updater/native PR CI",
         declaredValidationScope:{focusedAllocationCases:1,pairedRetirementCases:2,pairedCaptureCases:11,postPublicationControlCases:1,groupedAuthorityCases:52,pluginSiblingFiles:13,coreSiblingFiles:2},
         observedCounts:"Read native logs; declared counts are not observations",
-        hookProof:"Normal sixth repair commit with canonical pre-commit; original five use retained native provenance, never repeated here"}' > "$RUNNER_TEMP/candidate.json"
+        hookProof:"Normal seventh repair commit with canonical pre-commit; public six raw commits are unchanged"}' > "$RUNNER_TEMP/candidate.json"
     cp "$RUNNER_TEMP/candidate.json" "$evidence/candidate.json"
     ;;
   *) exit 2 ;;
