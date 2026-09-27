@@ -5,7 +5,7 @@ old=d247932b3075cf3a3975f64275e3eab9cd1d37d0
 common=c0e6951d6f02d3eabd4bc13cf8e9fa9e77d290ac
 base=0edae198d278686e16426f7ad254d0341bd6e3d3
 replayed_tree=ebce62a4c472c28acc06d629403d6570eb9bbb61
-tree=cdbaa9538bb44c651813b6bf777aec07883176d3
+tree=2596c1fa0781b0d2d28b23186da2a429151d1fc7
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -46,7 +46,7 @@ test "$SUITE" = provider-rebase-focused
 test "$BASE_SHA" = "$old"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = 4a2b158131f49538744f4e1398be0b9ce66a773a31f75b7bbe40b97cfc77702a
+test "$PATCH_SHA256" = 439c936d03ceb70c65ccb87d24f5fa894c9d0b0fd4658f16a28cfab4879de6f2
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -57,7 +57,7 @@ test "$REBASE_HOSTED" = github-hosted
 test "$RUNNER_OS" = Linux
 [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
 test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}${NODE_OPTIONS:-}"
-test -z "${GIT_INDEX_FILE:-}${GIT_OBJECT_DIRECTORY:-}${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}${GIT_CONFIG_COUNT:-}${GIT_CONFIG_PARAMETERS:-}${GIT_DIR:-}${GIT_WORK_TREE:-}${GIT_AUTHOR_NAME:-}${GIT_AUTHOR_EMAIL:-}${GIT_AUTHOR_DATE:-}${GIT_COMMITTER_NAME:-}${GIT_COMMITTER_EMAIL:-}${GIT_COMMITTER_DATE:-}"
+test -z "${GIT_INDEX_FILE:-}${GIT_OBJECT_DIRECTORY:-}${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}${GIT_CONFIG_COUNT:-}${GIT_CONFIG_PARAMETERS:-}${GIT_DIR:-}${GIT_WORK_TREE:-}${GIT_AUTHOR_NAME:-}${GIT_AUTHOR_EMAIL:-}${GIT_AUTHOR_DATE:-}${GIT_COMMITTER_NAME:-}${GIT_COMMITTER_EMAIL:-}${GIT_COMMITTER_DATE:-}${GIT_ATTR_SOURCE:-}${GIT_ATTR_NOSYSTEM:-}"
 
 run_logged() {
   local label="$1" started ended
@@ -143,23 +143,52 @@ case "$phase" in
     assert_no_operation
     # Reject custom semantics, do not disable them to force a desired outcome.
     status=0
-    git config --name-only --get-regexp '^(filter\.|merge\.|rebase\.|rerere\.|submodule\.|include|url\.|credential\.|http\..*extraheader|branch\..*\.mergeoptions$|pull\.(twohead|octopus)$|core\.(hookspath|attributesfile|fsmonitor|sparsecheckout|autocrlf|eol)$|commit\.|hook\.|hooks\.|i18n\.)' > "$evidence/custom-git-config.txt" || status=$?
+    git config --name-only --get-regexp '^(attr\.tree$|merge\.|rebase\.|rerere\.|submodule\.|include|url\.|credential\.|http\..*extraheader|branch\..*\.mergeoptions$|pull\.(twohead|octopus)$|core\.(hookspath|attributesfile|fsmonitor|sparsecheckout|autocrlf|eol)$|commit\.|hook\.|hooks\.|i18n\.)' > "$evidence/custom-git-config.txt" || status=$?
     test "$status" -eq 1
+    # Configured drivers are inert until an attribute selects one. Record only
+    # names/origins/scopes; effective filter and merge admission belongs below.
+    status=0
+    git config --null --show-origin --show-scope --name-only --get-regexp '^filter\.' > "$evidence/configured-filter-metadata.nul" || status=$?
+    test "$status" -eq 0 || test "$status" -eq 1
+    printf '%s\n' "$status" > "$evidence/configured-filter-query.exit.txt"
+    if (( status == 0 )); then
+      test -s "$evidence/configured-filter-metadata.nul"
+    else
+      test ! -s "$evidence/configured-filter-metadata.nul"
+    fi
     test ! -s "$(git rev-parse --git-path info/attributes)"
     test ! -L .git/hooks
     find .git/hooks -mindepth 1 -maxdepth 1 ! -name '*.sample' -print > "$evidence/active-hooks.txt"
     test ! -s "$evidence/active-hooks.txt"
     git --version > "$evidence/git-version.txt"
     test "$(cat "$evidence/git-version.txt")" = 'git version 2.55.0'
+    python3 - "$payload" "$RUNNER_TEMP/post-rebase-repair.patch" <<'PY'
+from pathlib import Path
+import base64,hashlib,json,sys
+r=json.loads(Path(sys.argv[1]).read_text())['repair']
+assert set(r)=={'path','mode','sha256','bytes','base64'} and r['path']=='post-rebase-repair.patch' and r['mode']=='100644'
+data=base64.b64decode(r['base64'],validate=True)
+assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='6692fab08584f01d0a301195794bc77ed07820cf0d81b789089bf35620f26fd1'
+Path(sys.argv[2]).write_bytes(data)
+PY
     run_logged fetch-main git fetch --no-tags https://github.com/openclaw/openclaw.git "$base"
     test "$(git rev-parse FETCH_HEAD)" = "$base"
     test "$(git cat-file -t "$base")" = commit
     test "$(git merge-base --all "$base" "$old")" = "$common"
-    python3 - "$payload" <<'PY'
+    # One union covers old, base, replay and future repair paths at every source.
+    # Original commits and repair cannot change attributes; all merged states
+    # therefore use the target base's audited attribute inventory.
+    python3 - "$payload" "$evidence" "$RUNNER_TEMP/post-rebase-repair.patch" <<'PY'
 from pathlib import Path
 import json,subprocess,base64,sys
-m=json.loads(Path(sys.argv[1]).read_text())
+m=json.loads(Path(sys.argv[1]).read_text()); evidence=Path(sys.argv[2])
 def git(*a):return subprocess.check_output(['git',*a])
+def fields(data):
+    assert not data or data.endswith(bytes([0])), 'unterminated NUL output'
+    return data[:-1].split(bytes([0])) if data else []
+def save(name,data):
+    (evidence/name).write_bytes(data)
+    return data
 assert git('rev-list','--reverse',m['oldBase']+'..'+m['oldHead']).decode().splitlines()==[s['original'] for s in m['steps']]
 parent=m['oldBase']
 for s in m['steps']:
@@ -168,23 +197,78 @@ for s in m['steps']:
     assert next(x for x in h.splitlines() if x.startswith(b'author '))==base64.b64decode(s['authorBase64'])
     assert msg==base64.b64decode(s['messageBase64'])
     parent=s['original']
+metadata=fields((evidence/'configured-filter-metadata.nul').read_bytes())
+assert len(metadata)%3==0
+for scope,origin,name in zip(metadata[::3],metadata[1::3],metadata[2::3],strict=True):
+    assert scope and origin and name.startswith(b'filter.'), 'invalid filter metadata'
+refs=[m['newMain'],m['oldBase'],*[s['original'] for s in m['steps']]]
+paths=set(); inventories={}
+for ref in refs:
+    entries=fields(save(ref+'.entries.nul',git('ls-tree','-r','-z',ref)))
+    assert entries, ref
+    inventory=[]
+    for entry in entries:
+        header,path=entry.split(bytes([9]),1)
+        mode,kind,oid=header.split(b' ')
+        assert mode!=b'160000', (ref,path,'submodule')
+        assert path, ref
+        paths.add(path)
+        if path.rsplit(b'/',1)[-1]==b'.gitattributes':
+            assert mode in (b'100644',b'100755') and kind==b'blob', (ref,path)
+            inventory.append(entry)
+    inventories[ref]=inventory
+    save(ref+'.attribute-files.nul',b''.join(x+bytes([0]) for x in inventory))
+    hooks=save(ref+'.hooks.txt',git('ls-tree','-r',ref,'git-hooks'))
+    assert hooks==b'100755 blob 00d02f1353abd2745357b955c9c222977c833c24'+bytes([9])+b'git-hooks/pre-commit'+bytes([10]), ref
+for s in m['steps']:
+    assert inventories[s['original']]==inventories[m['oldBase']], 'historical attribute change'
+# --numstat alone is inert. Git emits the new name (old for deletions);
+# reverse also covers rename/copy source names, without parsing diff headers.
+repair_paths=set()
+for label,args in [('forward',[]),('reverse',['--reverse'])]:
+    records=fields(save('repair-'+label+'.numstat.nul',git('apply','--numstat','-z',*args,sys.argv[3])))
+    assert records, 'empty repair inventory'
+    for record in records:
+        added,deleted,path=record.split(bytes([9]),2)
+        assert (added.isdigit() and deleted.isdigit()) or (added==deleted==b'-')
+        assert path and path.rsplit(b'/',1)[-1]!=b'.gitattributes', 'repair changes attributes'
+        repair_paths.add(path)
+paths.update(repair_paths)
+for resolution in m['resolutions']:
+    path=resolution['path'].encode()
+    assert path in paths and path.rsplit(b'/',1)[-1]!=b'.gitattributes'
+ordered=sorted(paths); assert ordered, 'empty attribute proof'
+union=save('attribute-audit-paths.nul',b''.join(p+bytes([0]) for p in ordered))
+expected={(p,a) for p in ordered for a in (b'filter',b'merge')}
+for ref in refs:
+    raw=subprocess.check_output(['git','check-attr','--source='+ref,'--stdin','-z','filter','merge'],input=union)
+    triples=fields(save(ref+'.attributes.nul',raw))
+    assert len(triples)==3*len(expected), (ref,'attribute cardinality')
+    seen=set()
+    for path,attr,value in zip(triples[::3],triples[1::3],triples[2::3],strict=True):
+        pair=(path,attr)
+        assert pair in expected and pair not in seen and value==b'unspecified', (ref,path,attr,value)
+        seen.add(pair)
+    assert seen==expected, (ref,'attribute pair coverage')
+    # Named output renders the literal string "unspecified" like the sentinel.
+    # --all omits only the real unspecified sentinel, so reject either attribute
+    # here even if its configured string value happens to spell "unspecified".
+    raw=subprocess.check_output(['git','check-attr','--source='+ref,'--stdin','-z','--all'],input=union)
+    triples=fields(save(ref+'.all-attributes.nul',raw))
+    assert len(triples)%3==0, (ref,'all-attribute cardinality')
+    seen=set()
+    for path,attr,value in zip(triples[::3],triples[1::3],triples[2::3],strict=True):
+        assert path in paths and attr and (path,attr) not in seen
+        assert attr not in (b'filter',b'merge'), (ref,path,attr,value)
+        seen.add((path,attr))
+(evidence/'attribute-admission.json').write_text(json.dumps({
+    'refs':refs,'unionPaths':len(paths),'repairPaths':len(repair_paths),
+    'pairsPerRef':len(expected),'configuredFilterEntries':len(metadata)//3,
+    'historicalAttributeInventoriesUnchanged':True,'repairChangesAttributes':False,
+    'filterAndMergeUnspecified':True,'literalUnspecifiedExcluded':True,
+    'filterValuesRecorded':False,
+},indent=2)+chr(10))
 PY
-    # Every historical replay tree is inspected, not just the endpoints.
-    refs=("$base" "$common")
-    mapfile -t originals < <(jq -r '.steps[].original' "$payload")
-    refs+=("${originals[@]}")
-    for ref in "${refs[@]}"; do
-      git ls-tree -r "$ref" > "$evidence/$ref.entries.txt"
-      if grep -q '^160000 ' "$evidence/$ref.entries.txt"; then exit 2; fi
-      git ls-tree -r "$ref" git-hooks > "$evidence/$ref.hooks.txt"
-      printf '100755 blob 00d02f1353abd2745357b955c9c222977c833c24\tgit-hooks/pre-commit\n' > "$evidence/expected-hooks.txt"
-      cmp "$evidence/expected-hooks.txt" "$evidence/$ref.hooks.txt"
-      git ls-tree -r --name-only -z "$ref" > "$evidence/$ref.paths.nul"
-      git check-attr --source="$ref" --stdin -z filter merge < "$evidence/$ref.paths.nul" > "$evidence/$ref.attributes.nul"
-      while IFS= read -r -d '' path && IFS= read -r -d '' attr && IFS= read -r -d '' value; do
-        test "$value" = unspecified
-      done < "$evidence/$ref.attributes.nul"
-    done
     test -z "$(git for-each-ref refs/replace --format="%(refname)")"
     test ! -s .git/info/grafts
     test "$(git rev-parse --is-shallow-repository)" = false
@@ -236,15 +320,6 @@ PY
     git diff --quiet HEAD
     assert_replay HEAD > "$evidence/actual-replay-chain.json"
     git rev-parse HEAD > "$evidence/rebased-head.txt"
-    python3 - "$payload" "$RUNNER_TEMP/post-rebase-repair.patch" <<'PY'
-from pathlib import Path
-import base64,hashlib,json,sys
-r=json.loads(Path(sys.argv[1]).read_text())['repair']
-assert set(r)=={'path','mode','sha256','bytes','base64'} and r['path']=='post-rebase-repair.patch' and r['mode']=='100644'
-data=base64.b64decode(r['base64'],validate=True)
-assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='a1e9c9a5f78bcfa53e0bccf38172f97652832c60b4cf6b3c6acf16e14891eb90'
-Path(sys.argv[2]).write_bytes(data)
-PY
     run_logged repair-check git apply --index --check "$RUNNER_TEMP/post-rebase-repair.patch"
     run_logged repair-apply git apply --index "$RUNNER_TEMP/post-rebase-repair.patch"
     assert_candidate
@@ -290,7 +365,9 @@ MESSAGE
     assert_commit
     run_logged capture-custody pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose -t 'capture (recovery precedence|(dispatch|claim delivery) custody)'
     assert_commit
-    run_logged authority51 pnpm test \
+    run_logged post-publication-control pnpm test extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts --maxWorkers=1 --reporter=verbose -t 'keeps a live project capture successful when post-publication retirement settlement is refused'
+    assert_commit
+    run_logged authority52 pnpm test \
       extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts --maxWorkers=1 --reporter=verbose
@@ -327,7 +404,7 @@ MESSAGE
     jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$(cat "$evidence/rebased-head.txt")"       --arg base "$base" --arg old "$old" --arg tree "$tree" --arg payload "$PATCH_SHA256"       --arg suite "$SUITE" --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT"       --arg bundle "$(sha256sum "$RUNNER_TEMP/candidate.bundle" | cut -d ' ' -f1)"       --slurpfile replay "$evidence/actual-replay-chain.json"       '{commit:$commit,parent:$parent,base:$base,oldHead:$old,tree:$tree,payloadSha256:$payload,suite:$suite,
         controller:$controller,runId:$run,attempt:$attempt,bundleSha256:$bundle,replay:$replay[0],
         scope:"native rebase plus focused provider proof; includes canonical plugin/core production types; not build/SDK/new-updater/native PR CI",
-        declaredValidationScope:{focusedAllocationCases:1,pairedRetirementCases:2,pairedCaptureCases:11,groupedAuthorityCases:51,pluginSiblingFiles:13,coreSiblingFiles:2},
+        declaredValidationScope:{focusedAllocationCases:1,pairedRetirementCases:2,pairedCaptureCases:11,postPublicationControlCases:1,groupedAuthorityCases:52,pluginSiblingFiles:13,coreSiblingFiles:2},
         observedCounts:"Read native logs; declared counts are not observations",
         hookProof:"Normal final repair commit with canonical pre-commit; native rebase is not per-replay pre-commit proof"}' > "$RUNNER_TEMP/candidate.json"
     cp "$RUNNER_TEMP/candidate.json" "$evidence/candidate.json"

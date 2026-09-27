@@ -120,7 +120,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: e316561a43c8b4ebf3bfbb18dfbc75292fff4f33d8ceb18ddc76d27096ef1952
+      REBASE_RECIPE_SHA256: aae9c78143ab3fc5c02c9e934d807a5aa6498a0f8f6f6f58100535b3270b2101
       REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Validate immutable inputs
@@ -138,8 +138,8 @@ jobs:
             mkdir -p "$RUNNER_TEMP/pr159178-rebase"
             test "$BASE_SHA" = d247932b3075cf3a3975f64275e3eab9cd1d37d0
             test "$PATCH_ID" = provider-rebase-current
-            test "$EXPECTED_TREE" = cdbaa9538bb44c651813b6bf777aec07883176d3
-            test "$PATCH_SHA256" = 4a2b158131f49538744f4e1398be0b9ce66a773a31f75b7bbe40b97cfc77702a
+            test "$EXPECTED_TREE" = 2596c1fa0781b0d2d28b23186da2a429151d1fc7
+            test "$PATCH_SHA256" = 439c936d03ceb70c65ccb87d24f5fa894c9d0b0fd4658f16a28cfab4879de6f2
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -205,9 +205,9 @@ jobs:
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 70788a1eebe49b7924ffd8d22a6cf6020b6e62b1
+            test "$(git show -s --format=%P HEAD)" = a73d8e956b89d3367c2bfb636627f4e99e8035d7
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
