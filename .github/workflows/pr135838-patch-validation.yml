@@ -121,11 +121,12 @@ jobs:
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
       REBASE_RECIPE_SHA256: e316561a43c8b4ebf3bfbb18dfbc75292fff4f33d8ceb18ddc76d27096ef1952
-      REBASE_HOSTED: ${{ runner.environment }}
       REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Validate immutable inputs
         id: input_guard
+        env:
+          REBASE_HOSTED: ${{ runner.environment }}
         run: |
           set -euo pipefail
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -144,6 +145,9 @@ jobs:
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
             test "$REBASE_HOSTED" = github-hosted
             test "$RUNNER_OS" = Linux
+            # Runner context exists at the executing step, not job-env evaluation.
+            # Carry only the checked native environment fact into later recipe steps.
+            printf 'REBASE_HOSTED=%s\n' "$REBASE_HOSTED" >> "$GITHUB_ENV"
           fi
           if [[ "$SUITE" == provider-routing-repair ]]; then
             test "$BASE_SHA" = e53ea87c66cb5d1deaefe5046069de4adbcde09a
@@ -201,9 +205,9 @@ jobs:
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 7a707991716c4bddef6c3452ee9a3a77b1977e15
+            test "$(git show -s --format=%P HEAD)" = 70788a1eebe49b7924ffd8d22a6cf6020b6e62b1
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'A\t%s\nA\t%s\nM\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
