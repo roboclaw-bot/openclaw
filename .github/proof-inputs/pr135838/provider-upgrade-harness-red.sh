@@ -3,9 +3,9 @@ set -euo pipefail
 trap 'status=$?; for metric in "$RUNNER_TEMP"/harness-*.time; do if [ -f "$metric" ]; then printf "%s\n" "--- $metric ---"; cat "$metric"; fi; done; exit "$status"' EXIT
 test "$BASE_SHA" = d06b334112a2fae431d2ddd5450ebc2064469317
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
-test "$(git rev-parse HEAD^{tree})" = 1c6d2d6a440e1a3bf44f8b26c71b2e1324d06c75
-test "$EXPECTED_TREE" = 1c6d2d6a440e1a3bf44f8b26c71b2e1324d06c75
-test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = ac56233c0d104d52650885813fb9f0be397211a7ac7f04f2afcda85538f90456
+test "$(git rev-parse HEAD^{tree})" = 573f2a33d848062bb9940f98479fe22c0b6c65b7
+test "$EXPECTED_TREE" = 573f2a33d848062bb9940f98479fe22c0b6c65b7
+test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = 2c8b578e6364c1506b92038093082014cfd7c45b6b7d4dbf8a85539ad6014f2f
 git apply --check "$RUNNER_TEMP/harness-regression-owners.patch"
 git apply "$RUNNER_TEMP/harness-regression-owners.patch"
 test "$(git hash-object scripts/e2e/lib/upgrade-survivor/run.sh)" = 52fd2cc4518f73e3e387d2a193bb64c72710c694
