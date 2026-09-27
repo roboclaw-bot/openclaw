@@ -3,8 +3,8 @@ set -euo pipefail
 trap 'status=$?; for metric in "$RUNNER_TEMP"/harness-*.time; do if [ -f "$metric" ]; then printf "%s\n" "--- $metric ---"; cat "$metric"; fi; done; exit "$status"' EXIT
 test "$BASE_SHA" = d06b334112a2fae431d2ddd5450ebc2064469317
 test "$(git rev-parse HEAD^)" = "$BASE_SHA"
-test "$(git rev-parse HEAD^{tree})" = 573f2a33d848062bb9940f98479fe22c0b6c65b7
-test "$EXPECTED_TREE" = 573f2a33d848062bb9940f98479fe22c0b6c65b7
+test "$(git rev-parse HEAD^{tree})" = ff877b04d5ed626b2d8c6dda03f7eb030792070e
+test "$EXPECTED_TREE" = ff877b04d5ed626b2d8c6dda03f7eb030792070e
 test "$(sha256sum "$RUNNER_TEMP/harness-regression-owners.patch" | cut -d " " -f1)" = 2c8b578e6364c1506b92038093082014cfd7c45b6b7d4dbf8a85539ad6014f2f
 git apply --check "$RUNNER_TEMP/harness-regression-owners.patch"
 git apply "$RUNNER_TEMP/harness-regression-owners.patch"
