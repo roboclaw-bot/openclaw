@@ -1,0 +1,166 @@
+name: PR 159178 warm-state RED capture
+run-name: pr159178 warm-state RED capture ${{ inputs.controller_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      controller_sha:
+        description: Full reviewed controller commit (must equal dispatched workflow SHA)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: pr159178-warm-state-red
+  cancel-in-progress: false
+jobs:
+  capture:
+    if: github.repository == 'roboclaw-bot/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      CONTROLLER_SHA: ${{ inputs.controller_sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      BASE_SHA: bb394585807555813b24f43eb3ceea018134df10
+      COMPOSED_TREE: 0b278af65b8bc9c80e52fa81feda2aa4628a5abf
+      RED_TREE: 04c66892960db7a41be3aaa495e41feccba9490c
+      CAPTURE_SHA256: 37a732cda12703378269009ec734d941e61451ade61b6ba1c9ea73b2f9333748
+    steps:
+      - name: Record run identity and guard execution
+        id: guard
+        env:
+          HOST_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          mkdir -p "$evidence"
+          jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" --arg base "$BASE_SHA" \
+            --arg composed "$COMPOSED_TREE" --arg red "$RED_TREE" \
+            '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
+              workflowSha:$workflow,baseSha:$base,composedTree:$composed,redTree:$red,
+              classification:"UNCLASSIFIED; test-only capture, not production validation"}' \
+            > "$evidence/identity.json"
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$CONTROLLER_SHA" = "$GITHUB_SHA"
+          test "$CONTROLLER_SHA" = "$WORKFLOW_SHA"
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
+          test "$GITHUB_REF" = refs/heads/main
+          test "$HOST_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}"
+      - name: Check out immutable reviewed controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.controller_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Preserve hashed inputs and exclude previously published changes
+        id: preserve
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
+          test "$(git rev-parse HEAD^)" = 83573279b6fe6d5460eca71c34e8ee3889dc0cc4
+          git diff --quiet HEAD
+          git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
+          printf 'A\t%s\n' \
+            .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
+            .github/proof-inputs/pr159178-warm-admission-red/composed-main.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/native-routing.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/warm-admission-red.patch.b64 \
+            .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
+          cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
+          input=.github/proof-inputs/pr159178-warm-admission-red
+          cp "$input/capture.sh" "$evidence/capture.sh"
+          cp .github/workflows/pr159178-warm-admission-red.yml "$evidence/workflow.yml"
+          base64 --decode "$input/composed-main.patch.b64" > "$evidence/composed-main.patch"
+          base64 --decode "$input/warm-admission-red.patch.b64" > "$evidence/warm-admission-red.patch"
+          base64 --decode "$input/native-routing.patch.b64" > "$evidence/native-routing.patch"
+          cd "$evidence"
+          printf '%s  %s\n' \
+            765f3b6116214240bac770e2ee33600f084ddbd9989530b4e18491e8f02e0ef5 composed-main.patch \
+            e8f583d31349bf535549185a22f2d51c906a25d91483ce080426f10bc0789cf6 warm-admission-red.patch \
+            02af5dbd7076628edc2acc57eba1fb8aefe69d24eeec26d9c1cd496879809912 native-routing.patch \
+            "$CAPTURE_SHA256" capture.sh > inputs.sha256
+          sha256sum --check inputs.sha256
+      - name: Check out frozen main without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: bb394585807555813b24f43eb3ceea018134df10
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Materialize composed candidate plus RED test and canonical routing
+        id: materialize
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git diff --quiet HEAD
+          git apply --index --check "$evidence/composed-main.patch"
+          git apply --index "$evidence/composed-main.patch"
+          test "$(git write-tree)" = "$COMPOSED_TREE"
+          git apply --index --check "$evidence/warm-admission-red.patch"
+          git apply --index "$evidence/warm-admission-red.patch"
+          git apply --index --check "$evidence/native-routing.patch"
+          git apply --index "$evidence/native-routing.patch"
+          test "$(git write-tree)" = "$RED_TREE"
+          git diff --quiet
+          git diff --cached --check
+          test_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
+          routing_file=test/vitest/vitest.extension-database-workers-paths.mjs
+          test "$(git diff --cached --name-status "$COMPOSED_TREE")" = "$(printf 'A\t%s\nM\t%s' "$test_file" "$routing_file")"
+          test "$(git hash-object "$routing_file")" = 921dfb1364ab72151d5193bf7d93e189a7a70fdf
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = c85ebafc5ebb241b70072ccafab5c894933282a6a785bb70bcc7778f9930e385
+          git diff --cached --numstat "$COMPOSED_TREE" > "$evidence/red-delta.numstat"
+          printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
+          cp "$test_file" "$evidence/crabbox-worker-warm-image-authority.test.ts"
+          cp "$routing_file" "$evidence/vitest.extension-database-workers-paths.mjs"
+      - name: Install declared dependencies with canonical setup action
+        id: setup
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.19.0"
+          install-bun: "true"
+          install-deps: "true"
+          frozen-lockfile: "true"
+          cache-mode: "off"
+      # No commit: a failing reproduction must run before production repair/hooks.
+      # This does not waive or suppress later production candidate commit hooks.
+      - name: Capture exact commit-revocation case with native status
+        id: focused
+        run: |
+          set -euo pipefail
+          recipe="$RUNNER_TEMP/pr159178-warm-red/capture.sh"
+          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
+          bash "$recipe" focused
+      - name: Capture all 17 cases sequentially even after focused failure
+        id: full
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          recipe="$RUNNER_TEMP/pr159178-warm-red/capture.sh"
+          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
+          bash "$recipe" full
+      - name: Record native workflow step outcomes
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-warm-red"
+          mkdir -p "$evidence"
+          printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
+          printf '%s\n' 'Unclassified capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload RED capture evidence, including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr159178-warm-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/pr159178-warm-red/
