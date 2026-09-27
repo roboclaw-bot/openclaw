@@ -78,8 +78,13 @@ run_logged() {
 }
 assert_no_operation() {
   local state
-  for state in MERGE_HEAD MERGE_MODE MERGE_MSG MERGE_AUTOSTASH CHERRY_PICK_HEAD REVERT_HEAD REBASE_HEAD sequencer rebase-merge rebase-apply BISECT_START AUTO_MERGE; do
-    test ! -e "$(git rev-parse --git-path "$state")"
+  # Git ort retains AUTO_MERGE as a result tree even after a successful pick.
+  # Preserve that provenance in snapshots; it is not an active operation marker.
+  for state in MERGE_HEAD MERGE_MODE MERGE_MSG MERGE_AUTOSTASH CHERRY_PICK_HEAD REVERT_HEAD REBASE_HEAD sequencer rebase-merge rebase-apply BISECT_START; do
+    if [[ -e "$(git rev-parse --git-path "$state")" ]]; then
+      printf 'Unexpected Git operation state: %s\n' "$state" >&2
+      return 1
+    fi
   done
 }
 assert_candidate() {
@@ -320,6 +325,15 @@ PY
     git diff --quiet HEAD
     assert_replay HEAD > "$evidence/actual-replay-chain.json"
     git rev-parse HEAD > "$evidence/rebased-head.txt"
+    # Record the actual replay at its producer, even if later repair/formatting fails.
+    # This is history provenance only, never the final verified-candidate artifact.
+    run_logged replay-history-bundle git bundle create "$evidence/replayed-history.bundle" "$base..HEAD"
+    run_logged replay-history-verify git bundle verify "$evidence/replayed-history.bundle"
+    jq -n --arg head "$(git rev-parse HEAD)" --arg base "$base" --arg tree "$replayed_tree" \
+      --arg bundle "$(sha256sum "$evidence/replayed-history.bundle" | cut -d ' ' -f1)" \
+      --slurpfile replay "$evidence/actual-replay-chain.json" \
+      '{scope:"Native five-commit replay only; final repair and validation are not established",head:$head,base:$base,tree:$tree,bundleSha256:$bundle,replay:$replay[0]}' \
+      > "$evidence/replay-provenance.json"
     run_logged repair-check git apply --index --check "$RUNNER_TEMP/post-rebase-repair.patch"
     run_logged repair-apply git apply --index "$RUNNER_TEMP/post-rebase-repair.patch"
     assert_candidate

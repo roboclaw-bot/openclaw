@@ -120,7 +120,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: aae9c78143ab3fc5c02c9e934d807a5aa6498a0f8f6f6f58100535b3270b2101
+      REBASE_RECIPE_SHA256: 706790b73da7dc6e6187e8ce1650cbde048910dfcdab46b20f4f14d355c6bda7
       REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Validate immutable inputs
@@ -205,9 +205,9 @@ jobs:
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = a73d8e956b89d3367c2bfb636627f4e99e8035d7
+            test "$(git show -s --format=%P HEAD)" = 8f3bbbc3b6d3990bd2b6593ed5315cacfd6e3e51
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
