@@ -1,5 +1,5 @@
-name: PR 159178 warm-state sibling-fixture22 RED capture
-run-name: pr159178 warm-state sibling-fixture22 RED capture ${{ inputs.controller_sha }}
+name: PR 159178 warm-state retirement-custody RED capture
+run-name: pr159178 warm-state retirement-custody RED capture ${{ inputs.controller_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -26,8 +26,10 @@ jobs:
       BASE_SHA: bb394585807555813b24f43eb3ceea018134df10
       COMPOSED_TREE: 0b278af65b8bc9c80e52fa81feda2aa4628a5abf
       ORIGINAL_RED_TREE: 04c66892960db7a41be3aaa495e41feccba9490c
-      RED_TREE: 772e21f56df84f1eb8e9528c848300a8b2cbc030
-      CAPTURE_SHA256: f903969e14e3ef8e02deaf4280c8bc98312c08f3b6f3a50f843b3b88f90fd8bc
+      SIBLING_RED_TREE: 772e21f56df84f1eb8e9528c848300a8b2cbc030
+      CANDIDATE_TREE: 26fb535ac52db550591d49b6de4b5846c2e21b1b
+      RED_TREE: 3d8fb85a1c1277767a2b9e93fdf4565226eaa085
+      CAPTURE_SHA256: f1e02986a3b34fd8555985f27139ebb94826e51661e2858effb04abfb64ec378
     steps:
       - name: Record run identity and guard execution
         id: guard
@@ -35,7 +37,7 @@ jobs:
           HOST_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-retirement-custody-red"
           mkdir -p "$evidence"
           jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
             --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
@@ -43,7 +45,7 @@ jobs:
             --arg originalRed "$ORIGINAL_RED_TREE" --arg composed "$COMPOSED_TREE" --arg red "$RED_TREE" \
             '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
               workflowSha:$workflow,baseSha:$base,composedTree:$composed,originalRedTree:$originalRed,redTree:$red,
-              classification:"UNCLASSIFIED sibling-fixture22; test-only capture, not production validation"}' \
+              classification:"UNCLASSIFIED retirement-custody; known-unfixed candidate plus corrected test, not green validation"}' \
             > "$evidence/identity.json"
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$CONTROLLER_SHA" = "$GITHUB_SHA"
@@ -64,14 +66,15 @@ jobs:
         id: preserve
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-retirement-custody-red"
           test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
-          test "$(git rev-parse HEAD^)" = 3493e9dd9685361029b90f259435c183cd45c328
+          test "$(git rev-parse HEAD^)" = 2b6632f5cc263ad5ab6e3a0fb2ec62ee7b8dcde6
           git diff --quiet HEAD
           git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
-          printf 'M\t%s\nA\t%s\nM\t%s\n' \
+          printf 'M\t%s\nA\t%s\nA\t%s\nM\t%s\n' \
             .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
-            .github/proof-inputs/pr159178-warm-admission-red/sibling-tests.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/fixed-production.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/retirement-custody-test.patch.b64 \
             .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
           cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
           input=.github/proof-inputs/pr159178-warm-admission-red
@@ -81,12 +84,16 @@ jobs:
           base64 --decode "$input/warm-admission-red.patch.b64" > "$evidence/warm-admission-red.patch"
           base64 --decode "$input/native-routing.patch.b64" > "$evidence/native-routing.patch"
           base64 --decode "$input/sibling-tests.patch.b64" > "$evidence/sibling-tests.patch"
+          base64 --decode "$input/fixed-production.patch.b64" > "$evidence/fixed-production.patch"
+          base64 --decode "$input/retirement-custody-test.patch.b64" > "$evidence/retirement-custody-test.patch"
           cd "$evidence"
           printf '%s  %s\n' \
             765f3b6116214240bac770e2ee33600f084ddbd9989530b4e18491e8f02e0ef5 composed-main.patch \
             e8f583d31349bf535549185a22f2d51c906a25d91483ce080426f10bc0789cf6 warm-admission-red.patch \
             02af5dbd7076628edc2acc57eba1fb8aefe69d24eeec26d9c1cd496879809912 native-routing.patch \
             fefd19439ef39e0793588393727ec62723727cd7636d919adabe753844bc07b1 sibling-tests.patch \
+            bbc08edc0989fe07c3096bf55eec33ccb600c2cbfeae03287c3604b4f7539a7e fixed-production.patch \
+            f662e474f9e6c4772f99c81dfdffc206bf900444cf28fdfcf72f6d81a3c07fe6 retirement-custody-test.patch \
             "$CAPTURE_SHA256" capture.sh > inputs.sha256
           sha256sum --check inputs.sha256
       - name: Check out frozen main without persistent credentials
@@ -96,11 +103,11 @@ jobs:
           ref: bb394585807555813b24f43eb3ceea018134df10
           fetch-depth: 1
           persist-credentials: false
-      - name: Materialize original RED then fixture-inclusive test-only inputs
+      - name: Materialize known candidate then corrected custody oracle without production repair
         id: materialize
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-retirement-custody-red"
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           git diff --quiet HEAD
           git apply --index --check "$evidence/composed-main.patch"
@@ -120,7 +127,7 @@ jobs:
           test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = c85ebafc5ebb241b70072ccafab5c894933282a6a785bb70bcc7778f9930e385
           git apply --index --check "$evidence/sibling-tests.patch"
           git apply --index "$evidence/sibling-tests.patch"
-          test "$(git write-tree)" = "$RED_TREE"
+          test "$(git write-tree)" = "$SIBLING_RED_TREE"
           git diff --quiet
           git diff --cached --check
           test_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
@@ -132,6 +139,17 @@ jobs:
           test "$(sha256sum "$fixture_file" | cut -d ' ' -f1)" = c6f92d601b575a336b610e8734fed0c450625ed64f77f44c168169ffa69c3996
           test "$(git hash-object "$routing_file")" = 3a94eb3b717df33b745226ddc07f809345e2739e
           git diff --cached --numstat "$ORIGINAL_RED_TREE" > "$evidence/sibling-red-delta.numstat"
+          git apply --index --check "$evidence/fixed-production.patch"
+          git apply --index "$evidence/fixed-production.patch"
+          test "$(git write-tree)" = "$CANDIDATE_TREE"
+          git apply --index --check "$evidence/retirement-custody-test.patch"
+          git apply --index "$evidence/retirement-custody-test.patch"
+          test "$(git write-tree)" = "$RED_TREE"
+          test "$(git diff --cached --name-only "$CANDIDATE_TREE")" = "$test_file"
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 642aa11e3ad313667d798a110328f6b8b5fcd3d928111049fa62d8e8d5da6153
+          git diff --quiet
+          git diff --cached --check
+          git diff --cached --numstat "$CANDIDATE_TREE" > "$evidence/custody-test-delta.numstat"
           printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
           cp "$test_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test.ts"
           cp "$support_file" "$evidence/crabbox-worker-warm-image-sibling-admission.test-support.ts"
@@ -148,35 +166,27 @@ jobs:
           cache-mode: "off"
       # No commit: a failing reproduction must run before production repair/hooks.
       # This does not waive or suppress later production candidate commit hooks.
-      - name: Capture exact post-fork sibling case with native status
-        id: focused
+      - name: Capture both confirmed-deletion custody boundaries with native status
+        id: custody
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-warm-retirement-custody-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
-          bash "$recipe" focused
-      - name: Capture all 22 companion and fixture cases sequentially even after focused failure
-        id: full
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' }}
-        run: |
-          set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red/capture.sh"
-          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
-          bash "$recipe" full
+          bash "$recipe"
       - name: Record native workflow step outcomes
         if: ${{ always() }}
         env:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-warm-sibling-fixture22-red"
+          evidence="$RUNNER_TEMP/pr159178-warm-retirement-custody-red"
           mkdir -p "$evidence"
           printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
-          printf '%s\n' 'Unclassified sibling-fixture22 capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Always upload sibling-fixture22 RED evidence, including failures
+          printf '%s\n' 'Unclassified retirement-custody capture. Inspect native statuses, named assertion failures, case counts, controls, and source integrity before calling this RED.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload retirement-custody RED evidence, including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr159178-warm-sibling-fixture22-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: pr159178-warm-retirement-custody-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: error
-          path: ${{ runner.temp }}/pr159178-warm-sibling-fixture22-red/
+          path: ${{ runner.temp }}/pr159178-warm-retirement-custody-red/
