@@ -1,0 +1,1295 @@
+{
+  "schemaVersion": 1,
+  "commandId": "migration-native-diagnostic",
+  "sourceRepository": "openclaw/openclaw",
+  "sourceCommit": "4382d0f1f29385a534fe5bdbb4e0c127ad3a1ee0",
+  "sourceParents": [
+    "a23b5382c6b34f49fcfbf20d4daa03e53edaa93f",
+    "fd0b54a58f93b68a49eb07695705cd770ebb91b1"
+  ],
+  "sourceTree": "11a3c620dd89cdf070b28bea655fa8bdb4ca954c",
+  "diagnosticTree": "586cf41cc0f20c86c1ed106823809333a2d4b0c6",
+  "testOverlaySha256": "cbacdb74ec1bc594421289fb7d8d6ff75fd402c794c30dfdb17bf2cc1a7b14ee",
+  "originalFailure": {
+    "runId": 36335863639,
+    "attempt": 1,
+    "jobId": 108667139955,
+    "jobName": "checks-node-changed-config-compact-large-13",
+    "case": {
+      "phase": "after-session-repair",
+      "legacyRoot": true,
+      "fromInstallIndex": false,
+      "direct": false,
+      "legacySchema": false,
+      "excludeDoctorOnly": false
+    },
+    "receiptId": "state-dir",
+    "outcome": "refused",
+    "originalAssertionLine": 546,
+    "underlyingRefusalReason": "not retained in original run"
+  },
+  "runtime": {
+    "node": "24.19.0",
+    "pnpm": "12.5.0",
+    "vitest": "5.0.1",
+    "maxWorkers": 2,
+    "planConcurrency": 1,
+    "nativeArgv": [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/ci-run-node-test-shard.mts"
+    ],
+    "runtimePolicy": "bun-compatible",
+    "testTimeoutMs": 120000,
+    "hookTimeoutMs": 180000,
+    "noOutputTimeoutMs": 300000,
+    "nativePool": "existing diagnosticForksPool, isolate true; no custom replacement"
+  },
+  "originalResourceObservation": {
+    "logicalCpuCount": 2,
+    "totalMemoryBytes": 8218361856,
+    "reportedRunnerLabelSuffix": "8vcpu",
+    "ambientNodeVersionNotExecuted": "24.21.0"
+  },
+  "originalGroups": [
+    {
+      "configs": [
+        "test/vitest/vitest.gateway-server-isolated.config.ts",
+        "test/vitest/vitest.gateway-database-workers.config.ts"
+      ],
+      "includePatterns": [
+        "src/gateway/server-close.agent-databases.test.ts",
+        "src/gateway/config-reload.activation.integration.test.ts",
+        "src/gateway/exec-approval-manager.test.ts",
+        "src/gateway/github-repository-publication-restart.test.ts",
+        "src/gateway/managed-image-record-store.test.ts",
+        "src/gateway/operator-run-authority.worker.test.ts",
+        "src/gateway/server-methods/models-auth-login.catalog.integration.test.ts",
+        "src/gateway/server-methods/sessions-create-category.test.ts",
+        "src/gateway/server/skill-library-read.test.ts",
+        "src/gateway/session-lifecycle-run-failure.test.ts",
+        "src/gateway/session-transcript-preview.hydration.test.ts",
+        "src/gateway/tools-invoke-http.test.ts",
+        "src/gateway/worker-environments/placement-change-snapshot.test.ts",
+        "src/gateway/worker-environments/placement-session-retirement.test.ts",
+        "src/gateway/worker-environments/prepared-pool-repository.test.ts",
+        "src/gateway/worker-environments/repository-project-access.test.ts",
+        "src/gateway/worker-environments/worker-turn-launcher-build-recovery.test.ts",
+        "src/gateway/worker-environments/worker-turn-rpc.test.ts"
+      ],
+      "shard_name": "agentic-gateway-server-isolated-hosted-6",
+      "timing_key": "changed-agentic-gateway-server-isolated#selector-334-949689737f73#generation-2aeb4824651f#part-6-of-20#include-18-e6c9e4e085f4"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.infra.config.ts"
+      ],
+      "includePatterns": [
+        "src/infra/session-cost-usage-cache.sqlite.test.ts",
+        "src/infra/session-cost-usage-pricing-context.test.ts",
+        "src/infra/session-cost-usage-refresh.test.ts",
+        "src/infra/session-cost-usage-rollup-codec.test.ts",
+        "src/infra/session-cost-usage-worker-io.test.ts",
+        "src/infra/session-cost-usage.archive-identity.test.ts",
+        "src/infra/session-delivery-queue-runtime.test.ts",
+        "src/infra/session-delivery-queue.recovery.test.ts",
+        "src/infra/session-event-wake-concurrency.test.ts",
+        "src/infra/session-event-wake.module-owner.test.ts",
+        "src/infra/session-event-wake.preemption.test.ts",
+        "src/infra/session-maintenance-warning.test.ts",
+        "src/infra/sqlite-audit-record-store.test.ts",
+        "src/infra/sqlite-busy-timeout.test.ts",
+        "src/infra/sqlite-capability-worker.test.ts",
+        "src/infra/sqlite-host-data-observer.test.ts",
+        "src/infra/sqlite-index-schema.test.ts",
+        "src/infra/sqlite-integrity.test.ts",
+        "src/infra/sqlite-private-directory.test.ts",
+        "src/infra/sqlite-readonly-inspection-operation.test.ts",
+        "src/infra/sqlite-readonly-location.cleanup-owner.test.ts",
+        "src/infra/sqlite-readonly-location.concurrent.test.ts",
+        "src/infra/sqlite-readonly-location.interruption.test.ts",
+        "src/infra/sqlite-readonly-location.test.ts",
+        "src/infra/sqlite-readonly-worker-session.test.ts",
+        "src/infra/sqlite-readonly-worker.compile-cache.process.test.ts",
+        "src/infra/sqlite-readonly-worker.model-auth.test.ts",
+        "src/infra/sqlite-recovery-files.test.ts",
+        "src/infra/sqlite-schema-contract.test.ts",
+        "src/infra/sqlite-schema-header.test.ts",
+        "src/infra/sqlite-snapshot-single-flight.test.ts",
+        "src/infra/sqlite-snapshot-staging-owner.test.ts",
+        "src/infra/sqlite-snapshot-staging.ownership.test.ts",
+        "src/infra/sqlite-terminal-open-latch.test.ts",
+        "src/infra/sqlite-transaction.diagnostics.test.ts",
+        "src/infra/sqlite-transaction.windows.test.ts",
+        "src/infra/sqlite-wal-checkpoint.test.ts",
+        "src/infra/sqlite-wal.agent-admission.test.ts",
+        "src/infra/sqlite-wal.mount-timeout.test.ts",
+        "src/infra/sqlite-worker-broker-reply.cleanup.test.ts",
+        "src/infra/sqlite-worker-client.test.ts",
+        "src/infra/sqlite-worker-identity.test.ts",
+        "src/infra/sqlite-worker-input.test.ts",
+        "src/infra/sqlite-worker-logging.test.ts",
+        "src/infra/sqlite-worker-managed-task-link.test.ts",
+        "src/infra/sqlite-worker-open-refusal.test.ts",
+        "src/infra/sqlite-worker-plugin-comparison.test.ts",
+        "src/infra/sqlite-worker-shared-state-admission.test.ts",
+        "src/infra/sqlite-worker-shared-state.test.ts",
+        "src/infra/sqlite-worker-store.compile-cache.test.ts",
+        "src/infra/sqlite-worker-store.generation.test.ts",
+        "src/infra/sqlite-worker-task-flow-reconciliation.test.ts",
+        "src/infra/sqlite-worker-task-run-lookup.test.ts",
+        "src/infra/sqlite-worker-terminal-admission.test.ts",
+        "src/infra/sqlite-worker-transcripts.export-settlement.test.ts",
+        "src/infra/sqlite-worker-transfer.test.ts",
+        "src/infra/state-migrations.acp-replay.test.ts",
+        "src/infra/state-migrations.agent-owner-recovery.test.ts",
+        "src/infra/state-migrations.audit-backup.test.ts",
+        "src/infra/state-migrations.audit-skips.test.ts",
+        "src/infra/state-migrations.caller-mode.execution.test.ts",
+        "src/infra/state-migrations.caller-mode.plugin-execution.test.ts",
+        "src/infra/state-migrations.caller-mode.storage.test.ts",
+        "src/infra/state-migrations.channel-pairing.test.ts"
+      ],
+      "shard_name": "core-runtime-infra-storage-state-hosted-2",
+      "timing_key": "changed-core-runtime-infra-storage-state#selector-1003-2f596f42636a#generation-77039a89e044#part-2-of-17#include-64-f31a07f9d063"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.agents-core.config.ts"
+      ],
+      "env": {
+        "OPENCLAW_VITEST_MAX_WORKERS": "2"
+      },
+      "includePatterns": [
+        "src/agents/agent-command-admission-facts.test.ts",
+        "src/agents/agent-command-execution-identity.test.ts",
+        "src/agents/agent-command-recovery-owner.test.ts",
+        "src/agents/agent-command-restart-recovery.test.ts",
+        "src/agents/agent-command.compaction-rotation.test.ts",
+        "src/agents/agent-command.embedded-maintenance.test.ts",
+        "src/agents/agent-command.ingress-diagnostics.test.ts",
+        "src/agents/agent-command.live-model-switch.test.ts",
+        "src/agents/agent-command.resolved-pin.test.ts",
+        "src/agents/command-poll-backoff.test.ts",
+        "src/agents/compaction-partial-summary.test.ts",
+        "src/agents/compaction-planning-worker.test.ts",
+        "src/agents/compaction-real-conversation.test.ts",
+        "src/agents/compaction.abort-http.test.ts",
+        "src/agents/compaction.failure-proof.test.ts",
+        "src/agents/compaction.identifier-preservation.test.ts",
+        "src/agents/compaction.summarize-fallback.test.ts",
+        "src/agents/compaction.summary-format.test.ts",
+        "src/agents/compaction.test.ts",
+        "src/agents/compaction.tool-result-details.test.ts"
+      ],
+      "shard_name": "agentic-agents-core-runner-commands-hosted-2",
+      "timing_key": "agentic-agents-core-runner-commands-parallel#selector-21-1f484476fbc9#generation-73a8ef7e308e#part-2-of-2#include-20-e5e879348e6a"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.infra.config.ts"
+      ],
+      "includePatterns": [
+        "src/infra/scp-host.test.ts",
+        "src/infra/ssh-client.test.ts",
+        "src/infra/ssh-client.windows.test.ts",
+        "src/infra/ssh-config.test.ts",
+        "src/infra/ssh-tunnel.test.ts",
+        "src/infra/tailnet.test.ts",
+        "src/infra/tailscale-parent-loss.process.test.ts",
+        "src/infra/tailscale-route-owner.worker.test.ts",
+        "src/infra/tailscale.claim.test.ts",
+        "src/infra/tailscale.discovery.test.ts",
+        "src/infra/tailscale.test.ts",
+        "src/infra/tcp-port.test.ts",
+        "src/infra/tls/gateway.test.ts",
+        "src/infra/transport-ready.test.ts",
+        "src/infra/widearea-dns.boundary.test.ts",
+        "src/infra/widearea-dns.test.ts",
+        "src/infra/windows-diagnostic-env.test.ts",
+        "src/infra/windows-encoding.test.ts",
+        "src/infra/windows-gateway-firewall-diagnostics.test.ts",
+        "src/infra/windows-install-roots.test.ts",
+        "src/infra/windows-launcher-encoding.test.ts",
+        "src/infra/windows-process-start.native.test.ts",
+        "src/infra/windows-process-start.test.ts",
+        "src/infra/windows-shell-command.test.ts",
+        "src/infra/windows-task-restart.test.ts",
+        "src/infra/ws.test.ts",
+        "src/infra/wsl.test.ts"
+      ],
+      "shard_name": "core-runtime-infra-network-platform"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.gateway-server.config.ts"
+      ],
+      "env": {
+        "OPENCLAW_VITEST_MAX_WORKERS": "2"
+      },
+      "includePatterns": [
+        "src/gateway/server-startup-config.ambient-channels.test.ts",
+        "src/gateway/server-startup-config.breaker-secrets.integration.test.ts",
+        "src/gateway/server-startup-config.recovery.test.ts",
+        "src/gateway/server-startup-config.secrets.test.ts",
+        "src/gateway/server-startup-early.test.ts"
+      ],
+      "shard_name": "agentic-control-plane-startup-config",
+      "timing_key": "agentic-control-plane-startup-config-parallel"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.commands.config.ts"
+      ],
+      "fallbackMaxWorkers": 2,
+      "includePatterns": [
+        "src/commands/doctor-gateway-auth-token.windows.test.ts",
+        "src/commands/doctor-gateway-daemon-flow.restart-health.test.ts",
+        "src/commands/doctor-gateway-daemon-flow.test.ts",
+        "src/commands/doctor-gateway-dueling.identity.test.ts",
+        "src/commands/doctor-gateway-health.test.ts",
+        "src/commands/doctor-gateway-installation-replacement.test.ts",
+        "src/commands/doctor-gateway-legacy-services.test.ts",
+        "src/commands/doctor-gateway-services.authority.test.ts",
+        "src/commands/doctor-gateway-services.test.ts",
+        "src/commands/doctor-gateway-services.writer-order.test.ts"
+      ],
+      "shard_name": "agentic-commands-doctor-gateway",
+      "timing_key": "agentic-commands-doctor-gateway#file-parallel-2"
+    }
+  ],
+  "prefixGroups": [
+    {
+      "configs": [
+        "test/vitest/vitest.gateway-server-isolated.config.ts",
+        "test/vitest/vitest.gateway-database-workers.config.ts"
+      ],
+      "includePatterns": [
+        "src/gateway/server-close.agent-databases.test.ts",
+        "src/gateway/config-reload.activation.integration.test.ts",
+        "src/gateway/exec-approval-manager.test.ts",
+        "src/gateway/github-repository-publication-restart.test.ts",
+        "src/gateway/managed-image-record-store.test.ts",
+        "src/gateway/operator-run-authority.worker.test.ts",
+        "src/gateway/server-methods/models-auth-login.catalog.integration.test.ts",
+        "src/gateway/server-methods/sessions-create-category.test.ts",
+        "src/gateway/server/skill-library-read.test.ts",
+        "src/gateway/session-lifecycle-run-failure.test.ts",
+        "src/gateway/session-transcript-preview.hydration.test.ts",
+        "src/gateway/tools-invoke-http.test.ts",
+        "src/gateway/worker-environments/placement-change-snapshot.test.ts",
+        "src/gateway/worker-environments/placement-session-retirement.test.ts",
+        "src/gateway/worker-environments/prepared-pool-repository.test.ts",
+        "src/gateway/worker-environments/repository-project-access.test.ts",
+        "src/gateway/worker-environments/worker-turn-launcher-build-recovery.test.ts",
+        "src/gateway/worker-environments/worker-turn-rpc.test.ts"
+      ],
+      "shard_name": "agentic-gateway-server-isolated-hosted-6",
+      "timing_key": "changed-agentic-gateway-server-isolated#selector-334-949689737f73#generation-2aeb4824651f#part-6-of-20#include-18-e6c9e4e085f4"
+    },
+    {
+      "configs": [
+        "test/vitest/vitest.infra.config.ts"
+      ],
+      "includePatterns": [
+        "src/infra/session-cost-usage-cache.sqlite.test.ts",
+        "src/infra/session-cost-usage-pricing-context.test.ts",
+        "src/infra/session-cost-usage-refresh.test.ts",
+        "src/infra/session-cost-usage-rollup-codec.test.ts",
+        "src/infra/session-cost-usage-worker-io.test.ts",
+        "src/infra/session-cost-usage.archive-identity.test.ts",
+        "src/infra/session-delivery-queue-runtime.test.ts",
+        "src/infra/session-delivery-queue.recovery.test.ts",
+        "src/infra/session-event-wake-concurrency.test.ts",
+        "src/infra/session-event-wake.module-owner.test.ts",
+        "src/infra/session-event-wake.preemption.test.ts",
+        "src/infra/session-maintenance-warning.test.ts",
+        "src/infra/sqlite-audit-record-store.test.ts",
+        "src/infra/sqlite-busy-timeout.test.ts",
+        "src/infra/sqlite-capability-worker.test.ts",
+        "src/infra/sqlite-host-data-observer.test.ts",
+        "src/infra/sqlite-index-schema.test.ts",
+        "src/infra/sqlite-integrity.test.ts",
+        "src/infra/sqlite-private-directory.test.ts",
+        "src/infra/sqlite-readonly-inspection-operation.test.ts",
+        "src/infra/sqlite-readonly-location.cleanup-owner.test.ts",
+        "src/infra/sqlite-readonly-location.concurrent.test.ts",
+        "src/infra/sqlite-readonly-location.interruption.test.ts",
+        "src/infra/sqlite-readonly-location.test.ts",
+        "src/infra/sqlite-readonly-worker-session.test.ts",
+        "src/infra/sqlite-readonly-worker.compile-cache.process.test.ts",
+        "src/infra/sqlite-readonly-worker.model-auth.test.ts",
+        "src/infra/sqlite-recovery-files.test.ts",
+        "src/infra/sqlite-schema-contract.test.ts",
+        "src/infra/sqlite-schema-header.test.ts",
+        "src/infra/sqlite-snapshot-single-flight.test.ts",
+        "src/infra/sqlite-snapshot-staging-owner.test.ts",
+        "src/infra/sqlite-snapshot-staging.ownership.test.ts",
+        "src/infra/sqlite-terminal-open-latch.test.ts",
+        "src/infra/sqlite-transaction.diagnostics.test.ts",
+        "src/infra/sqlite-transaction.windows.test.ts",
+        "src/infra/sqlite-wal-checkpoint.test.ts",
+        "src/infra/sqlite-wal.agent-admission.test.ts",
+        "src/infra/sqlite-wal.mount-timeout.test.ts",
+        "src/infra/sqlite-worker-broker-reply.cleanup.test.ts",
+        "src/infra/sqlite-worker-client.test.ts",
+        "src/infra/sqlite-worker-identity.test.ts",
+        "src/infra/sqlite-worker-input.test.ts",
+        "src/infra/sqlite-worker-logging.test.ts",
+        "src/infra/sqlite-worker-managed-task-link.test.ts",
+        "src/infra/sqlite-worker-open-refusal.test.ts",
+        "src/infra/sqlite-worker-plugin-comparison.test.ts",
+        "src/infra/sqlite-worker-shared-state-admission.test.ts",
+        "src/infra/sqlite-worker-shared-state.test.ts",
+        "src/infra/sqlite-worker-store.compile-cache.test.ts",
+        "src/infra/sqlite-worker-store.generation.test.ts",
+        "src/infra/sqlite-worker-task-flow-reconciliation.test.ts",
+        "src/infra/sqlite-worker-task-run-lookup.test.ts",
+        "src/infra/sqlite-worker-terminal-admission.test.ts",
+        "src/infra/sqlite-worker-transcripts.export-settlement.test.ts",
+        "src/infra/sqlite-worker-transfer.test.ts",
+        "src/infra/state-migrations.acp-replay.test.ts",
+        "src/infra/state-migrations.agent-owner-recovery.test.ts",
+        "src/infra/state-migrations.audit-backup.test.ts",
+        "src/infra/state-migrations.audit-skips.test.ts",
+        "src/infra/state-migrations.caller-mode.execution.test.ts",
+        "src/infra/state-migrations.caller-mode.plugin-execution.test.ts",
+        "src/infra/state-migrations.caller-mode.storage.test.ts",
+        "src/infra/state-migrations.channel-pairing.test.ts"
+      ],
+      "shard_name": "core-runtime-infra-storage-state-hosted-2",
+      "timing_key": "changed-core-runtime-infra-storage-state#selector-1003-2f596f42636a#generation-77039a89e044#part-2-of-17#include-64-f31a07f9d063"
+    }
+  ],
+  "prefixGroupsGzipBase64": "H4sIAAAAAAAC/6VY0XLiOgz9F/paBwoUyn7Ffd/Z2VEcJfHFsb22A83c2X+/shMotCSY3aeEjI5sy0dHEt//m3GtSlG52bfvM4/Ozw/i4pFV4PEIHXNoD2iZcFrSlyLrUZl3s+cpWAEecnDIjtru0boL3I/nmVBctgX+A96jVXELzvL5AJ4Pa3KpHWZQofJnfy6Ly8TlLyG9e2ZRaigy4F4cwAutMqE8VrZ/vw3Fd+QMjLH6AJI1oGhFO2JbCV+3OS1jtBNe246ZNpeCR//02XmwfgTbey6YaOhBtlzbgjlygiMAbZA2ri2zrWLQ+lpb4busj+gIZghdg2RduHmjC5QugpnUlVAZbRXoLSEun1xR7B0ZO8YtkgUjR1hRBCbRc7cXUjIpcgsULEIWo/bRPZmWyDsuMZ66BCHb0QCdMN6CctwK45mxeBB4zOqumDyc15riItRB75HV3psRuz7YDNVBWK0aoqKbGwkcwyvjNSi6S6fAuFr7P/JxOoRFL2z89IgbYiJYIpWh81zQ8gEXl1y2+l/kngHntKkHfAzffGvpAqFVvKZfeStkEXlOROj+0Js1/Iwk4XA12OKnggZn32ZRGQRnI1LFau3CYxOUSjRCVT/32BGuv7WC3cE/OZQUDcq/1WrNduvd5m23XW3L7eqJgNjTiy0B8/Xbcr15fSmf6C482zBdsuXiaRA59vLGcMN3uMbF22u5nv1+vqe9QpUWkhQzWp7zgNOBWeuCvHCgO8jcL0keP4V+FGOs4BQl+kTa8O5TYRZLEr462VxL2Rr6UiBPxQyMEDoRkIHltTggE0W4Yt9N4kgiRaAo+9ViG3WH6IIPQLIRkl9j8BDS/QgkOBRh3lqLiqdCMlLylkRRH9UX7R/FkDpgY26o4DWigVAMFChOkQariAO37SObqJgUwk/VryvrvHUdC/HUrZ+y42AgF/TasZsF7so4ZHZsCZjO+6ydshaqwHfmKCEamLYLJXGULb0RJckhlL+CxJrfkNor41DvtJIduXaGzEO0+6o+eiefgFL3vUVGFREU5c0EAUahJ7b5x3AhHta25vHNphgPOT2Q8AEInacxQp40jorWjWo16SB2RbEpmkb1Sc1KWmzSf0+tqJuWWs8E05p2NH2Np56COUpHOmwpRVX7NISHKuj4Xap8RmQR4WphplBECiqm1CoTk0O593wyjLE5g8j9rBBQKcpdwV0q5EjZq4+T5kfaC4WV740W0xwny2GegKIRd4kXzBtN5SBFwAY+51aHB3VVsjslbQKMS3EnP081cLKiXZsqk7RlGgeqO5o/WJ5GGA9uT5262idgIkuoR6DCLBPMjWxpMyzkOFhqxVQCJnSFGGpREOa0m/0KTDGPxe5aflJRHy1jAiTGt5T6GEVIcaqLD0HD6CS13idR75zPj0TuY+RyGb4bbcMg4728NcCM4ssxeYoX2YhhPnU0z5uYUdAl2sccj2rGpnuzL8jY3OTAR2N3G0FzrnFpAA5ShlyiIpSF/x7a8Zudgg6J8hceAjFDs5wGpKFJUdU0IOylWHweyqgrPLfQLPpiwzpDfg5T2XJsKrvn4GMse1ksVmxZvu425Xq5WW3gci7bbherHbztcLFe93PZMsxlL9vzXLZZs3L1AottuSsWm9Xs94//AboO5MgVEwAA",
+  "observedOriginalFirstCompletionFileOrder": [
+    "src/infra/sqlite-readonly-location.test.ts",
+    "src/infra/session-delivery-queue-runtime.test.ts",
+    "src/infra/state-migrations.caller-mode.execution.test.ts",
+    "src/infra/state-migrations.caller-mode.plugin-execution.test.ts",
+    "src/infra/sqlite-worker-managed-task-link.test.ts",
+    "src/infra/session-delivery-queue.recovery.test.ts",
+    "src/infra/session-cost-usage.archive-identity.test.ts",
+    "src/infra/sqlite-snapshot-staging.ownership.test.ts",
+    "src/infra/sqlite-readonly-worker.model-auth.test.ts",
+    "src/infra/sqlite-schema-contract.test.ts",
+    "src/infra/sqlite-worker-task-flow-reconciliation.test.ts",
+    "src/infra/sqlite-worker-shared-state.test.ts",
+    "src/infra/state-migrations.caller-mode.storage.test.ts",
+    "src/infra/session-cost-usage-cache.sqlite.test.ts",
+    "src/infra/session-event-wake-concurrency.test.ts",
+    "src/infra/sqlite-integrity.test.ts",
+    "src/infra/sqlite-wal-checkpoint.test.ts",
+    "src/infra/sqlite-readonly-location.cleanup-owner.test.ts",
+    "src/infra/session-cost-usage-worker-io.test.ts",
+    "src/infra/sqlite-wal.agent-admission.test.ts",
+    "src/infra/state-migrations.channel-pairing.test.ts",
+    "src/infra/sqlite-readonly-worker-session.test.ts",
+    "src/infra/sqlite-worker-broker-reply.cleanup.test.ts",
+    "src/infra/sqlite-schema-header.test.ts",
+    "src/infra/sqlite-audit-record-store.test.ts",
+    "src/infra/state-migrations.acp-replay.test.ts",
+    "src/infra/sqlite-worker-input.test.ts",
+    "src/infra/sqlite-snapshot-staging-owner.test.ts",
+    "src/infra/state-migrations.audit-backup.test.ts",
+    "src/infra/session-cost-usage-refresh.test.ts",
+    "src/infra/sqlite-worker-plugin-comparison.test.ts",
+    "src/infra/session-maintenance-warning.test.ts",
+    "src/infra/state-migrations.audit-skips.test.ts",
+    "src/infra/sqlite-worker-terminal-admission.test.ts",
+    "src/infra/sqlite-transaction.diagnostics.test.ts",
+    "src/infra/session-event-wake.preemption.test.ts",
+    "src/infra/sqlite-worker-transfer.test.ts",
+    "src/infra/sqlite-readonly-location.interruption.test.ts",
+    "src/infra/sqlite-readonly-inspection-operation.test.ts",
+    "src/infra/sqlite-worker-task-run-lookup.test.ts",
+    "src/infra/sqlite-worker-shared-state-admission.test.ts",
+    "src/infra/sqlite-worker-transcripts.export-settlement.test.ts",
+    "src/infra/sqlite-readonly-location.concurrent.test.ts",
+    "src/infra/sqlite-worker-client.test.ts",
+    "src/infra/sqlite-worker-store.compile-cache.test.ts",
+    "src/infra/sqlite-worker-open-refusal.test.ts",
+    "src/infra/sqlite-worker-store.generation.test.ts",
+    "src/infra/session-cost-usage-pricing-context.test.ts",
+    "src/infra/state-migrations.agent-owner-recovery.test.ts",
+    "src/infra/sqlite-capability-worker.test.ts",
+    "src/infra/sqlite-busy-timeout.test.ts",
+    "src/infra/sqlite-wal.mount-timeout.test.ts",
+    "src/infra/sqlite-terminal-open-latch.test.ts",
+    "src/infra/sqlite-worker-identity.test.ts",
+    "src/infra/sqlite-host-data-observer.test.ts",
+    "src/infra/sqlite-private-directory.test.ts",
+    "src/infra/sqlite-transaction.windows.test.ts",
+    "src/infra/sqlite-worker-logging.test.ts",
+    "src/infra/sqlite-recovery-files.test.ts",
+    "src/infra/session-event-wake.module-owner.test.ts"
+  ],
+  "sourceChecks": [
+    {
+      "path": ".github/actions/setup-node-env/action.yml",
+      "gitBlob": "c2381670d2ffa97fecee257d3c04014bc92cf0fd",
+      "sha256": "3a42ee7c8d3fcb0b98350e62d318ed7d0f1ee811aaca2907ed18890a1e8dfdac",
+      "diagnosticSha256": "3a42ee7c8d3fcb0b98350e62d318ed7d0f1ee811aaca2907ed18890a1e8dfdac"
+    },
+    {
+      "path": ".github/actions/setup-node-env/install-dependencies.sh",
+      "gitBlob": "6f63cfce7ce7a8fca881a1f8cb0a15364f738cef",
+      "sha256": "5925f6538a7e62e14abe9556b6cf2028240668908d8859fe7bc63171a0023aca",
+      "diagnosticSha256": "5925f6538a7e62e14abe9556b6cf2028240668908d8859fe7bc63171a0023aca"
+    },
+    {
+      "path": ".github/actions/setup-pnpm-store-cache/action.yml",
+      "gitBlob": "e99bd898c71a316ac2bbeb58c504aca9c2bc6acd",
+      "sha256": "e6d411d4dce2ad2ddbbf0b98c45301cfc789544d189f1f0176c7c9f5b5560191",
+      "diagnosticSha256": "e6d411d4dce2ad2ddbbf0b98c45301cfc789544d189f1f0176c7c9f5b5560191"
+    },
+    {
+      "path": ".github/actions/setup-pnpm-store-cache/ensure-node.sh",
+      "gitBlob": "f0a504412b06d05cb5851a3046b90e17a4d47977",
+      "sha256": "4aedf086bc3039ff5f9ab42aa4cb66e65d8a3441a4bb26b7088d50e36fa3d420",
+      "diagnosticSha256": "4aedf086bc3039ff5f9ab42aa4cb66e65d8a3441a4bb26b7088d50e36fa3d420"
+    },
+    {
+      "path": "docs/reference/database-schemas/worker-access.md",
+      "gitBlob": "721d589a60748391e14246a39195015ddf01607a",
+      "sha256": "3ee707552281ddc3964079b38d296d51a84ac6a4345a0d0c3e0680d2ddc05747",
+      "diagnosticSha256": "3ee707552281ddc3964079b38d296d51a84ac6a4345a0d0c3e0680d2ddc05747"
+    },
+    {
+      "path": "package.json",
+      "gitBlob": "3421f5fe874f0506421d3faebd494d0dd24e2f09",
+      "sha256": "36b7335cb89bf18ed3c37b06a16067f44a15769455ad431e821ebcd6b45169d1",
+      "diagnosticSha256": "36b7335cb89bf18ed3c37b06a16067f44a15769455ad431e821ebcd6b45169d1"
+    },
+    {
+      "path": "patches/vitest@5.0.1.patch",
+      "gitBlob": "0d637049b4305c0d56aa6f7528b45307d699ea9b",
+      "sha256": "90ba2969491e095cc2e92a4d38256dfcf64f85078ec29e1762b9429a00b35901",
+      "diagnosticSha256": "90ba2969491e095cc2e92a4d38256dfcf64f85078ec29e1762b9429a00b35901"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "gitBlob": "559e13f701a87c7864890dd6db35906ff9fe748b",
+      "sha256": "4913f4ba9bc0bfbce23b500a951d4b6859b9950379a0695a351b93f919cfb108",
+      "diagnosticSha256": "4913f4ba9bc0bfbce23b500a951d4b6859b9950379a0695a351b93f919cfb108"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "gitBlob": "2e930334f196db55089d5929f87486eda185789a",
+      "sha256": "1225305b59c4851deb9b855532e04121129188a517b5053cab5a1a3a2cea6f6b",
+      "diagnosticSha256": "1225305b59c4851deb9b855532e04121129188a517b5053cab5a1a3a2cea6f6b"
+    },
+    {
+      "path": "scripts/ci-run-node-test-shard.mts",
+      "gitBlob": "51271a31b3386006812108e5ad7255ec7509ed9b",
+      "sha256": "7751d81abe8c8fd6cea34445753375c764bceeaa0be0bcb602de0024cac0c45c",
+      "diagnosticSha256": "7751d81abe8c8fd6cea34445753375c764bceeaa0be0bcb602de0024cac0c45c"
+    },
+    {
+      "path": "scripts/lib/ci-test-runtime.mts",
+      "gitBlob": "a33d74bd93e8785865dee88c04efe826946099c4",
+      "sha256": "022452dfedb8421c80f214bd1cc8b53cfd8be9a2543f00b4a525f04881b16c53",
+      "diagnosticSha256": "022452dfedb8421c80f214bd1cc8b53cfd8be9a2543f00b4a525f04881b16c53"
+    },
+    {
+      "path": "scripts/lib/vitest-local-scheduling.mts",
+      "gitBlob": "d49460c52beccfdaeae39a1ecddd1ea7331c70cd",
+      "sha256": "5da0531fdfe77e6e0537fb3072b706f1666712ac40e04ee0a2c5a03ce67800ae",
+      "diagnosticSha256": "5da0531fdfe77e6e0537fb3072b706f1666712ac40e04ee0a2c5a03ce67800ae"
+    },
+    {
+      "path": "scripts/lib/vitest-process-env.mts",
+      "gitBlob": "6b1d5dfe8ebab400dd603a9271d57459652d5fdc",
+      "sha256": "58ccbbd6366858169539eff4ba95f584c4f17a65c113b3da5b948d922339b4b7",
+      "diagnosticSha256": "58ccbbd6366858169539eff4ba95f584c4f17a65c113b3da5b948d922339b4b7"
+    },
+    {
+      "path": "scripts/lib/vitest-process.mts",
+      "gitBlob": "3b9a8631f19dc67a7d5f81a4192af4106db881d9",
+      "sha256": "d23e85b474105f57e80aab0910e38d1d7061a937d6266615a0d940045258378e",
+      "diagnosticSha256": "d23e85b474105f57e80aab0910e38d1d7061a937d6266615a0d940045258378e"
+    },
+    {
+      "path": "scripts/lib/vitest-worker-bootstrap.mts",
+      "gitBlob": "dff17fc7b4999fcfa4d4f5be51af878613ee5005",
+      "sha256": "15b46ccb1ef9131422e8ea85599f58edd89939bf2c26d7765d36465416436aa0",
+      "diagnosticSha256": "15b46ccb1ef9131422e8ea85599f58edd89939bf2c26d7765d36465416436aa0"
+    },
+    {
+      "path": "scripts/lib/vitest-worker-run.mts",
+      "gitBlob": "9a12c970e953e215c521bc6bc20b15e559764622",
+      "sha256": "518b4f8d0c69e85c4b2d20756092d43f906f087c6a3e11e5c18fd42e510204b0",
+      "diagnosticSha256": "518b4f8d0c69e85c4b2d20756092d43f906f087c6a3e11e5c18fd42e510204b0"
+    },
+    {
+      "path": "scripts/run-vitest.mjs",
+      "gitBlob": "37731b701a959ae1ebfc65133f29d11fcab6aedf",
+      "sha256": "c3590ff935f53512a6faf3455da5e02f914fc9cbf94c5fdc962d40fbe7f5a459",
+      "diagnosticSha256": "c3590ff935f53512a6faf3455da5e02f914fc9cbf94c5fdc962d40fbe7f5a459"
+    },
+    {
+      "path": "scripts/test-projects-run.mts",
+      "gitBlob": "9f88a0c9cd18f7a5820f64db82529125dccd6b40",
+      "sha256": "3d9671e2c008254ab85e298b666d30ccbe0fdc453efb8c75fa75a90068f1d219",
+      "diagnosticSha256": "3d9671e2c008254ab85e298b666d30ccbe0fdc453efb8c75fa75a90068f1d219"
+    },
+    {
+      "path": "scripts/test-projects.mts",
+      "gitBlob": "bf806915fadd6698ee2416c293bf58b5d85a6d1c",
+      "sha256": "41cedf3b12f00f562ca70c72b9d9a1fedfbd1ef129d3d2ed9dced9b4584ad898",
+      "diagnosticSha256": "41cedf3b12f00f562ca70c72b9d9a1fedfbd1ef129d3d2ed9dced9b4584ad898"
+    },
+    {
+      "path": "scripts/test-projects.test-support.mts",
+      "gitBlob": "00e3c9a04d028c6474a47a3bd682b9ff9d5e2689",
+      "sha256": "15e0e4edffed158cce93db3c5e87b9b9aed8e228481b00060a10ec93486d1001",
+      "diagnosticSha256": "15e0e4edffed158cce93db3c5e87b9b9aed8e228481b00060a10ec93486d1001"
+    },
+    {
+      "path": "src/gateway/config-reload.activation.integration.test.ts",
+      "gitBlob": "6eb1f24c1fcdf47128e9194af2b26797d14252ab",
+      "sha256": "d12b651deb56de2187d90124ea1c3a24dea673aab91153212d756a8e70366bda",
+      "diagnosticSha256": "d12b651deb56de2187d90124ea1c3a24dea673aab91153212d756a8e70366bda"
+    },
+    {
+      "path": "src/gateway/exec-approval-manager.test.ts",
+      "gitBlob": "25419c658e06a40d8d1991b6cb7f42ab91ca3544",
+      "sha256": "37a74d229ee438822d3feb6335f1d31e7aba1c62268e7ccd13763564b67bedec",
+      "diagnosticSha256": "37a74d229ee438822d3feb6335f1d31e7aba1c62268e7ccd13763564b67bedec"
+    },
+    {
+      "path": "src/gateway/github-repository-publication-restart.test.ts",
+      "gitBlob": "27cdbd8ee3b9134c7c948e95f6aeb4fbfd2bb99c",
+      "sha256": "8608158c46c6d4101d98a0baaaa5c035752c210398ef94e554d4a7639c91a08e",
+      "diagnosticSha256": "8608158c46c6d4101d98a0baaaa5c035752c210398ef94e554d4a7639c91a08e"
+    },
+    {
+      "path": "src/gateway/managed-image-record-store.test.ts",
+      "gitBlob": "c5dc8284aef3bb342ab15f92a7d2b2e2b7e7d309",
+      "sha256": "c16c33c3918365bd013cf32798c4e48b8803538e161a42f366b669fd7b0d68bf",
+      "diagnosticSha256": "c16c33c3918365bd013cf32798c4e48b8803538e161a42f366b669fd7b0d68bf"
+    },
+    {
+      "path": "src/gateway/operator-run-authority.worker.test.ts",
+      "gitBlob": "c3c1b8258ec68808703b0cfe63e917dbf6b927f9",
+      "sha256": "2d47a007954e61a2e155996db628d5f9ecf8448984f9e55e19c4399f7bdc13c2",
+      "diagnosticSha256": "2d47a007954e61a2e155996db628d5f9ecf8448984f9e55e19c4399f7bdc13c2"
+    },
+    {
+      "path": "src/gateway/server-close.agent-databases.test.ts",
+      "gitBlob": "2809ce13e14f30bb3b9554941cb598b4bb975068",
+      "sha256": "0170088d83cd456a05c4148248540e54d6e07c456e12d90bd279e79634d1b5e6",
+      "diagnosticSha256": "0170088d83cd456a05c4148248540e54d6e07c456e12d90bd279e79634d1b5e6"
+    },
+    {
+      "path": "src/gateway/server-methods/models-auth-login.catalog.integration.test.ts",
+      "gitBlob": "ccd8e855467f6e28dbeb143e5b2ca44046061014",
+      "sha256": "638b574711caf80089b3706f77cbf18f4ebf8706b59fb8844daa04caa533db24",
+      "diagnosticSha256": "638b574711caf80089b3706f77cbf18f4ebf8706b59fb8844daa04caa533db24"
+    },
+    {
+      "path": "src/gateway/server-methods/sessions-create-category.test.ts",
+      "gitBlob": "2fc7dd9b40f07ae4e06bd79dc40988051abd8474",
+      "sha256": "ec808acd650f51585b970f9ce6b401c02d0ebd37882d63affe3ad92b01e54644",
+      "diagnosticSha256": "ec808acd650f51585b970f9ce6b401c02d0ebd37882d63affe3ad92b01e54644"
+    },
+    {
+      "path": "src/gateway/server/skill-library-read.test.ts",
+      "gitBlob": "157832859dbe7626a7314b6b753b039df089e1a8",
+      "sha256": "2ba148022ad7f0210e9b234333c7db1df3472eb5dbd89627283861130386f7c9",
+      "diagnosticSha256": "2ba148022ad7f0210e9b234333c7db1df3472eb5dbd89627283861130386f7c9"
+    },
+    {
+      "path": "src/gateway/session-lifecycle-run-failure.test.ts",
+      "gitBlob": "244c162e55debd3e3e7c46dc36f7356601999450",
+      "sha256": "5bd859e036f8d891b4c8b7a63cd1164b0408c3e9ca5defc9ab0c2569d3f04cc6",
+      "diagnosticSha256": "5bd859e036f8d891b4c8b7a63cd1164b0408c3e9ca5defc9ab0c2569d3f04cc6"
+    },
+    {
+      "path": "src/gateway/session-transcript-preview.hydration.test.ts",
+      "gitBlob": "099ccda306a7f58ecf60e4ab0d7b98d8364f750b",
+      "sha256": "c5fd32c58e98196ce76b147f36f3f69d0bbeb0a2688abe573ec47dd02c5045d9",
+      "diagnosticSha256": "c5fd32c58e98196ce76b147f36f3f69d0bbeb0a2688abe573ec47dd02c5045d9"
+    },
+    {
+      "path": "src/gateway/tools-invoke-http.test.ts",
+      "gitBlob": "3a83758c8a7d22436d03e0fd84a48e8564816848",
+      "sha256": "95f6f6707cdf2f6e1c644c25b181daa138d216102f27416d97190e0449ae6901",
+      "diagnosticSha256": "95f6f6707cdf2f6e1c644c25b181daa138d216102f27416d97190e0449ae6901"
+    },
+    {
+      "path": "src/gateway/worker-environments/placement-change-snapshot.test.ts",
+      "gitBlob": "461a247a5174333e22bdd30d7329e3dfa4936643",
+      "sha256": "ef8309863c86598ca737a46fe89d97b55c3ef3173b40ad0d472d129be3501d41",
+      "diagnosticSha256": "ef8309863c86598ca737a46fe89d97b55c3ef3173b40ad0d472d129be3501d41"
+    },
+    {
+      "path": "src/gateway/worker-environments/placement-session-retirement.test.ts",
+      "gitBlob": "3b1d4e7933086282026ff38f5079770c9f92f2f5",
+      "sha256": "8b2b2f009d608703453ef8ba68f83de84c2670b63791f4be6b7dccecfe9d9648",
+      "diagnosticSha256": "8b2b2f009d608703453ef8ba68f83de84c2670b63791f4be6b7dccecfe9d9648"
+    },
+    {
+      "path": "src/gateway/worker-environments/prepared-pool-repository.test.ts",
+      "gitBlob": "abb497262430dcabe8b4ae6f23f18ae98aa5b1fc",
+      "sha256": "3ffa2ca6938ea174575b4c7fe53744b3a3daa0ffa9c31405aebe8a07ab1218d2",
+      "diagnosticSha256": "3ffa2ca6938ea174575b4c7fe53744b3a3daa0ffa9c31405aebe8a07ab1218d2"
+    },
+    {
+      "path": "src/gateway/worker-environments/repository-project-access.test.ts",
+      "gitBlob": "e28d452eade8974b6aebd8f9d1e06483631c6e3e",
+      "sha256": "c2afa9dcd85bf1a02cfc00548bdb8768b4218285c8a51685b5376626dda378c4",
+      "diagnosticSha256": "c2afa9dcd85bf1a02cfc00548bdb8768b4218285c8a51685b5376626dda378c4"
+    },
+    {
+      "path": "src/gateway/worker-environments/worker-turn-launcher-build-recovery.test.ts",
+      "gitBlob": "f3bbbcdf826259533adc489bcfead312792e7bfe",
+      "sha256": "1d49432cad903580aa360276402d8e5825d03f51fca5e2a0832c2ada7a27b6ad",
+      "diagnosticSha256": "1d49432cad903580aa360276402d8e5825d03f51fca5e2a0832c2ada7a27b6ad"
+    },
+    {
+      "path": "src/gateway/worker-environments/worker-turn-rpc.test.ts",
+      "gitBlob": "ae655e4df3cedba3e4e3a6b4d65e4cd72d1953a5",
+      "sha256": "47648463f2e9a7851e93ed321f417ddcfbc7826c74571628abbbb5e1f05880e1",
+      "diagnosticSha256": "47648463f2e9a7851e93ed321f417ddcfbc7826c74571628abbbb5e1f05880e1"
+    },
+    {
+      "path": "src/infra/runtime-worker-generation.ts",
+      "gitBlob": "443d79aa9c8e02391a8e30519e01414d61be57d0",
+      "sha256": "88d38dbf272dfd934a121dae4f26a6fa58f1957d0831d9b23fa0405d64d1f54e",
+      "diagnosticSha256": "88d38dbf272dfd934a121dae4f26a6fa58f1957d0831d9b23fa0405d64d1f54e"
+    },
+    {
+      "path": "src/infra/runtime-worker-url.ts",
+      "gitBlob": "b9af31cd5de4382d1649688757f47336deb3a1a6",
+      "sha256": "d7ec3085a364f09d01e9e88dd904c4eb1279a89a15bad54244fa35081936aa95",
+      "diagnosticSha256": "d7ec3085a364f09d01e9e88dd904c4eb1279a89a15bad54244fa35081936aa95"
+    },
+    {
+      "path": "src/infra/session-cost-usage-cache.sqlite.test.ts",
+      "gitBlob": "ef299121a41ec8c0c5387157428e19b3467a9491",
+      "sha256": "34ae7033cc567b488f17bc0fb422ec955dfb0c6b14ed4a8649295b1e25291d1e",
+      "diagnosticSha256": "34ae7033cc567b488f17bc0fb422ec955dfb0c6b14ed4a8649295b1e25291d1e"
+    },
+    {
+      "path": "src/infra/session-cost-usage-pricing-context.test.ts",
+      "gitBlob": "313c01ce99db4222f936f58e80d2e1eb5b9107fc",
+      "sha256": "396e9849e21b3c32c1e4e9be327bf73b16a454765eb1d480bc7df5f052f8478a",
+      "diagnosticSha256": "396e9849e21b3c32c1e4e9be327bf73b16a454765eb1d480bc7df5f052f8478a"
+    },
+    {
+      "path": "src/infra/session-cost-usage-refresh.test.ts",
+      "gitBlob": "c58786ab19e9fea7ea3df195189ec9b2d73a97d6",
+      "sha256": "d1cbcc257e10858d533422a6ff6c0e2f045424a73926101d9a63755b2845f95e",
+      "diagnosticSha256": "d1cbcc257e10858d533422a6ff6c0e2f045424a73926101d9a63755b2845f95e"
+    },
+    {
+      "path": "src/infra/session-cost-usage-rollup-codec.test.ts",
+      "gitBlob": "84471ccd2892fc05e9a09fb26e8f90a4c8a01f5a",
+      "sha256": "1cf7ef77a1efcf5c6b5bbc4dd9725d8bcbfe14dc4f28adf849b5383ccc73416a",
+      "diagnosticSha256": "1cf7ef77a1efcf5c6b5bbc4dd9725d8bcbfe14dc4f28adf849b5383ccc73416a"
+    },
+    {
+      "path": "src/infra/session-cost-usage-worker-io.test.ts",
+      "gitBlob": "a7a16ad2b3d37b1d7f831feaa5bd9c906c487500",
+      "sha256": "0da353cbbeebe8a5d9013ee990cb557f828a2111ebb4d0eb3b086a236e19adab",
+      "diagnosticSha256": "0da353cbbeebe8a5d9013ee990cb557f828a2111ebb4d0eb3b086a236e19adab"
+    },
+    {
+      "path": "src/infra/session-cost-usage.archive-identity.test.ts",
+      "gitBlob": "f859aafe38c8051a668f3bfb6c76b68a76a8f805",
+      "sha256": "ef874bac3290afb3ca5aec69a122d0e42de10384c3b7b9c54dc767134e0d6d9b",
+      "diagnosticSha256": "ef874bac3290afb3ca5aec69a122d0e42de10384c3b7b9c54dc767134e0d6d9b"
+    },
+    {
+      "path": "src/infra/session-delivery-queue-runtime.test.ts",
+      "gitBlob": "2c1ba3ed1d57be0b8ba784907259f0ec00708804",
+      "sha256": "db19d4417e44a2c18888218559cc39f23ecbd4621b0abff8abdd1fd4404bbd54",
+      "diagnosticSha256": "db19d4417e44a2c18888218559cc39f23ecbd4621b0abff8abdd1fd4404bbd54"
+    },
+    {
+      "path": "src/infra/session-delivery-queue.recovery.test.ts",
+      "gitBlob": "c8e99715d1b24bb44fcbf030196c1e04f7fda9bb",
+      "sha256": "8e6085df41e20a0ffa3b66961d475f4808e64b4f975ec32548eb72f38bcdb02d",
+      "diagnosticSha256": "8e6085df41e20a0ffa3b66961d475f4808e64b4f975ec32548eb72f38bcdb02d"
+    },
+    {
+      "path": "src/infra/session-event-wake-concurrency.test.ts",
+      "gitBlob": "37e393db693958ba5d68f8b3721cc80bc07f1d75",
+      "sha256": "e42e2474595ff8feb7fe10cf8d1bf75415d8622a3e9c462303343ac8960a81df",
+      "diagnosticSha256": "e42e2474595ff8feb7fe10cf8d1bf75415d8622a3e9c462303343ac8960a81df"
+    },
+    {
+      "path": "src/infra/session-event-wake.module-owner.test.ts",
+      "gitBlob": "6cd75b9e607633a90417acd724ff2561c19ec416",
+      "sha256": "69dbf507a2c8930f743b0f63f8f7025899aec4ec14e361126faf41536f549e04",
+      "diagnosticSha256": "69dbf507a2c8930f743b0f63f8f7025899aec4ec14e361126faf41536f549e04"
+    },
+    {
+      "path": "src/infra/session-event-wake.preemption.test.ts",
+      "gitBlob": "5960de12034530750fd15c5dad0073150520dfd4",
+      "sha256": "68d928300330f4f4ceb53d222e46429446938cdd111116e89689f6c6c174e3ca",
+      "diagnosticSha256": "68d928300330f4f4ceb53d222e46429446938cdd111116e89689f6c6c174e3ca"
+    },
+    {
+      "path": "src/infra/session-maintenance-warning.test.ts",
+      "gitBlob": "7500a1013c8dc7cb3fec15ea0d24ed14c5857ea8",
+      "sha256": "025e79d50b505ac4bff2626bd89adef87d50a768a638940c5aebf19845fd7069",
+      "diagnosticSha256": "025e79d50b505ac4bff2626bd89adef87d50a768a638940c5aebf19845fd7069"
+    },
+    {
+      "path": "src/infra/sqlite-audit-record-store.test.ts",
+      "gitBlob": "950a836136ad0eaaab6a61491b5f89c43dab38fc",
+      "sha256": "e1cb1bab03dc5bba584cc6d6191d9e2dd2022d251809c55029b3271c84dc2245",
+      "diagnosticSha256": "e1cb1bab03dc5bba584cc6d6191d9e2dd2022d251809c55029b3271c84dc2245"
+    },
+    {
+      "path": "src/infra/sqlite-busy-timeout.test.ts",
+      "gitBlob": "9ca39bd2f6e11b05c8748217a9e4ec8a13358fef",
+      "sha256": "ac5345f720195ad25db83b3987abf63a9c652c7b3e8f788a55ca7e1b04bfbdd8",
+      "diagnosticSha256": "ac5345f720195ad25db83b3987abf63a9c652c7b3e8f788a55ca7e1b04bfbdd8"
+    },
+    {
+      "path": "src/infra/sqlite-capability-worker.test.ts",
+      "gitBlob": "c41feb7a289e0cac959e27a64e33d7f9a163222c",
+      "sha256": "0168eb44fb5159e218570b61a520d9ceed13abd35a1a50850b33b9ca331844cc",
+      "diagnosticSha256": "0168eb44fb5159e218570b61a520d9ceed13abd35a1a50850b33b9ca331844cc"
+    },
+    {
+      "path": "src/infra/sqlite-host-data-observer.test.ts",
+      "gitBlob": "134b1e57d38f1a4f394470b3a856fc87286caa13",
+      "sha256": "ac0a7bb26d93e50e16d1bfea48ad6eaae71d0c8c25e1a2e3348ae83c97faaae0",
+      "diagnosticSha256": "ac0a7bb26d93e50e16d1bfea48ad6eaae71d0c8c25e1a2e3348ae83c97faaae0"
+    },
+    {
+      "path": "src/infra/sqlite-index-schema.test.ts",
+      "gitBlob": "9466db407b6fd96457f9e6d41f6d1845a0edf0bd",
+      "sha256": "3711a5ab9f9f69a2caa8ed25ded8f45dada91bb70402bf8fe72f5973d1f975cc",
+      "diagnosticSha256": "3711a5ab9f9f69a2caa8ed25ded8f45dada91bb70402bf8fe72f5973d1f975cc"
+    },
+    {
+      "path": "src/infra/sqlite-integrity.test.ts",
+      "gitBlob": "e703ca7ba94c80e0f67be9bbd270f2e3a87d0278",
+      "sha256": "039fb64a46f4e45093eb4b9e51e96155bc1c1dec17d4ab5675a2b3a98a12f9a7",
+      "diagnosticSha256": "039fb64a46f4e45093eb4b9e51e96155bc1c1dec17d4ab5675a2b3a98a12f9a7"
+    },
+    {
+      "path": "src/infra/sqlite-private-directory.test.ts",
+      "gitBlob": "2b218145b326e08a874e1733051d922c7ba0843e",
+      "sha256": "def1d862fb1610eed9b490920184ea77ce799def0f35a1f55783c98492649261",
+      "diagnosticSha256": "def1d862fb1610eed9b490920184ea77ce799def0f35a1f55783c98492649261"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-inspection-operation.test.ts",
+      "gitBlob": "2a039bab192ceb04219c50043161c0c0667f7fcf",
+      "sha256": "f488e484e4f894f5ab08c28775b8f8001724ea5ba60cf4c91b64d7562ab19ef4",
+      "diagnosticSha256": "f488e484e4f894f5ab08c28775b8f8001724ea5ba60cf4c91b64d7562ab19ef4"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-location.cleanup-owner.test.ts",
+      "gitBlob": "5f042df3002179e1d90f4ab6d6a82af7ec8c6234",
+      "sha256": "7915457ad166c56f1f0e9008a89fcefe850baa9872a05198cad8622276930e38",
+      "diagnosticSha256": "7915457ad166c56f1f0e9008a89fcefe850baa9872a05198cad8622276930e38"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-location.concurrent.test.ts",
+      "gitBlob": "3b5bcb31fa274d4f362eff5a0e8bca88768a2480",
+      "sha256": "e3fd7a1d59e5158cecfb2bfb42063c7c25df36e4f577d5ea753e45083c4a888a",
+      "diagnosticSha256": "e3fd7a1d59e5158cecfb2bfb42063c7c25df36e4f577d5ea753e45083c4a888a"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-location.interruption.test.ts",
+      "gitBlob": "81227694b5417cd8e2ec61cfc33cb53bb89b4c7a",
+      "sha256": "c70cb8a8ad73d6ee20a0277ac4145cbe15c90caaa665dd15a2079e8ccd9c7c3b",
+      "diagnosticSha256": "c70cb8a8ad73d6ee20a0277ac4145cbe15c90caaa665dd15a2079e8ccd9c7c3b"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-location.test.ts",
+      "gitBlob": "7a2e19dfcdee56a0f987be7ba55199e4177235d0",
+      "sha256": "6f1e62011158a88ad181043a074b47ba6e8066ed0f07c963c3f8454eda8f7ca0",
+      "diagnosticSha256": "6f1e62011158a88ad181043a074b47ba6e8066ed0f07c963c3f8454eda8f7ca0"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-worker-session.test.ts",
+      "gitBlob": "e30d008e7eaea54be3075922dd5afd8a5014f2f1",
+      "sha256": "a4e20f994170ef01a847bb306d5414f9b439c0a0c4113f20025fbeb64ca07673",
+      "diagnosticSha256": "a4e20f994170ef01a847bb306d5414f9b439c0a0c4113f20025fbeb64ca07673"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-worker-session.ts",
+      "gitBlob": "3bbe46873917d0ac0e91567c5930a7b7979eaa01",
+      "sha256": "86a40ec54e98f2a123154df22119d551b8d09b4d970b30ae173ff1055250e876",
+      "diagnosticSha256": "86a40ec54e98f2a123154df22119d551b8d09b4d970b30ae173ff1055250e876"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-worker.compile-cache.process.test.ts",
+      "gitBlob": "0c2bdaaacb9766fbb08da2583c045d22d2869c26",
+      "sha256": "1670181b3b25b7df10d1d2225d3734aee70b5dc663994c5f6db1f754d425a7ff",
+      "diagnosticSha256": "1670181b3b25b7df10d1d2225d3734aee70b5dc663994c5f6db1f754d425a7ff"
+    },
+    {
+      "path": "src/infra/sqlite-readonly-worker.model-auth.test.ts",
+      "gitBlob": "5cd8ae2440baccab918d6c13a62ccbba50c969da",
+      "sha256": "c5a315f8c6a110908c0cf05f5d41a3725cd152b49aee974a822f598adcf08909",
+      "diagnosticSha256": "c5a315f8c6a110908c0cf05f5d41a3725cd152b49aee974a822f598adcf08909"
+    },
+    {
+      "path": "src/infra/sqlite-recovery-files.test.ts",
+      "gitBlob": "75dfbef05fd8b4206e84ca640d759a8a2906cac8",
+      "sha256": "ec812c0d4a7e88492684b026f2f1b5c0ad35eea0c65144f2b51cd493e469a11e",
+      "diagnosticSha256": "ec812c0d4a7e88492684b026f2f1b5c0ad35eea0c65144f2b51cd493e469a11e"
+    },
+    {
+      "path": "src/infra/sqlite-schema-contract.test.ts",
+      "gitBlob": "3a177ef48d4b15d28aa00abae876b00aa5d69dee",
+      "sha256": "265b150f1aed9b835372dbe5eeca1e34335aa324c719b04069750240111e29e8",
+      "diagnosticSha256": "265b150f1aed9b835372dbe5eeca1e34335aa324c719b04069750240111e29e8"
+    },
+    {
+      "path": "src/infra/sqlite-schema-header.test.ts",
+      "gitBlob": "9be1e6fc7e1fa29a3d60688b1057cdda79de73e1",
+      "sha256": "628094fd3c6feb0d9a70cf46f9ebd754a6fecd7a45a102c20a204caadaa5b322",
+      "diagnosticSha256": "628094fd3c6feb0d9a70cf46f9ebd754a6fecd7a45a102c20a204caadaa5b322"
+    },
+    {
+      "path": "src/infra/sqlite-snapshot-single-flight.test.ts",
+      "gitBlob": "383c01d5f0dac8ffc395d1be2051422bc9190619",
+      "sha256": "327eab34a96492025ea89d5658441c6e9f71fa11ab5b03bbe360fe5ec187f184",
+      "diagnosticSha256": "327eab34a96492025ea89d5658441c6e9f71fa11ab5b03bbe360fe5ec187f184"
+    },
+    {
+      "path": "src/infra/sqlite-snapshot-staging-owner.test.ts",
+      "gitBlob": "93f1a26a748ba9940456fbf11ed63ade473edc2d",
+      "sha256": "147e5322e3d45ce8c0f362f22ebd50e899efa237fa48c6b355abd282ffd74730",
+      "diagnosticSha256": "147e5322e3d45ce8c0f362f22ebd50e899efa237fa48c6b355abd282ffd74730"
+    },
+    {
+      "path": "src/infra/sqlite-snapshot-staging.ownership.test.ts",
+      "gitBlob": "54e082ebdad4e095cbb598f6103457ef19119070",
+      "sha256": "d5d1ea7f0b338c79fd63178853e5bbc93c33e848de2280737df53c89cbbc8d14",
+      "diagnosticSha256": "d5d1ea7f0b338c79fd63178853e5bbc93c33e848de2280737df53c89cbbc8d14"
+    },
+    {
+      "path": "src/infra/sqlite-terminal-open-latch.test.ts",
+      "gitBlob": "ff41a7ffa6b7c955a947c159960f23925ca02144",
+      "sha256": "7e9a60633c1fa37219d9d9e3b8c37ad76390498ef14cdba95f99803aa187a49b",
+      "diagnosticSha256": "7e9a60633c1fa37219d9d9e3b8c37ad76390498ef14cdba95f99803aa187a49b"
+    },
+    {
+      "path": "src/infra/sqlite-transaction.diagnostics.test.ts",
+      "gitBlob": "451ec7395682478df0a6f8416e6cb51293a643e9",
+      "sha256": "6969f539f9521a802f155aa92cfebd018b17d2078147cec4c1dd65b5427a0fa1",
+      "diagnosticSha256": "6969f539f9521a802f155aa92cfebd018b17d2078147cec4c1dd65b5427a0fa1"
+    },
+    {
+      "path": "src/infra/sqlite-transaction.windows.test.ts",
+      "gitBlob": "ad94faf2306035310b9db0eba127d8a68769ba8d",
+      "sha256": "aaf08fafe12cb8eccd77ab2c334747e2c0085ad0bbada85504bd6e9beafb8d3e",
+      "diagnosticSha256": "aaf08fafe12cb8eccd77ab2c334747e2c0085ad0bbada85504bd6e9beafb8d3e"
+    },
+    {
+      "path": "src/infra/sqlite-wal-checkpoint.test.ts",
+      "gitBlob": "ad7148d12237c827e923596f3787fe42180a8b80",
+      "sha256": "91bb4b73d845478dbe4f4c21b6342c892b80a18d5c2ee78463b8f796148dc099",
+      "diagnosticSha256": "91bb4b73d845478dbe4f4c21b6342c892b80a18d5c2ee78463b8f796148dc099"
+    },
+    {
+      "path": "src/infra/sqlite-wal.agent-admission.test.ts",
+      "gitBlob": "5b534186d8a00b7401943cbb36658ef40f6a8b5f",
+      "sha256": "73c451e111d0aebc370df61ed2d348d3b75b6cb4c6259c3c30569a2d91308676",
+      "diagnosticSha256": "73c451e111d0aebc370df61ed2d348d3b75b6cb4c6259c3c30569a2d91308676"
+    },
+    {
+      "path": "src/infra/sqlite-wal.mount-timeout.test.ts",
+      "gitBlob": "f9211351c2b853557467debfd62cb699e00d2a5e",
+      "sha256": "173a766145b7d46d0c45deb873622c087888e00f1b43b0aebc7b401184e7dc6d",
+      "diagnosticSha256": "173a766145b7d46d0c45deb873622c087888e00f1b43b0aebc7b401184e7dc6d"
+    },
+    {
+      "path": "src/infra/sqlite-worker-broker-reply.cleanup.test.ts",
+      "gitBlob": "d152e9812bf85a51502d7de4908e164c864e4631",
+      "sha256": "f2088ff0d82191d8f27a63c3f7458c771e15881bebdebc7f5405980ddf8fada2",
+      "diagnosticSha256": "f2088ff0d82191d8f27a63c3f7458c771e15881bebdebc7f5405980ddf8fada2"
+    },
+    {
+      "path": "src/infra/sqlite-worker-broker.ts",
+      "gitBlob": "16902be333f8b151bfa9d3367151b9dce2904786",
+      "sha256": "1ee050112473e11cd42e283af4f696669aa20a2e3e9b58a3b2472292ab17b08c",
+      "diagnosticSha256": "1ee050112473e11cd42e283af4f696669aa20a2e3e9b58a3b2472292ab17b08c"
+    },
+    {
+      "path": "src/infra/sqlite-worker-client.test.ts",
+      "gitBlob": "a8db69ad36bebf0f32bb917b0d7781611f5da783",
+      "sha256": "f4807900b4fba8e567624ed466e92c4808e13212b628ad047f64c0a37dc42272",
+      "diagnosticSha256": "f4807900b4fba8e567624ed466e92c4808e13212b628ad047f64c0a37dc42272"
+    },
+    {
+      "path": "src/infra/sqlite-worker-identity.test.ts",
+      "gitBlob": "9425bc12e68a295e174cd526e4db5682b2393dfa",
+      "sha256": "6a0e163b6d126bab82d8a61dcf6ad60c85a1d38b22de4d55131110677bc2dd9f",
+      "diagnosticSha256": "6a0e163b6d126bab82d8a61dcf6ad60c85a1d38b22de4d55131110677bc2dd9f"
+    },
+    {
+      "path": "src/infra/sqlite-worker-identity.ts",
+      "gitBlob": "4752a911ff28caf0b67f3a97516d820e4968a73e",
+      "sha256": "236734acb85703ddea1641c2bbb9c605057b1190c9a4d11d32d12376ad982d8f",
+      "diagnosticSha256": "236734acb85703ddea1641c2bbb9c605057b1190c9a4d11d32d12376ad982d8f"
+    },
+    {
+      "path": "src/infra/sqlite-worker-input.test.ts",
+      "gitBlob": "7e8b4f3ab17dd74029d3af35cb22cca2603063bb",
+      "sha256": "07dc9fb147061cbd4a7114c06e076ffdcc7413839c60261ba618359f174a409c",
+      "diagnosticSha256": "07dc9fb147061cbd4a7114c06e076ffdcc7413839c60261ba618359f174a409c"
+    },
+    {
+      "path": "src/infra/sqlite-worker-logging.test.ts",
+      "gitBlob": "60e004711d0842a69b9e7cc717c5069f8a89243e",
+      "sha256": "0d481297c95e93e6a7ca6792aa1c0aa797d1bbdc2a966174def8fa5fb8d1842c",
+      "diagnosticSha256": "0d481297c95e93e6a7ca6792aa1c0aa797d1bbdc2a966174def8fa5fb8d1842c"
+    },
+    {
+      "path": "src/infra/sqlite-worker-managed-task-link.test.ts",
+      "gitBlob": "f28bbc33f0c4adf91ee70c0dce57ea1e4ad6e42b",
+      "sha256": "cb96681906e2996aad54447916e8386e533b15915c78799710bdf0ae713dd2d6",
+      "diagnosticSha256": "cb96681906e2996aad54447916e8386e533b15915c78799710bdf0ae713dd2d6"
+    },
+    {
+      "path": "src/infra/sqlite-worker-open-refusal.test.ts",
+      "gitBlob": "e4c67dcf4aa54d2c820e3dc9bf88275c2b56d959",
+      "sha256": "cc0428ac049e0d82de0961da9e1addc48da68e39647d225e80bae568889c5119",
+      "diagnosticSha256": "cc0428ac049e0d82de0961da9e1addc48da68e39647d225e80bae568889c5119"
+    },
+    {
+      "path": "src/infra/sqlite-worker-plugin-comparison.test.ts",
+      "gitBlob": "75532e315af017566fce22cdf7dedac9a0a2a69b",
+      "sha256": "de2475f6f52f573ba7a4d1cb7b86a217a93a4bc61a410c2fab20268d69edbacd",
+      "diagnosticSha256": "de2475f6f52f573ba7a4d1cb7b86a217a93a4bc61a410c2fab20268d69edbacd"
+    },
+    {
+      "path": "src/infra/sqlite-worker-shared-state-admission.test.ts",
+      "gitBlob": "efc07bb09bea9bd21caf9caa8ecd05e47e4d54a3",
+      "sha256": "7d09e315ab35512069ce7556a85899fb62b8ba7ceec7762493c1c329ba504449",
+      "diagnosticSha256": "7d09e315ab35512069ce7556a85899fb62b8ba7ceec7762493c1c329ba504449"
+    },
+    {
+      "path": "src/infra/sqlite-worker-shared-state.test.ts",
+      "gitBlob": "6f5a32f3487f7bc8212a80a4986ab49d313c96cc",
+      "sha256": "bf8af3029607af2eddd394fc4db87c455602569b8df0c03bd84fd16915f00752",
+      "diagnosticSha256": "bf8af3029607af2eddd394fc4db87c455602569b8df0c03bd84fd16915f00752"
+    },
+    {
+      "path": "src/infra/sqlite-worker-store.compile-cache.test.ts",
+      "gitBlob": "94aad3a16d65fa77575ef3d2e581439aaca8fd7d",
+      "sha256": "2d23cc3b565ad71cfe01d8911971ee29082b0b7de288a6a1953502a291f234ce",
+      "diagnosticSha256": "2d23cc3b565ad71cfe01d8911971ee29082b0b7de288a6a1953502a291f234ce"
+    },
+    {
+      "path": "src/infra/sqlite-worker-store.generation.test.ts",
+      "gitBlob": "54260cafcd8c91392441d2c560ca8f16419cffda",
+      "sha256": "2d9bc7354acaf3963b7d7984a1b76ef2a09d2c5166944ee16002cfd1384a1705",
+      "diagnosticSha256": "2d9bc7354acaf3963b7d7984a1b76ef2a09d2c5166944ee16002cfd1384a1705"
+    },
+    {
+      "path": "src/infra/sqlite-worker-task-flow-reconciliation.test.ts",
+      "gitBlob": "8a3a85a1ed0e51141e1d83f5bf11ab2084d6abeb",
+      "sha256": "b65929f1079bf56f606527a6faece55bd1e7122176098d475697dc8f6cc33e0b",
+      "diagnosticSha256": "b65929f1079bf56f606527a6faece55bd1e7122176098d475697dc8f6cc33e0b"
+    },
+    {
+      "path": "src/infra/sqlite-worker-task-run-lookup.test.ts",
+      "gitBlob": "990b6b8bf974e078a920bf86d8e896cd9fd72362",
+      "sha256": "305f185cdb7660c3f256d5addf89848d4fc0bec94e1b42e259fe1322d77c12b9",
+      "diagnosticSha256": "305f185cdb7660c3f256d5addf89848d4fc0bec94e1b42e259fe1322d77c12b9"
+    },
+    {
+      "path": "src/infra/sqlite-worker-terminal-admission.test.ts",
+      "gitBlob": "172d2eade1042b27bcefc78fe31f0b291e2c8cf5",
+      "sha256": "745617f84dae15625c2605182f75a3002b157226b3044fdb4c732fdb88f210d9",
+      "diagnosticSha256": "745617f84dae15625c2605182f75a3002b157226b3044fdb4c732fdb88f210d9"
+    },
+    {
+      "path": "src/infra/sqlite-worker-transcripts.export-settlement.test.ts",
+      "gitBlob": "e1b21801141b581893ffd57ea15c2df22ff967e5",
+      "sha256": "6322ee6d490044594783d6cdc3a3b1bb83035df6f52298db6a876880c727f2e4",
+      "diagnosticSha256": "6322ee6d490044594783d6cdc3a3b1bb83035df6f52298db6a876880c727f2e4"
+    },
+    {
+      "path": "src/infra/sqlite-worker-transfer.test.ts",
+      "gitBlob": "c472692dd0a94847fffb46280b3a66f3eaaa2e2b",
+      "sha256": "9a53a6cd77741e1a9d7045c7a738009e6d1ce545c0b32d39e3ec2732aecc62c8",
+      "diagnosticSha256": "9a53a6cd77741e1a9d7045c7a738009e6d1ce545c0b32d39e3ec2732aecc62c8"
+    },
+    {
+      "path": "src/infra/state-migrations.acp-replay.test.ts",
+      "gitBlob": "edb57a0e09fd6c0b20f5807e04885e1726fc234e",
+      "sha256": "f4fdd2ff8f1d471dfe8172196940f11949542e58c4b4057b6c57e0fcc0b7eda9",
+      "diagnosticSha256": "f4fdd2ff8f1d471dfe8172196940f11949542e58c4b4057b6c57e0fcc0b7eda9"
+    },
+    {
+      "path": "src/infra/state-migrations.agent-owner-recovery.test.ts",
+      "gitBlob": "e4fd06b9b94fcaed5b7488b5612194bfa0fa0268",
+      "sha256": "43dbe715aed31dd1968c44c6bb85e1bd2f42dd104c24e2eeffb4063e84756a1e",
+      "diagnosticSha256": "43dbe715aed31dd1968c44c6bb85e1bd2f42dd104c24e2eeffb4063e84756a1e"
+    },
+    {
+      "path": "src/infra/state-migrations.audit-backup.test.ts",
+      "gitBlob": "5ff296c326cdc844f643dc70faaf24f24fb664de",
+      "sha256": "fe4644f5259d4ed34b3f2f4902955a9ffbc12583318e9b89c95a986afb52ad19",
+      "diagnosticSha256": "fe4644f5259d4ed34b3f2f4902955a9ffbc12583318e9b89c95a986afb52ad19"
+    },
+    {
+      "path": "src/infra/state-migrations.audit-skips.test.ts",
+      "gitBlob": "71e576514d83b1c158fd1c35433f4980dca633f8",
+      "sha256": "d0a7a5650452e10f6f8d9e2cf7c8d3140aa59cdf1def6351d2321a3d709bf53f",
+      "diagnosticSha256": "d0a7a5650452e10f6f8d9e2cf7c8d3140aa59cdf1def6351d2321a3d709bf53f"
+    },
+    {
+      "path": "src/infra/state-migrations.caller-mode.execution.test.ts",
+      "gitBlob": "1eac60a15763cd9951a9d4a0fc1a90f7f421261b",
+      "sha256": "d10c0c06148b39d5e20abe6d8c83d026ffcf8872762f112c176f32d921262cc9",
+      "diagnosticSha256": "d10c0c06148b39d5e20abe6d8c83d026ffcf8872762f112c176f32d921262cc9"
+    },
+    {
+      "path": "src/infra/state-migrations.caller-mode.plugin-execution.test.ts",
+      "gitBlob": "7a900615c2f6430f069b325c510fe6a6eb8b0a6e",
+      "sha256": "25a1b39fa46dabb8715b2b7400ff1ecedef1db8039344d2ef9c01b61e19b038c",
+      "diagnosticSha256": "567443efaebc8e37ac6d8e7aadd58db1e73d570a33aeb43c3caad2af77164bc8"
+    },
+    {
+      "path": "src/infra/state-migrations.caller-mode.storage.test.ts",
+      "gitBlob": "b91a36dc32b7011a7b26c2c322b3d9a4a83eb9f5",
+      "sha256": "ac9d1ded6230e3dfe2fda67b0454400b520230ee7e30b28a1bf8d98c218b4ae2",
+      "diagnosticSha256": "ac9d1ded6230e3dfe2fda67b0454400b520230ee7e30b28a1bf8d98c218b4ae2"
+    },
+    {
+      "path": "src/infra/state-migrations.caller-mode.test-helpers.ts",
+      "gitBlob": "baeeb5093fbd9be2224a5dd3f4a57141394ad4b9",
+      "sha256": "ec611cae9bb123edc600d9126e15495812a34406e439f7e7f260f3752ee1e4ee",
+      "diagnosticSha256": "ec611cae9bb123edc600d9126e15495812a34406e439f7e7f260f3752ee1e4ee"
+    },
+    {
+      "path": "src/infra/state-migrations.channel-pairing.test.ts",
+      "gitBlob": "82a6caae0fa19e4c1f5e0d185b16d7339e6487f8",
+      "sha256": "253f6d18a2cee59d8c44123a0a7e86bf723c76eec3a1f74f68533e311b4bb20b",
+      "diagnosticSha256": "253f6d18a2cee59d8c44123a0a7e86bf723c76eec3a1f74f68533e311b4bb20b"
+    },
+    {
+      "path": "src/infra/state-migrations.doctor.ts",
+      "gitBlob": "82bc7220a2188cee88065487229e3a10d1b2de08",
+      "sha256": "5c649fd62e936cabd2f42a9d037325b85f6b97007db11269ca5ca96caee306fb",
+      "diagnosticSha256": "5c649fd62e936cabd2f42a9d037325b85f6b97007db11269ca5ca96caee306fb"
+    },
+    {
+      "path": "src/infra/state-migrations.messages.ts",
+      "gitBlob": "df0a81e3e53fbeca94fc17b7def9b7f8a08e6318",
+      "sha256": "90ffbaf7880d71d43fb465e8d55a4687e444cb5add971ea4a07a52d9778cf369",
+      "diagnosticSha256": "90ffbaf7880d71d43fb465e8d55a4687e444cb5add971ea4a07a52d9778cf369"
+    },
+    {
+      "path": "src/infra/state-migrations.plan.ts",
+      "gitBlob": "6168f0cd7b56a84e5b35915bb308daeee5cbecd7",
+      "sha256": "ea9738b11bf5bcf65283a46afa83ba33f53751f6ecf7a4d16290ec99e6a8dec9",
+      "diagnosticSha256": "ea9738b11bf5bcf65283a46afa83ba33f53751f6ecf7a4d16290ec99e6a8dec9"
+    },
+    {
+      "path": "src/infra/state-migrations.plugin-doctor.ts",
+      "gitBlob": "2d7244043510577a809f1d77df9809d4b6050d3f",
+      "sha256": "beafbc50dd524b0825442c3c9f86769cb77c0f53eb3a7f2322c95459c93f0d1e",
+      "diagnosticSha256": "beafbc50dd524b0825442c3c9f86769cb77c0f53eb3a7f2322c95459c93f0d1e"
+    },
+    {
+      "path": "src/infra/state-migrations.plugin-state.ts",
+      "gitBlob": "7f9d5335a268f032a244e8fa7b09add60dedb455",
+      "sha256": "a21b12e8c3912fbd9b27c0a8da64943d9404fae41dc77ef65de9f20e8e1d6cc8",
+      "diagnosticSha256": "a21b12e8c3912fbd9b27c0a8da64943d9404fae41dc77ef65de9f20e8e1d6cc8"
+    },
+    {
+      "path": "src/infra/state-migrations.state-dir.ts",
+      "gitBlob": "1c87135b752667486761c1a3d1c9be7a606e5e17",
+      "sha256": "4c8d853cd1ef90b641aa08be72b58a0bcf19c32d89125e4849cbc1bc0148c590",
+      "diagnosticSha256": "4c8d853cd1ef90b641aa08be72b58a0bcf19c32d89125e4849cbc1bc0148c590"
+    },
+    {
+      "path": "src/infra/state-migrations.storage.ts",
+      "gitBlob": "2bf5016aab30c9e79faeeb484034e4f86657d38a",
+      "sha256": "c7b6e773623237111b08432c932ffae4cbb4bcb159cddb0774e0333f3287e9e6",
+      "diagnosticSha256": "c7b6e773623237111b08432c932ffae4cbb4bcb159cddb0774e0333f3287e9e6"
+    },
+    {
+      "path": "src/plugins/doctor-contract-registry.ts",
+      "gitBlob": "269159ab7915f845174ba71c8f97fa7bba8995a0",
+      "sha256": "1c4b0f945263e1cb8a0f8a4976f142f1a0fdd5994270ae46ae2662f4d3ab6b52",
+      "diagnosticSha256": "1c4b0f945263e1cb8a0f8a4976f142f1a0fdd5994270ae46ae2662f4d3ab6b52"
+    },
+    {
+      "path": "src/plugins/installed-plugin-index-record-state.ts",
+      "gitBlob": "1f3f3da98a96485a9e1177e64063f8b76f9b9d53",
+      "sha256": "37aa0e725a4b811000e5e3e63ffd798589d51eaba8656909b89451faccd1f8d1",
+      "diagnosticSha256": "37aa0e725a4b811000e5e3e63ffd798589d51eaba8656909b89451faccd1f8d1"
+    },
+    {
+      "path": "src/plugins/installed-plugin-index-store-path.ts",
+      "gitBlob": "86e08ee73a8728edc4a9dbd804ccae971b7be643",
+      "sha256": "ac2bbe10c36d73398488e22d9c7a770e514192d0d18f8d98b34e5f54b23f0197",
+      "diagnosticSha256": "ac2bbe10c36d73398488e22d9c7a770e514192d0d18f8d98b34e5f54b23f0197"
+    },
+    {
+      "path": "src/plugins/installed-plugin-index-store-write.ts",
+      "gitBlob": "371988a20e8562a8b5e5fc6976fc1e3747fdc0c3",
+      "sha256": "503f17b30d808aa90c86196af67f2162f923acbbe60e8e14722732758f1e56c1",
+      "diagnosticSha256": "503f17b30d808aa90c86196af67f2162f923acbbe60e8e14722732758f1e56c1"
+    },
+    {
+      "path": "src/plugins/plugin-lifecycle-lease-identity.ts",
+      "gitBlob": "fa92db0285a3506081acd40c460d14871d6df806",
+      "sha256": "20ad2aaf21e2443e8e332361edddede02f68ab20283e48ab3f3b3ac90834a801",
+      "diagnosticSha256": "20ad2aaf21e2443e8e332361edddede02f68ab20283e48ab3f3b3ac90834a801"
+    },
+    {
+      "path": "src/plugins/plugin-lifecycle-lease.ts",
+      "gitBlob": "3c7d39409c46bd2671f8b638220a8dff1e312601",
+      "sha256": "2dc5103132347028a022ea6c5e6b39dfe12f63d80589e326875faa782e7c2cb6",
+      "diagnosticSha256": "2dc5103132347028a022ea6c5e6b39dfe12f63d80589e326875faa782e7c2cb6"
+    },
+    {
+      "path": "src/plugins/plugin-module-loader-cache.ts",
+      "gitBlob": "9eeb74cd1c5af6f684aeac17ac4de84c63cc28a2",
+      "sha256": "a6b31afe425ca2f6ccd16446ddd830ae7855c4c5229dc31b02387769794811c4",
+      "diagnosticSha256": "a6b31afe425ca2f6ccd16446ddd830ae7855c4c5229dc31b02387769794811c4"
+    },
+    {
+      "path": "src/state/openclaw-state-db-cache.ts",
+      "gitBlob": "07b3ed283520b0d479ea4a87595e3a42219742ee",
+      "sha256": "f0080435793adef424b85227a81762b12a952633d524b134a882eca5a413a89a",
+      "diagnosticSha256": "f0080435793adef424b85227a81762b12a952633d524b134a882eca5a413a89a"
+    },
+    {
+      "path": "src/state/openclaw-state-lease-acquisition.ts",
+      "gitBlob": "5c1f8a139f3647d466b0199d677685fd18b60f1f",
+      "sha256": "97c6c453372e2a05065fb775f2cbaaaf98d36ca55b32e40e69568202f6976eac",
+      "diagnosticSha256": "97c6c453372e2a05065fb775f2cbaaaf98d36ca55b32e40e69568202f6976eac"
+    },
+    {
+      "path": "src/state/openclaw-state-lease-error.ts",
+      "gitBlob": "8e3c926e024f05a4e95a42d2ad05aa934a094620",
+      "sha256": "1f220b743b0121bf3f9530c2aad9e1ad2e31cf78e4c4caea147dd50f3ab058f7",
+      "diagnosticSha256": "1f220b743b0121bf3f9530c2aad9e1ad2e31cf78e4c4caea147dd50f3ab058f7"
+    },
+    {
+      "path": "src/state/openclaw-state-lease-storage.ts",
+      "gitBlob": "169012fa2f71efc0ef275296a97eb1864f96aba6",
+      "sha256": "8a3c502b7cbe037e2642ac22ec27e726b70e6a2bb1b932f04947c74052ef6f1d",
+      "diagnosticSha256": "8a3c502b7cbe037e2642ac22ec27e726b70e6a2bb1b932f04947c74052ef6f1d"
+    },
+    {
+      "path": "src/state/openclaw-state-lease-worker.ts",
+      "gitBlob": "20aff93bb049fb57d104afd2c00d65b5e72403da",
+      "sha256": "36582861293cd45ace416e5a43a03c39fbe87b801189b45c81ab5c2fba25eb34",
+      "diagnosticSha256": "36582861293cd45ace416e5a43a03c39fbe87b801189b45c81ab5c2fba25eb34"
+    },
+    {
+      "path": "src/state/openclaw-state-lease.ts",
+      "gitBlob": "05d177007b6b92105090e50ad56fa89f7f5f89b2",
+      "sha256": "b5bb5dcfe1eb4114ff762f96ae469af4edfd81db622dc61838461a522b39d310",
+      "diagnosticSha256": "b5bb5dcfe1eb4114ff762f96ae469af4edfd81db622dc61838461a522b39d310"
+    },
+    {
+      "path": "src/state/openclaw-state-worker-owner.ts",
+      "gitBlob": "4949e246c626ce3b0dc27a1a16127a5c0dc65338",
+      "sha256": "e9df70360a9d6a8dcdde78a85fdf2cc8b40d150bcd2310bf894396ccf3a8326e",
+      "diagnosticSha256": "e9df70360a9d6a8dcdde78a85fdf2cc8b40d150bcd2310bf894396ccf3a8326e"
+    },
+    {
+      "path": "src/state/openclaw-state-worker-store.ts",
+      "gitBlob": "e7ebd6e59550f23cb27a989ff2d93de5a52425ee",
+      "sha256": "58194c48d5c2d7047fb6429e37b080b4745d6c2562b583ab54773c8612c3c9da",
+      "diagnosticSha256": "58194c48d5c2d7047fb6429e37b080b4745d6c2562b583ab54773c8612c3c9da"
+    },
+    {
+      "path": "src/state/openclaw-state.worker.ts",
+      "gitBlob": "509ee59183ae3e6e74e714cc76058ec80619390a",
+      "sha256": "a1328dcbe73feb27629c34231533bdf9839cade30c1cc64eaad8ada37fdc437f",
+      "diagnosticSha256": "a1328dcbe73feb27629c34231533bdf9839cade30c1cc64eaad8ada37fdc437f"
+    },
+    {
+      "path": "src/test-utils/tracked-temp-dirs.ts",
+      "gitBlob": "6f5cfe70b4579af8ebe576adba5069ad1dd4d374",
+      "sha256": "2d98b736136bbf046d62aee153d8ad27eb5e867b950f4915f13e556a596a8cb9",
+      "diagnosticSha256": "2d98b736136bbf046d62aee153d8ad27eb5e867b950f4915f13e556a596a8cb9"
+    },
+    {
+      "path": "test/helpers/temp-dir.ts",
+      "gitBlob": "7ef376070f7834e1bde36becb04cfd04d5bc77cc",
+      "sha256": "1e3693fec9f34e3d54a9403a0cecd4cbbc59db5220fe5f9dc80af960f2bb9261",
+      "diagnosticSha256": "1e3693fec9f34e3d54a9403a0cecd4cbbc59db5220fe5f9dc80af960f2bb9261"
+    },
+    {
+      "path": "test/setup-openclaw-runtime.ts",
+      "gitBlob": "082df76f2f6e01d2fb142ed52f7c784932f6ff30",
+      "sha256": "93527f1b40fbb9a9fa9faf577b2650a4097fffe2bf6c6078b1ce775870a78a2a",
+      "diagnosticSha256": "93527f1b40fbb9a9fa9faf577b2650a4097fffe2bf6c6078b1ce775870a78a2a"
+    },
+    {
+      "path": "test/setup.shared.ts",
+      "gitBlob": "07c60e41ae0c548fadd95abad87d2d508941e494",
+      "sha256": "d8700cf4f3daef8fd144d64fbaba23e58c88ee57e213b65aedfa2a8aa4f28c52",
+      "diagnosticSha256": "d8700cf4f3daef8fd144d64fbaba23e58c88ee57e213b65aedfa2a8aa4f28c52"
+    },
+    {
+      "path": "test/setup.ts",
+      "gitBlob": "35aa3cae5255ed93bc353526ac8c345954821553",
+      "sha256": "d0f5fd3b9ed28e677132d1ea69703f90a9f1e60731ecabeb80a45f7eeb982c18",
+      "diagnosticSha256": "d0f5fd3b9ed28e677132d1ea69703f90a9f1e60731ecabeb80a45f7eeb982c18"
+    },
+    {
+      "path": "test/sqlite-test-lifecycle.ts",
+      "gitBlob": "eca21040159d16a57b2c7d9840ef212e61c46280",
+      "sha256": "caa8456d11ba9c779cef812a9c852965639417d1d73e88627bb5f3d7b1d91dd0",
+      "diagnosticSha256": "caa8456d11ba9c779cef812a9c852965639417d1d73e88627bb5f3d7b1d91dd0"
+    },
+    {
+      "path": "test/vitest/vitest.forks-pool.ts",
+      "gitBlob": "0f019bd3cbead60afc9ff41af973e6810996686a",
+      "sha256": "53c024f91d8dbbc81f0a8bc12c25375be5f5acd020bed179616e42218f6076a0",
+      "diagnosticSha256": "53c024f91d8dbbc81f0a8bc12c25375be5f5acd020bed179616e42218f6076a0"
+    },
+    {
+      "path": "test/vitest/vitest.gateway-database-workers.config.ts",
+      "gitBlob": "bd201ed091e7bd98c0addd3ef1140bde40d41bc3",
+      "sha256": "399530671f66302e78cd12943a03db515ca586b41a4bc221c80a50ff26452ea6",
+      "diagnosticSha256": "399530671f66302e78cd12943a03db515ca586b41a4bc221c80a50ff26452ea6"
+    },
+    {
+      "path": "test/vitest/vitest.gateway-server-isolated.config.ts",
+      "gitBlob": "9aa8296e95324190edf1dcd1d40d03c22974a5d9",
+      "sha256": "facfeb8b6384d5f5c5e20c89e9899037f571b8e629c875cf3e8089d7d6a288ed",
+      "diagnosticSha256": "facfeb8b6384d5f5c5e20c89e9899037f571b8e629c875cf3e8089d7d6a288ed"
+    },
+    {
+      "path": "test/vitest/vitest.infra.config.ts",
+      "gitBlob": "a0504cd58704bf2d7ab7c329c6a37562a8945448",
+      "sha256": "43ba7f7c355b7ed6e431992723225d086746ed400ec21f95565c12901690a46b",
+      "diagnosticSha256": "43ba7f7c355b7ed6e431992723225d086746ed400ec21f95565c12901690a46b"
+    },
+    {
+      "path": "test/vitest/vitest.scoped-config.ts",
+      "gitBlob": "0145346b7b775a27f9d9610b24816beaee100af0",
+      "sha256": "b6a4ab7d8db351d3315c3e3907cdb43b7e96eb935295d78068437f709d61cbc3",
+      "diagnosticSha256": "b6a4ab7d8db351d3315c3e3907cdb43b7e96eb935295d78068437f709d61cbc3"
+    },
+    {
+      "path": "test/vitest/vitest.shared.config.ts",
+      "gitBlob": "241807c578b6f32662aea31dcb7e835747297799",
+      "sha256": "644e0169dfd7d00d8d41a7dc599bcd38f7f31c1c12a9101a37a31691408dc5a2",
+      "diagnosticSha256": "644e0169dfd7d00d8d41a7dc599bcd38f7f31c1c12a9101a37a31691408dc5a2"
+    },
+    {
+      "path": "test/vitest/vitest.timeouts.ts",
+      "gitBlob": "5816139df0ac52117d330775267298a08082017a",
+      "sha256": "82465558c77ce00d1e892a4ba06be6df5d4e449eecffb5383d1c45ce8ad7d073",
+      "diagnosticSha256": "82465558c77ce00d1e892a4ba06be6df5d4e449eecffb5383d1c45ce8ad7d073"
+    }
+  ],
+  "classification": "UNCLASSIFIED: selected refusal with full diagnostics required for intended RED; source/bootstrap mismatch is not RED; valid native green is non-reproduction, not repair; one replay, no automatic retry."
+}

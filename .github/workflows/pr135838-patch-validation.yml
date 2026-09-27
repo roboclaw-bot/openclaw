@@ -25,6 +25,7 @@ on:
         type: choice
         options:
           [
+            migration-native-diagnostic,
             custody-resume-red,
             custody-resume-focused,
             custody-resume-full,
@@ -109,7 +110,7 @@ permissions:
   contents: read
 jobs:
   proof:
-    if: github.repository == 'roboclaw-bot/openclaw'
+    if: github.repository == 'roboclaw-bot/openclaw' && inputs.suite != 'migration-native-diagnostic'
     runs-on: ${{ inputs.suite == 'custody-resume-windows' && 'windows-2025' || 'ubuntu-24.04' }}
     defaults:
       run:
@@ -638,3 +639,134 @@ jobs:
           name: pr159178-same-commit-evidence
           if-no-files-found: error
           path: ${{ runner.temp }}/pr159178-same-commit
+
+  migration-diagnostic:
+    if: github.repository == 'roboclaw-bot/openclaw' && inputs.suite == 'migration-native-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    concurrency:
+      group: pr159178-migration-native-diagnostic
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      BASE_SHA: ${{ inputs.base_sha }}
+      EXPECTED_TREE: ${{ inputs.expected_tree }}
+      PATCH_ID: ${{ inputs.patch_id }}
+      PATCH_SHA256: ${{ inputs.patch_sha256 }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - name: Record and admit only the fixed diagnostic replay
+        id: guard
+        env:
+          HOST_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-migration-diagnostic"
+          mkdir -p "$evidence"
+          jq -n --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg controller "$GITHUB_SHA" --arg workflow "$WORKFLOW_SHA" \
+            --arg base "$BASE_SHA" --arg tree "$EXPECTED_TREE" \
+            --arg patch "$PATCH_SHA256" --arg host "$HOST_ENVIRONMENT" \
+            '{runId:$run,attempt:$attempt,controllerSha:$controller,workflowSha:$workflow,
+              sourceCommit:$base,diagnosticTree:$tree,patchSha256:$patch,hostEnvironment:$host,
+              classification:"UNCLASSIFIED: bootstrap/mismatch is not RED; green is not a fix"}' > "$evidence/run.json"
+          test "$BASE_SHA" = 4382d0f1f29385a534fe5bdbb4e0c127ad3a1ee0
+          test "$EXPECTED_TREE" = 586cf41cc0f20c86c1ed106823809333a2d4b0c6
+          test "$PATCH_ID" = migration-native-diagnostic
+          test "$PATCH_SHA256" = cbacdb74ec1bc594421289fb7d8d6ff75fd402c794c30dfdb17bf2cc1a7b14ee
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_SHA" = "$WORKFLOW_SHA"
+          test "$HOST_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}${NODE_OPTIONS:-}"
+      - name: Check out reviewed immutable controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Preserve and authenticate fixed controller inputs
+        id: preserve
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-migration-diagnostic"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = 61b2c758893c80b02a3d3c60056d26ad5bdfd5be
+          git diff --quiet HEAD
+          git show -s --format='%H%n%P%n%T' HEAD > "$evidence/controller-identity.txt"
+          git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
+          printf 'A\t%s\n' \
+            .github/proof-inputs/pr135838/migration-native-diagnostic/binding.json \
+            .github/proof-inputs/pr135838/migration-native-diagnostic/capture.sh \
+            .github/proof-inputs/pr135838/migration-native-diagnostic/native-capture.py \
+            .github/proof-inputs/pr135838/migration-native-diagnostic/test-only-diagnostic.patch.b64 > "$evidence/expected-controller-delta.txt"
+          printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml >> "$evidence/expected-controller-delta.txt"
+          cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
+          cp -R .github/proof-inputs/pr135838/migration-native-diagnostic "$evidence/inputs"
+          cp .github/workflows/pr135838-patch-validation.yml "$evidence/controller-workflow.yml"
+          cd "$evidence/inputs"
+          printf '%s  %s\n' \
+            33c8c8b43922d7b0c00de6fbe011d5ad239189b169f17127b1e0e353458d2bcd binding.json \
+            d3f8d8b8fe7d7f2a0080d83ffb2168d21e06df9798f63f8de638181882d46385 capture.sh \
+            7d0a02d1c0bcb8286a78cffbd8986fcfb4d265106fa9a9eb94617019c07545f9 native-capture.py \
+            102abdad976996acb98f3bf6bd8c4cd4ce4857bedf66643fa2a49af333df56df test-only-diagnostic.patch.b64 > "$evidence/inputs.sha256"
+          sha256sum --check "$evidence/inputs.sha256"
+          base64 --decode test-only-diagnostic.patch.b64 > test-only-diagnostic.patch
+          test "$(sha256sum test-only-diagnostic.patch | cut -d ' ' -f1)" = "$PATCH_SHA256"
+      - name: Check out the exact failed public merge without credentials
+        id: source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: 4382d0f1f29385a534fe5bdbb4e0c127ad3a1ee0
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Stage only the provided failure-reporting overlay
+        id: materialize
+        run: bash "$RUNNER_TEMP/pr159178-migration-diagnostic/inputs/capture.sh" materialize
+      - name: Install exact source dependencies through the normal setup owner
+        id: setup
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "24.19.0"
+          install-bun: "true"
+          install-deps: "true"
+          frozen-lockfile: "true"
+          cache-mode: "off"
+      # Existing warm-admission RED owner permits staged unfixed reproduction.
+      # No commit, hook bypass, repair, or candidate bundle is produced by this suite.
+      - name: Replay original predecessor then full failed group with native status
+        id: native
+        run: bash "$RUNNER_TEMP/pr159178-migration-diagnostic/inputs/capture.sh"
+      - name: Preserve step outcomes and source state even on failure
+        if: always()
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr159178-migration-diagnostic"
+          mkdir -p "$evidence/always"
+          printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
+          printf '%s\n' "$JOB_STATUS" > "$evidence/job-status.txt"
+          # Observations only: never rerun setup/tests or rewrite the candidate.
+          set +e
+          git rev-parse HEAD > "$evidence/always/HEAD.txt" 2>&1
+          git status --porcelain=v1 --untracked-files=no > "$evidence/always/tracked-status.txt" 2>&1
+          git ls-files --stage > "$evidence/always/index.txt" 2>&1
+          git diff --binary --full-index > "$evidence/always/unstaged.patch" 2>&1
+          git diff --cached --binary --full-index > "$evidence/always/staged.patch" 2>&1
+          printf '%s\n' 'UNCLASSIFIED diagnostic replay: require original predecessor success, full native failed-group coverage, exact source/toolchain, and actual selected refusal diagnostics before RED. Green means non-reproduction, never repaired. No automatic retry.' >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - name: Always upload diagnostic evidence including native failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr159178-migration-diagnostic-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          compression-level: 0
+          path: ${{ runner.temp }}/pr159178-migration-diagnostic/
