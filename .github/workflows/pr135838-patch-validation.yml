@@ -256,18 +256,13 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 632614990ce0fa6a5e20409985a6f6362da98157
-            test "$(git rev-parse HEAD^1^{tree})" = 6d8e93ba5572ad0abf35a5c75bc9115fece69023
+            test "$(git show -s --format=%P HEAD)" = 9385190af898ee667284a2c4533116e37ee50f0f
+            test "$(git rev-parse HEAD^1^{tree})" = feed2dd2997b5fb30d809a36bc9c9beb2d095327
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
-          M	.github/proof-inputs/pr135838/provider-resume-process.sh
-          M	.github/proof-inputs/pr135838/provider-same-commit-source.sh
-          A	.github/proof-inputs/pr135838/publication/always-cleanup.sh
-          A	.github/proof-inputs/pr135838/publication/binding.json
-          A	.github/proof-inputs/pr135838/publication/controller.py
-          A	.github/proof-inputs/pr135838/publication/host.py
-          A	.github/proof-inputs/pr135838/publication/hosted-run.sh
-          A	.github/proof-inputs/pr135838/publication/proof-only-overlay.patch
+          M	.github/proof-inputs/pr135838/publication/binding.json
+          M	.github/proof-inputs/pr135838/publication/host.py
+          M	.github/proof-inputs/pr135838/publication/proof-only-overlay.patch
           M	.github/workflows/pr135838-patch-validation.yml
           PUBLICATION_PATHS
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"

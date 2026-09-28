@@ -1,12 +1,13 @@
 diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.mjs b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
 new file mode 100644
+index 0000000000000..35a414dea2ab9
 --- /dev/null
 +++ b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
-@@ -0,0 +1,732 @@
+@@ -0,0 +1,879 @@
 +import assert from "node:assert/strict";
 +import { createHash, randomUUID, X509Certificate } from "node:crypto";
 +import fs from "node:fs/promises";
-+import { appendFileSync, readFileSync, realpathSync } from "node:fs";
++import { appendFileSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 +import Module from "node:module";
 +import { fileURLToPath, pathToFileURL } from "node:url";
 +import { parse as parseJavaScript } from "acorn";
@@ -127,6 +128,13 @@ new file mode 100644
 +  const leases = new Set();
 +  const containerIds = new Map();
 +  const cleanupErrors = [];
++  let workerResolverSpy;
++  let observeProviderLookup = false;
++  let providerLookup;
++  let providerLookupCount = 0;
++  let diagnosticComplete = false;
++  let sdkResolverFailureCount = 0;
++  const sdkResolverFailures = [];
 +  let factoryOptions;
 +  let service;
 +  let server;
@@ -410,7 +418,10 @@ new file mode 100644
 +  };
 +  const installOriginal = sdkResolverOwner.installOpenClawPluginSdkNativeResolver;
 +  const resolverSpy = vi.spyOn(sdkResolverOwner, "installOpenClawPluginSdkNativeResolver").mockImplementation((options) => {
++    let diagnosticStage = "original-sdk-owner";
++    try {
 +    const result = installOriginal(options);
++    diagnosticStage = "existing-native-observer";
 +    if (!options?.pluginModulePath) return result;
 +    const canonical = realpathSync(options.pluginModulePath);
 +    const expectedRoot = realpathSync(path.join(process.cwd(), "dist", "extensions", "crabbox"));
@@ -457,6 +468,11 @@ new file mode 100644
 +      },
 +    });
 +    return result;
++    } catch (error) {
++      sdkResolverFailureCount += 1;
++      if (sdkResolverFailures.length < 4) sdkResolverFailures.push({ stage: diagnosticStage, modulePath: options?.pluginModulePath, error });
++      throw error; // Preserve the exact original owner/observer exception.
++    }
 +  });
 +  const originalFactory = serviceOwner.createWorkerEnvironmentService;
 +  const factorySpy = vi.spyOn(serviceOwner, "createWorkerEnvironmentService").mockImplementation((options) => {
@@ -505,6 +521,131 @@ new file mode 100644
 +    const { sessionChanges } = await import("../../sessions/session-row-changes.js");
 +    const { acquireGatewayTestClient } = await import("../../../test/helpers/gateway-client.js");
 +    const { GATEWAY_CLIENT_NAMES, GATEWAY_CLIENT_MODES } = await import("../../../packages/gateway-protocol/src/client-info.js");
++    const workerRegistryOwner = await import("../../plugins/worker-provider-registry.js");
++    const { getPluginRuntimeLoadContext } = await import("../../plugins/runtime/load-context.js");
++    // Diagnostic-only, first original lookup; no raw config/env/path/error text is emitted.
++    const diagEnum = (value, allowed) => allowed.includes(value) ? value : value === undefined ? "unset" : "other";
++    const diagBool = (value) => typeof value === "boolean" ? value : null;
++    const diagData = (value, key) => {
++      if (!value || (typeof value !== "object" && typeof value !== "function")) return { present: false, kind: "absent" };
++      const d = Object.getOwnPropertyDescriptor(value, key);
++      if (!d) return { present: false, kind: "not-own" };
++      if (!("value" in d)) return { present: true, kind: "accessor" };
++      const v = d.value;
++      return { present: true, kind: v === null ? "null" : typeof v,
++        value: typeof v === "number" && Number.isFinite(v) ? v :
++          typeof v === "boolean" ? v : typeof v === "string" && ["crabbox", "device", "static-ssh"].includes(v) ? v : null,
++        sha256: typeof v === "string" ? HASH(v) : null };
++    };
++    const diagPathClass = (value) => {
++      if (typeof value !== "string" || !value.trim()) return "unset";
++      const rel = path.relative(process.cwd(), path.resolve(value)).split(path.sep).join("/");
++      if (rel === "dist/extensions/crabbox" || rel.startsWith("dist/extensions/crabbox/")) return "candidate-built-crabbox";
++      if (rel === "extensions/crabbox" || rel.startsWith("extensions/crabbox/")) return "candidate-source-crabbox";
++      return rel && !rel.startsWith("../") && !path.isAbsolute(rel) ? "candidate-other" : "external-or-private";
++    };
++    const diagError = (error) => {
++      const text = typeof error === "string" ? error : typeof error?.message === "string" ? error.message : "";
++      return { name: diagEnum(error?.name, ["Error", "AssertionError", "TypeError", "ReferenceError", "SyntaxError"]), sha256: HASH(text), chars: text.length,
++        codes: ["ERR_ASSERTION", "ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ERR_REQUIRE_ASYNC_MODULE", "ERR_DLOPEN_FAILED", "ERR_UNKNOWN_FILE_EXTENSION", "ERR_PACKAGE_IMPORT_NOT_DEFINED", "ENOENT", "EACCES", "EPERM"].filter((code) => error?.code === code || text.includes(code)),
++        flags: ["one unambiguous public SDK export", "one unambiguous public SDK import", "one unambiguous consumer/common-chunk binding", "one unambiguous common-chunk export", "chunk export must own its declaration", "star-export linkage unsupported", "cannot find", "Cannot find", "disabled", "allowlist", "denied", "incompatible", "unsupported liveAuthorityVersion"].filter((flag) => text.includes(flag)) };
++    };
++    const diagConfig = (cfg) => ({ present: Boolean(cfg),
++      pluginsEnabled: diagBool(cfg?.plugins?.enabled), crabboxEnabled: diagBool(cfg?.plugins?.entries?.crabbox?.enabled),
++      allowCount: Array.isArray(cfg?.plugins?.allow) ? cfg.plugins.allow.length : null,
++      allowCrabbox: cfg?.plugins?.allow?.includes("crabbox") === true,
++      denyCrabbox: cfg?.plugins?.deny?.includes("crabbox") === true,
++      profileProvider: diagData(cfg?.cloudWorkers?.profiles?.[PROFILE], "provider") });
++    const diagManifest = (record) => ({ present: Boolean(record),
++      workerContractCrabbox: record?.contracts?.workerProviders?.includes("crabbox") === true,
++      sourceClass: diagPathClass(record?.source), rootClass: diagPathClass(record?.rootDir) });
++    const diagRegistry = (registry, resolved) => {
++      const ctx = getPluginRuntimeLoadContext(registry);
++      const entry = registry?.workerProviders?.get("crabbox");
++      const record = registry?.plugins?.find((item) => item.id === "crabbox");
++      const runtimeDiagnostics = registry?.diagnostics ?? [];
++      const metadataDiagnostics = ctx?.metadataSnapshot?.diagnostics ?? ctx?.manifestRegistry?.diagnostics ?? [];
++      const all = [...runtimeDiagnostics.map((entry) => ({ origin: "runtime", entry })), ...metadataDiagnostics.map((entry) => ({ origin: ctx?.metadataSnapshot ? "metadata" : "manifest", entry }))];
++      const relevant = [...all.filter(({ entry }) => entry.pluginId === "crabbox"), ...all.filter(({ entry }) => !entry.pluginId)];
++      const manifest = ctx?.manifestRegistry?.plugins?.find((item) => item.id === "crabbox");
++      const indexed = ctx?.metadataSnapshot?.index?.plugins?.find((item) => item.pluginId === "crabbox");
++      return { present: Boolean(registry), pluginCount: registry?.plugins?.length ?? null,
++        workerProviderCount: registry?.workerProviders?.size ?? null,
++        crabboxRegistration: { present: Boolean(entry), owner: diagData(entry, "pluginId"),
++          isResolvedObject: Boolean(resolved) && entry?.provider === resolved,
++          providerId: diagData(entry?.provider, "id"), authority: diagData(entry?.provider, "liveAuthorityVersion") },
++        crabboxRuntime: { ...diagManifest(record), enabled: diagBool(record?.enabled),
++          activated: diagBool(record?.activated), imported: diagBool(record?.imported),
++          status: diagEnum(record?.status, ["loaded", "disabled", "error"]),
++          failurePhase: diagEnum(record?.failurePhase, ["validation", "load", "register"]),
++          registrationCompleted: record ? hasCompletedPluginRuntimeRegistration(record) : false,
++          selectedEntryClass: diagPathClass(record ? getPluginRuntimeEntrySource(record) : undefined),
++          error: record?.error ? diagError(record.error) : null,
++          activationReason: record?.activationReason ? diagError(record.activationReason) : null },
++        loadContext: { present: Boolean(ctx), preferBuilt: diagBool(ctx?.preferBuiltPluginArtifacts),
++          rawIntent: diagConfig(ctx?.rawConfig), activationIntent: diagConfig(ctx?.activationSourceConfig),
++          effectiveIntent: diagConfig(ctx?.config), manifest: diagManifest(manifest), indexedCrabbox: Boolean(indexed),
++          metadataScopeIncludesCrabbox: ctx?.metadataSnapshot?.pluginIds?.includes("crabbox") === true,
++          metadataDiagnosticCount: ctx?.metadataSnapshot?.diagnostics?.length ?? null },
++        runtimeDiagnosticCount: runtimeDiagnostics.length, metadataDiagnosticCount: metadataDiagnostics.length, diagnosticCount: all.length, relevantDiagnosticCount: relevant.length, diagnosticsTruncated: relevant.length > 8,
++        diagnostics: relevant.slice(0, 8).map(({ entry: item, origin }) => ({ origin, level: diagEnum(item.level, ["info", "warn", "error"]), crabboxOwned: item.pluginId === "crabbox",
++          code: diagEnum(item.code, ["backup-resource-declaration-invalid", "channel-setup-failure", "configured-plugin-path-inspection-failed", "configured-plugin-path-unavailable", "dashboard-declaration-invalid", "explicit-config-plugin-selection", "plugin-verification", "sdk-incompatible", "workspace-scope-omitted"]),
++          errorCode: diagError({ code: item.errorCode }), message: diagError(item.message), sourceClass: diagPathClass(item.source) })) };
++    };
++    const originalWorkerResolver = workerRegistryOwner.resolveWorkerProvider;
++    workerResolverSpy = vi.spyOn(workerRegistryOwner, "resolveWorkerProvider").mockImplementation(function (...args) {
++      const result = Reflect.apply(originalWorkerResolver, this, args);
++      // Capture references only during the pre-existing first factory lookup; return the identical result.
++      if (observeProviderLookup) {
++        providerLookupCount += 1;
++        if (providerLookupCount === 1) providerLookup = { registry: args[0], requestedCrabbox: args[1] === "crabbox", result };
++      }
++      return result;
++    });
++    const recordProviderDiagnostic = (resolved, loaderBefore) => {
++      let diagnostic;
++      try {
++        const ambient = getActivePluginRegistry();
++        const owner = providerLookup?.registry;
++        const after = getPluginModuleLoaderStats();
++        const statKeys = ["calls", "nativeHits", "sourceTransformFallbacks", "sourceTransformForced"];
++        const stats = (data) => Object.fromEntries(statKeys.map((key) => [key, Number.isFinite(data?.[key]) ? data[key] : null]));
++        const record = { label: "first-provider-resolution-diagnostic", schema: 1, diagnosticOnly: true,
++          lookupObserved: providerLookupCount === 1, lookupCount: providerLookupCount,
++          requestedCrabbox: providerLookup?.requestedCrabbox === true,
++          resultIdentityPreserved: providerLookupCount === 1 && providerLookup.result === resolved,
++          resolvedPresent: resolved !== undefined && resolved !== null,
++          resolvedKind: resolved === null ? "null" : typeof resolved,
++          resolvedId: diagData(resolved, "id"), resolvedAuthority: diagData(resolved, "liveAuthorityVersion"),
++          ownerIsAmbientRegistry: Boolean(owner) && owner === ambient,
++          ownerRegistry: diagRegistry(owner, resolved), ambientRegistry: owner === ambient ? "same-object" : diagRegistry(ambient, resolved),
++          loaderBefore: stats(loaderBefore), loaderAfter: stats(after), nativeGraphCount: nativeGraphs.length,
++          sdkResolverFailures: sdkResolverFailures.map((entry) => ({ stage: entry.stage, moduleClass: diagPathClass(entry.modulePath), error: diagError(entry.error) })), sdkResolverFailuresTruncated: sdkResolverFailureCount > 4,
++          minimalGateway: diagEnum(process.env.OPENCLAW_TEST_MINIMAL_GATEWAY, ["0", "1"]),
++          skipChannels: diagEnum(process.env.OPENCLAW_SKIP_CHANNELS, ["0", "1"]),
++          bundledOverrideClass: diagPathClass(process.env.OPENCLAW_BUNDLED_PLUGINS_DIR),
++          trustedBundledOverride: diagEnum(process.env.OPENCLAW_TEST_TRUST_BUNDLED_PLUGINS_DIR, ["0", "1"]) };
++        if (Buffer.byteLength(safeJson(record)) > 12288) throw new Error("diagnostic-size-bound");
++        diagnostic = record;
++      } catch (error) {
++        // Diagnostic failure cannot replace the original provider assertion or fabricate success.
++        diagnostic = { label: "first-provider-resolution-diagnostic", schema: 1, diagnosticOnly: true, diagnosticError: diagError(error) };
++      }
++      snapshots.push(diagnostic);
++      try {
++        // Persist before the unchanged assertion without yielding or publishing a proof pass.
++        const checkpoint = safeJson({ diagnosticOnly: true, diagnosticComplete: false, passed: false, proofMissing: true, stage: "preflight", snapshots: [diagnostic] });
++        if (Buffer.byteLength(checkpoint) > 16384) throw new Error("diagnostic-checkpoint-size-bound");
++        writeFileSync(path.join(evidenceDir, "live-publication.json"), checkpoint + "\n", { mode: 0o600 });
++      } catch (error) { diagnostic.checkpointError = diagError(error); }
++      // Attribution is complete only after its exact lookup and bounded checkpoint succeed.
++      // Keep this separate from native scenario and physical cleanup outcomes.
++      diagnosticComplete = diagnostic.lookupObserved === true && diagnostic.requestedCrabbox === true &&
++        diagnostic.resultIdentityPreserved === true && diagnostic.diagnosticError === undefined &&
++        diagnostic.checkpointError === undefined && diagnostic.ownerRegistry?.diagnosticsTruncated === false &&
++        (diagnostic.ambientRegistry === "same-object" || diagnostic.ambientRegistry?.diagnosticsTruncated === false) &&
++        diagnostic.sdkResolverFailuresTruncated === false;
++    };
 +    async function boot() {
 +      clearRuntimeConfigSnapshot();
 +      factoryOptions = undefined; service = undefined;
@@ -526,7 +667,11 @@ new file mode 100644
 +      server = await startGatewayServer(port, { bind: "custom", controlUiEnabled: false });
 +      servers.add(server); await server.startupSettled;
 +      assert(service && factoryOptions, "real worker service factory observation must be reached");
-+      const provider = factoryOptions.resolveProvider("crabbox");
++      let provider;
++      observeProviderLookup = bootCount === 1;
++      try { provider = factoryOptions.resolveProvider("crabbox"); }
++      finally { observeProviderLookup = false; }
++      if (bootCount === 1) recordProviderDiagnostic(provider, loaderBefore);
 +      assert.equal(provider?.liveAuthorityVersion, 1);
 +      const registry = getActivePluginRegistry();
 +      const plugin = registry?.plugins.find((entry) => entry.id === "crabbox");
@@ -727,16 +872,20 @@ new file mode 100644
 +    if (hostsJoined) {
 +      nativeHooks?.deregister(); resolverSpy.mockRestore();
 +      delete globalThis[Symbol.for(bridgeKey)];
-+      factorySpy.mockRestore();
++      factorySpy.mockRestore(); workerResolverSpy?.mockRestore();
 +    }
-+    const result = { wallMs: Date.now() - proofStartedAt, nativeCounts, provider: "local-container", cloudProof: false, binding: expected, stage: activeStage, sequencePassed, cleanupPassed: cleanupErrors.length === 0, passed: sequencePassed && !failed && cleanupErrors.length === 0, commands, snapshots, images, leases: [...leases], failure: failed ? errorReceipt(failed) : null, cleanupErrors: cleanupErrors.map(errorReceipt), nativeGraphs };
++    const nativeScenarioPassed = sequencePassed && !failed && cleanupErrors.length === 0;
++    const passed = nativeScenarioPassed && diagnosticComplete;
++    const result = { wallMs: Date.now() - proofStartedAt, nativeCounts, provider: "local-container", cloudProof: false, binding: expected, stage: activeStage, sequencePassed, cleanupPassed: cleanupErrors.length === 0, nativeScenarioPassed, diagnosticComplete, passed, proofMissing: !passed, commands, snapshots, images, leases: [...leases], failure: failed ? errorReceipt(failed) : null, cleanupErrors: cleanupErrors.map(errorReceipt), nativeGraphs };
 +    await fs.writeFile(path.join(evidenceDir, "live-publication.json"), safeJson(result, 2) + "\n");
 +  }
 +  if (failed || cleanupErrors.length) throw new AggregateError([...(failed ? [failed] : []), ...cleanupErrors], "Real local-container publication proof incomplete; inspect owned evidence");
 +  assert(sequencePassed);
++  assert(diagnosticComplete, "First provider diagnostic incomplete; inspect owned evidence");
 +}
 diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.test.ts b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
 new file mode 100644
+index 0000000000000..752c7a4d96a71
 --- /dev/null
 +++ b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
 @@ -0,0 +1,7 @@

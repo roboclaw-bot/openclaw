@@ -146,7 +146,7 @@ def prepare():
     target = Path(os.environ['CRABBOX_PROOF_BINARY']); target.parent.mkdir(exist_ok=False); target.write_bytes(data); target.chmod(0o755)
     # Build adoption is complete BEFORE these only two additive proof files.
     patch = HERE/'proof-only-overlay.patch'
-    assert sha(patch.read_bytes()) == '98c2412788770d1a2a52daf87a1af6e7a2863eb0cd2c1a767b14958d36714803'
+    assert sha(patch.read_bytes()) == b['integrationFiles']['proof-only-overlay.patch']
     for name in b['overlayFiles']: assert not Path(name).exists()
     subprocess.run(['git', 'apply', '--index', '--check', str(patch)], check=True)
     subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
