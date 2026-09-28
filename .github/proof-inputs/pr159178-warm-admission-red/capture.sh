@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Hosted-only expiry-teardown diagnostic; native failure remains job failure.
+# Hosted-only same-fixture expiry-teardown repair proof; native failure remains job failure.
 set -euo pipefail
 mode=expiry-teardown
 phase="${1:-runtime}"
 case "$phase" in
   runtime) ;;
+  siblings) mode=expiry-teardown-siblings ;;
   types) mode=expiry-teardown-types ;;
   format) mode=expiry-teardown-format ;;
   *) exit 2 ;;
 esac
-evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
+evidence="$RUNNER_TEMP/pr159178-expiry-teardown-green"
 test_file=extensions/crabbox/src/crabbox-worker-prepared-image.test.ts
 control_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
+allocation_file=extensions/crabbox/src/crabbox-worker-warm-image-allocation.test.ts
+sibling_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
+owner_file=extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
 base=fd0b54a58f93b68a49eb07695705cd770ebb91b1
 product=b99494f43807dccc858baef1fc169d2f2c2d33e5
 product_tree=4e02b1417735ecfa62c645c427d44108cdf98d62
-tree=b36cbe34ac7f273a7c03205bedabbf7f561a40d7
+repro_tree=b36cbe34ac7f273a7c03205bedabbf7f561a40d7
+tree=3c74e6bef80da1415990ccc4043636e5202c040d
 assert_source() {
   test "$(git rev-parse HEAD)" = "$base" &&
     test "$(git write-tree)" = "$tree" &&
     git diff --quiet &&
-    git diff --quiet "$product_tree" "$tree" -- . ":(exclude)$test_file" &&
+    git diff --quiet "$product_tree" "$repro_tree" -- . ":(exclude)$test_file" &&
+    git diff --quiet "$repro_tree" "$tree" -- . ":(exclude)$owner_file" ":(exclude)$allocation_file" &&
     test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 1f63de2979e855f8205204d2a4a901e3013f8258b56f848e500dc67b3fea9353 &&
     sha256sum --check "$evidence/source-files.sha256" &&
     git ls-files --stage &&
@@ -39,8 +45,9 @@ if [[ "$phase" != runtime ]]; then
 fi
 case "$phase" in
   runtime) command=(pnpm test "$test_file" "$control_file" --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage) ;;
+  siblings) command=(pnpm test "$allocation_file" "$sibling_file" --maxWorkers=1 --reporter=verbose --reporter=./scripts/lib/vitest-resource-reporter.mts --logHeapUsage) ;;
   types) command=(pnpm tsgo:extensions:test) ;;
-  format) command=(pnpm format:check "$test_file") ;;
+  format) command=(pnpm format:check "$test_file" "$allocation_file" "$owner_file") ;;
 esac
 printf '%q ' "${command[@]}" > "$evidence/$mode.command.txt"
 printf '\n' >> "$evidence/$mode.command.txt"
@@ -56,12 +63,12 @@ assert_source > "$evidence/$mode.source-check.log" 2>&1 || source_status=$?
 (
   set -e
   jq -n --arg mode "$mode" --arg phase "$phase" --arg started "$started" --arg ended "$ended" \
-    --arg base "$base" --arg product "$product" --arg productTree "$product_tree" --arg tree "$tree" \
+    --arg base "$base" --arg product "$product" --arg productTree "$product_tree" --arg reproTree "$repro_tree" --arg tree "$tree" \
     --argjson nativeStatus "${statuses[0]}" --argjson logStatus "${statuses[1]}" \
     --argjson sourceStatus "$source_status" \
-    '{mode:$mode,phase:$phase,startedAt:$started,endedAt:$ended,runtimeHead:$base,productCommit:$product,productTree:$productTree,tree:$tree,
+    '{mode:$mode,phase:$phase,startedAt:$started,endedAt:$ended,runtimeHead:$base,productCommit:$product,productTree:$productTree,reproductionTree:$reproTree,tree:$tree,
       nativeExitStatus:$nativeStatus,teeExitStatus:$logStatus,sourceCheckExitStatus:$sourceStatus,
-      sourceIdentity:"fd0 HEAD with genuine b994 product bytes and diagnostic prepared-image test overlay",
+      sourceIdentity:"fd0 HEAD with genuine b994 product bytes, byte-identical verified RED prepared-image fixture, and exact capture/allocation owner repair",
       classification:"UNCLASSIFIED: native result requires assertion-level adjudication; no expected exit or passing-count claim",
       caseLabelPolicy:"Native verbose log retained unchanged; labels may be ellipsized. Expected observations are separate metadata, not native output."}' \
     > "$evidence/$mode.result.json"

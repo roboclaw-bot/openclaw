@@ -1,5 +1,5 @@
-name: PR 159178 reserve-expiry teardown RED diagnostic capture
-run-name: pr159178 reserve-expiry teardown RED diagnostic capture ${{ inputs.controller_sha }}
+name: PR 159178 reserve-expiry teardown same-fixture GREEN candidate
+run-name: pr159178 reserve-expiry teardown same-fixture GREEN candidate ${{ inputs.controller_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +28,8 @@ jobs:
       PRODUCT_SHA: b99494f43807dccc858baef1fc169d2f2c2d33e5
       PRODUCT_TREE: 4e02b1417735ecfa62c645c427d44108cdf98d62
       REPRO_TREE: b36cbe34ac7f273a7c03205bedabbf7f561a40d7
-      CAPTURE_SHA256: f1c21ff850100102a4bdc892b7f0bebe215bbb5a92606abc9eb6a387f3989e19
+      REPAIRED_TREE: 3c74e6bef80da1415990ccc4043636e5202c040d
+      CAPTURE_SHA256: c1cca412e76ce7801458384007342ca10d4786ad78b02813771171ed82a84406
     steps:
       - name: Record run identity and guard execution
         id: guard
@@ -36,15 +37,15 @@ jobs:
           HOST_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-green"
           mkdir -p "$evidence"
           jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
             --arg host "$HOST_ENVIRONMENT" --arg os "$RUNNER_OS" --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg base "$BASE_SHA" \
-            --arg productTree "$PRODUCT_TREE" --arg repro "$REPRO_TREE" --arg product "$PRODUCT_SHA" \
+            --arg productTree "$PRODUCT_TREE" --arg repro "$REPRO_TREE" --arg product "$PRODUCT_SHA" --arg repaired "$REPAIRED_TREE" \
             '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
-              workflowSha:$workflow,runtimeHead:$base,productCommit:$product,productTree:$productTree,reproductionTree:$repro,hostEnvironment:$host,runnerOS:$os,
-              classification:"UNCLASSIFIED teardown diagnostic; fd0 HEAD with genuine b994 product bytes and diagnostic prepared-image test overlay; not b994 execution, a ninth commit, or observed RED"}' \
+              workflowSha:$workflow,runtimeHead:$base,productCommit:$product,productTree:$productTree,reproductionTree:$repro,repairedTree:$repaired,hostEnvironment:$host,runnerOS:$os,
+              classification:"UNCLASSIFIED same-fixture repair candidate; fd0 HEAD with genuine b994 product bytes, byte-identical verified RED prepared-image fixture, and exact capture/allocation owner repair; not actual b994 execution, a ninth commit, or observed GREEN"}' \
             > "$evidence/identity.json"
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$CONTROLLER_SHA" = "$GITHUB_SHA"
@@ -65,16 +66,15 @@ jobs:
         id: preserve
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-green"
           test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
-          test "$(git rev-parse HEAD^)" = 79564b780aaf7d8de89e10897840125be868d40e
+          test "$(git rev-parse HEAD^)" = 23c6ac332047f60559cf87e71c4302b206b0f70a
           git diff --quiet HEAD
           git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
-          printf 'M\t%s\n' \
-            .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
-            .github/proof-inputs/pr159178-warm-admission-red/production-docs.patch.b64 \
-            .github/proof-inputs/pr159178-warm-admission-red/publication-fence-tests.patch.b64 \
-            .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
+          { printf 'M\t%s\n' .github/proof-inputs/pr159178-warm-admission-red/capture.sh
+            printf 'A\t%s\n' .github/proof-inputs/pr159178-warm-admission-red/expiry-teardown-repair.patch.b64
+            printf 'M\t%s\n' .github/workflows/pr159178-warm-admission-red.yml
+          } > "$evidence/expected-controller-delta.txt"
           cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
           input=.github/proof-inputs/pr159178-warm-admission-red
           cp "$input/capture.sh" "$evidence/capture.sh"
@@ -84,16 +84,18 @@ jobs:
           # Existing transport filename now carries the FULL fd0 -> genuine b994 delta.
           base64 --decode "$input/production-docs.patch.b64" > "$evidence/fd0-to-b994.patch"
           base64 --decode "$input/publication-fence-tests.patch.b64" > "$evidence/diagnostic-test.patch"
-          sha256sum "$input/capture.sh" "$input/production-docs.patch.b64" \
+          base64 --decode "$input/expiry-teardown-repair.patch.b64" > "$evidence/owner-repair.patch"
+          sha256sum "$input/expiry-teardown-repair.patch.b64" "$input/capture.sh" "$input/production-docs.patch.b64" \
             "$input/publication-fence-tests.patch.b64" .github/workflows/pr159178-warm-admission-red.yml \
             > "$evidence/controller-files.sha256"
           cd "$evidence"
           printf '%s  %s\n' \
             66dd6d87202f211aab6ea7a5843d67811c0f1583e95ee569eac7e4d578846478 fd0-to-b994.patch \
             92bb2d2fb11857d6a2056b81b19620d6e41bc2292c2b2881b30c5cbedf11dc58 diagnostic-test.patch \
+            f3c56799dce45991d8806d91fdad1562def13997182cb75b6502790b0ed0b8ef owner-repair.patch \
             "$CAPTURE_SHA256" capture.sh > inputs.sha256
           sha256sum --check inputs.sha256
-          jq -n '{classification:"EXPECTED OBSERVATIONS ONLY; not native output",genuineRed:"The success row must pass retained I1/choice/demand and closed retry assertions, reach destroy, then fail at post-cleanup image/no-extra-effect assertions with a second capture or old-image loss",fixtureFailure:"Any earlier fixture/state mismatch is not a teardown reproduction",otherOutcomes:"Setup, timeout, source-integrity, type, format, and unrelated control failures are classified independently; native GREEN contradicts the prediction and requires investigation",positiveControls:"Full authority file is unmodified; ambiguous capture retains its selector and must not be relabeled teardown RED"}' > expected-observations.json
+          jq -n '{"classification":"EXPECTED OBSERVATIONS ONLY; no observed GREEN or predicted test count","semanticGreen":"The exact RED fixture must finish including original retained I1, closed retry and late-demand assertions, awaited destroy, exact I2-only delete, native create count one, no teardown scrub, exactly one stop, empty allocation, and fresh reuse of old I1; both success and ambiguous rows and full authority controls must pass","siblings":"Separate full allocation and sibling-admission phase covers changed controlled project authority, closure during scrub with physical signal live, non-project guardless capture/cleanup, and uncertainty/post-publication controls","format":"Known unchanged prepared-image formatting failure is independent of semantic pass/fail and is not suppressed; format check performs no writes","otherOutcomes":"Setup, timeout, tee/source integrity, type, format and native assertion failures remain distinct. Unlaunched phases are skipped; all launched failures propagate job failure. No retries or synthetic native counts."}' > expected-observations.json
       - name: Check out public fd0 without persistent credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -101,11 +103,11 @@ jobs:
           ref: fd0b54a58f93b68a49eb07695705cd770ebb91b1
           fetch-depth: 1
           persist-credentials: false
-      - name: Materialize genuine b994 bytes and exact diagnostic test overlay
+      - name: Materialize genuine b994 bytes, unchanged RED fixture, and exact owner repair
         id: materialize
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-green"
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           git diff --quiet HEAD
           git apply --index --check "$evidence/fd0-to-b994.patch"
@@ -131,10 +133,26 @@ jobs:
           git ls-tree -r "$REPRO_TREE" > "$evidence/reproduction-tree-manifest.txt"
           git diff --cached --raw "$PRODUCT_TREE" > "$evidence/test-only-delta.raw"
           git diff --cached --numstat "$PRODUCT_TREE" > "$evidence/test-only-delta.numstat"
+          # The diagnostic fixture stays byte-identical; only capture and allocation repair follow.
+          git apply --index --check "$evidence/owner-repair.patch"
+          git apply --index "$evidence/owner-repair.patch"
+          test "$(git write-tree)" = "$REPAIRED_TREE"
+          allocation_file=extensions/crabbox/src/crabbox-worker-warm-image-allocation.test.ts
+          owner_file=extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
+          printf '%s\n' "$allocation_file" "$owner_file" > "$evidence/expected-owner-repair-paths.txt"
+          git diff --cached --name-only "$REPRO_TREE" > "$evidence/owner-repair-paths.txt"
+          cmp "$evidence/expected-owner-repair-paths.txt" "$evidence/owner-repair-paths.txt"
+          git diff --quiet "$REPRO_TREE" "$REPAIRED_TREE" -- . ":(exclude)$allocation_file" ":(exclude)$owner_file"
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 1f63de2979e855f8205204d2a4a901e3013f8258b56f848e500dc67b3fea9353
+          git diff --quiet
+          git diff --cached --check
+          git ls-tree -r "$REPAIRED_TREE" > "$evidence/repaired-tree-manifest.txt"
+          git diff --cached --raw "$REPRO_TREE" > "$evidence/owner-repair-delta.raw"
+          git diff --cached --numstat "$REPRO_TREE" > "$evidence/owner-repair-delta.numstat"
           printf '%s\n' "$(git rev-parse HEAD)" > "$evidence/runtime-head.txt"
           printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
           # Exact source readbacks; fixtures are synthetic, never environment/config dumps.
-          files=("$test_file" "$control_file"
+          files=("$test_file" "$control_file" "$allocation_file"
             extensions/crabbox/src/crabbox-worker-warm-image.test-support.ts
             extensions/crabbox/src/crabbox-state.test-support.ts
             extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
@@ -169,23 +187,31 @@ jobs:
         id: custody
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-green/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe"
+      - name: Capture full allocation and sibling-admission follow-up files
+        id: siblings
+        if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
+        run: |
+          set -euo pipefail
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-green/capture.sh"
+          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
+          bash "$recipe" siblings
       - name: Capture canonical plugin test types after settled native runtime
         id: types
         if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-green/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" types
-      - name: Check exactly the changed diagnostic test without formatting writes
+      - name: Check exactly three changed source/test paths without formatting writes
         id: format
         if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-green/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" format
       - name: Record native workflow step outcomes
@@ -194,7 +220,7 @@ jobs:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-green"
           mkdir -p "$evidence"
           printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
           if [[ -f "$evidence/materialized-tree.txt" ]]; then
@@ -203,18 +229,18 @@ jobs:
             git ls-files --stage > "$evidence/final-index-manifest.txt"
             status=0
             { test "$(git rev-parse HEAD)" = "$BASE_SHA" &&
-              test "$(git write-tree)" = "$REPRO_TREE" && git diff --quiet &&
+              test "$(git write-tree)" = "$REPAIRED_TREE" && git diff --quiet &&
               sha256sum --check "$evidence/source-files.sha256"; } \
               > "$evidence/final-source-check.log" 2>&1 || status=$?
             printf '%s\n' "$status" > "$evidence/final-source-check.status"
             test "$status" = 0
           fi
-          printf '%s\n' 'Unclassified expiry-teardown diagnostic. Genuine RED requires reaching destroy after correct retained-state and closed-retry assertions, then failing post-cleanup/no-extra-effects. Earlier mismatch is fixture failure. Inspect raw native logs, resource/time records, exact fixture, all phase statuses and source integrity. No expected count or exit is claimed. Native failure remains job failure. CLI doubles are not cloud proof.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Always upload teardown diagnostic evidence, including failures
+          printf '%s\n' 'Unclassified same-fixture repair proof. First runtime is byte-identical RED prepared-image plus full authority files in the same order/command. Semantic GREEN requires all later teardown/I2-only deletion/create-count-one/I1-fresh-reuse assertions and ambiguous controls to execute and pass. Allocation and sibling-admission are separately reported follow-ups. Types and known prepared-image formatting failure are independent; format performs no writes. Inspect native logs, cost, tee/source and phase statuses; unlaunched phases are skipped. No counts or semantic results are preclaimed. Every native failure remains job failure. CLI doubles are not cloud proof; source P2 and later actual ninth commit remain parent-owned.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload same-fixture repair evidence, including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr159178-expiry-teardown-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: pr159178-expiry-teardown-green-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           include-hidden-files: true
           if-no-files-found: error
-          path: ${{ runner.temp }}/pr159178-expiry-teardown-red/
+          path: ${{ runner.temp }}/pr159178-expiry-teardown-green/
