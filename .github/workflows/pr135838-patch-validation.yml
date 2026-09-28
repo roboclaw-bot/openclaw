@@ -142,12 +142,12 @@ jobs:
           case "$SUITE" in
             provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types)
               echo 'same_commit=true' >> "$GITHUB_OUTPUT"
-              echo 'SAME_COMMIT_SOURCE_SHA256=8fdefcaa0f55eb00930d0c4316df1bd74cfea8ade1bea8f865dc18f35b6974dc' >> "$GITHUB_ENV"
+              echo 'SAME_COMMIT_SOURCE_SHA256=59c61afc45e4901240343f16c24a9594d58946ef3cf7fe3bd2add9c216dad3bb' >> "$GITHUB_ENV"
               mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
               test "$BASE_SHA" = 0edae198d278686e16426f7ad254d0341bd6e3d3
-              test "$EXPECTED_TREE" = b1c1331382cae5f993b46cc0e1495e9ba60d690d
+              test "$EXPECTED_TREE" = e84e634a10fa84314b04119bd44d3a4a233a2999
               test "$PATCH_ID" = provider-same-commit
-              test "$PATCH_SHA256" = '011c2882a415726a045a059515417b5601179a8a50fa73b3147737a604b036df'
+              test "$PATCH_SHA256" = '7c8a09a759f3719fe60d4cb2f09ca8b859161219e93ee99060d6d5255ec4b08b'
               test "$GITHUB_EVENT_NAME" = workflow_dispatch
               test "$GITHUB_REF" = refs/heads/main
               test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -249,8 +249,8 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = '49586e7f99f93ff4ee26d3fd2d6992fb3bb2029a'
-            test "$(git rev-parse HEAD^1^{tree})" = '182c3dd55503f4c69df7977a7e14401c4a725ed3'
+            test "$(git show -s --format=%P HEAD)" = 'c0aeafdd22fa4928456b23317cff1cea01dc0fc9'
+            test "$(git rev-parse HEAD^1^{tree})" = '1feeedf7470ab69a8d7f552a0f90d48bd5adf532'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             cat > "$evidence/expected-controller-paths.txt" <<'PATHS'
           M	.github/proof-inputs/pr135838/provider-resume-api.sh
@@ -272,11 +272,11 @@ jobs:
             test "$(sha256sum "$RUNNER_TEMP/same-commit-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
-              provider-resume-build) recipe_sha='f8217fcb99ac0fa8ae646baa6fda092269da0e43acbac8fce8e6915f73b7af96' ;;
-              provider-resume-api) recipe_sha='ed6ef4306ec538b1e6c57a2d568dad4c8c61b251c39d92ad9c23e982b2ad7e78' ;;
-              provider-resume-test-types-a) recipe_sha='c0be0af97fd19d29968113012d08add40aceb46a210d566c51ed95a29e734f00' ;;
-              provider-resume-test-types-b) recipe_sha='aa425411ee7bace607667eaba009aa6f72167ece864f2e9eb8819f08dc84b411' ;;
-              provider-resume-plugin-test-types) recipe_sha='caf5d01bf8f4e5fed43afb265ea67a8e40fe755c6596040e10298f5685f1cb68' ;;
+              provider-resume-build) recipe_sha='72f10d0019b068ce893cca81ae1fd63f21960cab1d31bcffb00abb1a9890d6d2' ;;
+              provider-resume-api) recipe_sha='7928f74ef3e9792512e26841933b0b5b1abce8bd133a14d839ecdaf1da18a0d1' ;;
+              provider-resume-test-types-a) recipe_sha='bb3c2ac007225db5c21d269b35aac429ba1c3d60b6ac51e3d083d102a7c761b4' ;;
+              provider-resume-test-types-b) recipe_sha='a40a5f9010c89dad1789b7ca692c491e93a5ab92ac3dbf441310cb2ac431a8e3' ;;
+              provider-resume-plugin-test-types) recipe_sha='535dc8e9700e33db7c18e6c1c3a61421d1aa8bcabb9295b6e145d02f7076b1af' ;;
             esac
             test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = "$recipe_sha"
             cp "$RUNNER_TEMP/same-commit-payload.json" "$RUNNER_TEMP/same-commit-source.sh" "$RUNNER_TEMP/validate-candidate.sh" "$evidence/"

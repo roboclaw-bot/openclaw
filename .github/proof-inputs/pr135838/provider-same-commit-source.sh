@@ -3,9 +3,9 @@
 # C is imported once per isolated job from the producer's identical bundle bytes.
 set -euo pipefail
 base=0edae198d278686e16426f7ad254d0341bd6e3d3
-replayed_head=fd0b54a58f93b68a49eb07695705cd770ebb91b1
-tree='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
-candidate='a95aa9917bedf89d80d41f089b508a3a1658c4ae'
+replayed_head=e0a53eaa04e450cf9c287e2f8ae1f687f3afdf23
+tree='e84e634a10fa84314b04119bd44d3a4a233a2999'
+candidate='c9921022529005400c41de6580dfabc99b7948dc'
 payload="$RUNNER_TEMP/same-commit-payload.json"
 evidence="$RUNNER_TEMP/pr159178-same-commit"
 phase="${1:-source}"
@@ -45,7 +45,7 @@ case "$SUITE" in provider-resume-build|provider-resume-api|provider-resume-test-
 test "$BASE_SHA" = "$base"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-same-commit
-test "$PATCH_SHA256" = '011c2882a415726a045a059515417b5601179a8a50fa73b3147737a604b036df'
+test "$PATCH_SHA256" = '7c8a09a759f3719fe60d4cb2f09ca8b859161219e93ee99060d6d5255ec4b08b'
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -136,7 +136,7 @@ from pathlib import Path
 import base64,hashlib,json,sys
 m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);r=e/'retained';r.mkdir(exist_ok=False)
 assert m['schema']==1 and m['status']=='PARENT_REVIEWED_SAME_COMMIT'
-assert m['commit']=='a95aa9917bedf89d80d41f089b508a3a1658c4ae' and m['tree']=='b1c1331382cae5f993b46cc0e1495e9ba60d690d'
+assert m['commit']=='c9921022529005400c41de6580dfabc99b7948dc' and m['tree']=='e84e634a10fa84314b04119bd44d3a4a233a2999'
 for x in m['retained']:
     assert set(x)=={'path','mode','bytes','sha256','base64'} and x['mode']=='100644'
     assert Path(x['path']).name==x['path'] and x['path'] not in ('','.','..')
@@ -144,89 +144,113 @@ for x in m['retained']:
     assert len(b)==x['bytes'] and hashlib.sha256(b).hexdigest()==x['sha256']
     target=r/x['path'];assert not target.exists();target.write_bytes(b)
 # Every accepted byte was copied from the immutable producer archive, not rebuilt.
-"""Pure artifact/data validation. No Git, source modules, hooks, or subprocesses."""
-import hashlib,json,re
+"""Pure inert receipt verification for the actual ordinary lint-repair producer.
+No old receipt translation, source imports, subprocesses, network or writes.
+"""
+import base64, hashlib, json, re
+B = '0edae198d278686e16426f7ad254d0341bd6e3d3'
+A = 'e0a53eaa04e450cf9c287e2f8ae1f687f3afdf23'
+T = 'e84e634a10fa84314b04119bd44d3a4a233a2999'
+PATCH = '298c200e081b400b07197fa4dd061ea40aa43cf44dd69b2b19a596251f58a0c1'
+CONTROLLER = 'c0aeafdd22fa4928456b23317cff1cea01dc0fc9'
+IDENTITY = b'roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>'
+MESSAGE = b'''test(workers): avoid shadowing the capture profile key
 
-REQUIRED=[
- 'committed-candidate.bundle','committed-candidate.json','committed-head.txt','rebased-head.txt',
- 'final-message.txt','final-commit.txt','final-commit.trace2.jsonl','commit.phase.json',
- 'normal-hook-commit.command.txt','normal-hook-commit.result.json','normal-hook-commit.log','normal-hook-commit.time.txt',
- 'committed-history-bundle.command.txt','committed-history-bundle.result.json','committed-history-bundle.log',
- 'committed-history-verify.command.txt','committed-history-verify.result.json','committed-history-verify.log',
- 'format.command.txt','format.result.json','format.log','format.phase.json',
- 'controller-workflow.yml','controller-recipe.sh','rebase-payload.json','controller-identity.txt',
- 'run.json','step-outcomes.json','actual-replay-chain.json',
-]
-MESSAGE=b'''fix(workers): repair warm-image lint and private test boundaries
-
-Preserve native worker admission coverage through the existing private SQLite test facade; make capture skip returns explicit without changing behavior.
+Rename only the local capture profile key and its references; preserve all production code and assertions.
 
 Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
 Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
 '''
-def verify_retained(m,files):
-    assert set(files)==set(REQUIRED)
-    def j(p):return json.loads(files[p])
-    def digest(p):return hashlib.sha256(files[p]).hexdigest()
-    p=m['producer'];receipt=j('committed-candidate.json');expected=m['expectedProducer']
-    assert p['repository']=='roboclaw-bot/openclaw'
-    assert p['workflow']=='.github/workflows/pr135838-patch-validation.yml'
-    assert p['artifactName']=='pr159178-rebase-evidence'
-    assert p['runStatus']=='completed' and p['jobStatus']=='completed'
-    # Failure after retention is valid custody, never a claim of passing tests.
+REQUIRED = ['committed-candidate.bundle','committed-candidate.json','committed-head.txt',
+ 'history.json','final-commit.trace2.jsonl','bundle-verify.txt',
+ 'public-head-before-commit.txt','expected-public-head.txt',
+ 'format-before-commit.command.txt','format-before-commit.result.json',
+ 'format-before-commit.log','format-before-commit.time.txt',
+ 'controller-workflow.yml','controller-recipe.sh','controller-identity.txt',
+ 'materialization.patch','run.json','step-outcomes.json']
+
+def sha(b): return hashlib.sha256(b).hexdigest()
+
+def verify_retained(m, files):
+    assert m['schema'] == 1 and m['status'] == 'PARENT_REVIEWED_SAME_COMMIT'
+    assert (m['base'],m['parent'],m['tree']) == (B,A,T)
+    candidate = m['commit']; assert isinstance(candidate,str) and re.fullmatch('[a-f0-9]{40}',candidate)
+    assert len(m['history']) == 9 and m['history'][-1]['commit'] == A
+    raw_paths = ['raw-'+h['commit']+'.commit' for h in m['history']]+['raw-'+candidate+'.commit']
+    assert set(REQUIRED+raw_paths) <= set(files)
+    p = m['producer']; expected = m['expectedProducer']
+    assert p['repository'] == 'roboclaw-bot/openclaw'
+    assert p['workflow'] == '.github/workflows/pr135838-patch-validation.yml'
+    assert p['artifactName'] == 'pr159178-same-commit-evidence' and p['controller'] == CONTROLLER
+    assert p['runStatus'] == p['jobStatus'] == 'completed'
+    for key in ('runId','attempt','jobId','artifactId'):
+        assert type(p[key]) is int and p[key] > 0
+    assert p['attempt'] == 1
     assert p['runConclusion'] in ('success','failure','cancelled','timed_out')
     assert p['jobConclusion'] in ('success','failure','cancelled','timed_out')
-    for key in ('runId','attempt','jobId','artifactId'):
-        assert isinstance(p[key],int) and not isinstance(p[key],bool) and p[key]>0
-    assert re.fullmatch('[0-9a-f]{40}',p['controller'])
-    assert re.fullmatch('sha256:[0-9a-f]{64}',p['artifactDigest'])
-    assert receipt['commit']==m['commit'] and re.fullmatch('[0-9a-f]{40}',m['commit'])
-    assert receipt['parent']==m['parent'] and receipt['base']==m['base'] and receipt['tree']==m['tree']
-    assert receipt['controller']==p['controller'] and receipt['runId']==str(p['runId']) and receipt['attempt']==str(p['attempt'])
-    assert receipt['normalHookCommit'] is True and receipt['runtimeValidation']=='NOT YET ESTABLISHED'
-    assert receipt['bundleSha256']==m['bundleSha256']==digest('committed-candidate.bundle')
-    header=files['committed-candidate.bundle'].split(bytes([10,10]),1)[0].splitlines()
-    assert len(header)==3 and header[0]==b'# v2 git bundle'
-    assert header[1].split(b' ',1)[0]==('-'+m['base']).encode()
-    assert header[2]==(m['commit']+' HEAD').encode()
-    assert files['committed-head.txt']==(m['commit']+chr(10)).encode()
-    assert files['rebased-head.txt']==(m['parent']+chr(10)).encode()
-    assert files['final-message.txt']==MESSAGE
-    assert files['final-commit.txt'].splitlines()[:3]==[m[x].encode() for x in ('commit','parent','tree')]
-    assert files['controller-identity.txt'].decode().splitlines()==[p['controller'],expected['parent'],expected['tree']]
-    for path,key in [('controller-workflow.yml','workflowSha256'),('controller-recipe.sh','recipeSha256'),('rebase-payload.json','payloadSha256')]:
-        assert digest(path)==expected[key]
-    native=j('rebase-payload.json')
-    assert native['finalTree']==m['tree'] and native['replayedHead']==m['parent'] and native['newMain']==m['base']
-    assert native['sourceChecks']==m['sourceChecks'] and native['changedPaths']==m['changedPaths']
-    assert native['nativeCustody']==m['settledNativeCustody'] and native['formatAdoption']==m['formatAdoption']
-    run=j('run.json')
-    assert run['runId']==str(p['runId']) and run['attempt']==str(p['attempt']) and run['controller']==p['controller']
-    outcomes=j('step-outcomes.json')
-    for step in ('input_guard','preserve_inputs','base_checkout','materialize','dependencies','format','commit'):
-        assert outcomes[step]['outcome']=='success' and outcomes[step]['conclusion']=='success',step
-    for phase in ('format','commit'):
-        assert j(phase+'.phase.json')['phase']==phase and j(phase+'.phase.json')['exitStatus']==0
-    for label in ('normal-hook-commit','committed-history-bundle','committed-history-verify','format'):
-        result=j(label+'.result.json')
-        assert result['command']==label and result['nativeExitStatus']==0 and result['teeExitStatus']==0
-    command=files['normal-hook-commit.command.txt']
-    assert b'core.hooksPath=git-hooks' in command and b' commit --file ' in command
-    assert b'--no-verify' not in command and b'commit-tree' not in command
-    trace=[json.loads(x) for x in files['final-commit.trace2.jsonl'].splitlines() if x]
-    starts=[x for x in trace if x.get('event')=='child_start' and x.get('hook_name')=='pre-commit']
-    assert len(starts)==1
-    start=starts[0]
-    assert any(x.get('event')=='child_exit' and x.get('sid')==start['sid'] and x.get('child_id')==start['child_id'] and x.get('code')==0 for x in trace)
-    replay=j('actual-replay-chain.json');assert len(replay)==6
-    for actual,s in zip(replay,m['history'],strict=True):
-        assert actual['actual']==s['commit'] and actual['original']==s['original'] and actual['tree']==s['expectedRebasedTree']
-        assert actual['authorAndMessagePreserved'] is True
-    assert j('format.result.json')['endedAt']<=j('normal-hook-commit.result.json')['startedAt']
-    assert j('normal-hook-commit.result.json')['endedAt']<=j('committed-history-bundle.result.json')['startedAt']
-    assert j('committed-history-bundle.result.json')['endedAt']<=j('committed-history-verify.result.json')['startedAt']
+    assert re.fullmatch('sha256:[a-f0-9]{64}',p['artifactDigest'])
+    receipt = json.loads(files['committed-candidate.json'])
+    # This producer does NOT emit attempt/normalHookCommit/runtimeValidation here.
+    assert set(receipt) == {'commit','parent','base','tree','patchSha256','controller','runId','bundleSha256','validation','scope'}
+    for key in ('commit','parent','base','tree','bundleSha256'): assert receipt[key] == m[key]
+    assert receipt['patchSha256'] == PATCH and receipt['controller'] == CONTROLLER
+    assert receipt['runId'] == str(p['runId']) and receipt['validation'] == 'NOT YET ESTABLISHED'
+    assert receipt['scope'] == 'Retained actual normal-hook commit; not passing proof'
+    assert sha(files['committed-candidate.bundle']) == m['bundleSha256']
+    header = files['committed-candidate.bundle'].split(b'\n\n',1)[0].splitlines()
+    assert len(header) == 3 and header[0] == b'# v2 git bundle'
+    assert header[1].split(b' ',1)[0] == ('-'+B).encode() and header[2] == (candidate+' HEAD').encode()
+    assert files['committed-head.txt'] == (candidate+'\n').encode()
+    assert files['expected-public-head.txt'] == files['public-head-before-commit.txt'] == (A+'	refs/pull/159178/head\n').encode()
+    assert sha(files['materialization.patch']) == PATCH == expected['patchSha256']
+    assert files['controller-identity.txt'].decode().splitlines() == [CONTROLLER,expected['parent'],expected['tree']]
+    for name,key in [('controller-workflow.yml','workflowSha256'),('controller-recipe.sh','recipeSha256')]:
+        assert sha(files[name]) == expected[key]
+    result = json.loads(files['format-before-commit.result.json'])
+    assert set(result) == {'name','commit','nativeExit','captureExit'}
+    assert result == {'name':'format-before-commit','commit':A,'nativeExit':0,'captureExit':0}
+    assert files['format-before-commit.command.txt'] == b'pnpm format:check extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts \n'
+    run = json.loads(files['run.json'])
+    assert (run['runId'],run['attempt'],run['controller'],run['suite']) == (str(p['runId']),'1',CONTROLLER,'provider-routing-repair')
+    outcomes = json.loads(files['step-outcomes.json'])
+    for step in ('input_guard','preserve_inputs','base_checkout','materialize','dependencies','ordinary_commit'):
+        assert outcomes[step]['outcome'] == outcomes[step]['conclusion'] == 'success', step
+    # These existing sibling producer steps are skipped, not invented passes.
+    for step in ('format','commit','export','same_commit_export'):
+        assert outcomes[step]['outcome'] == outcomes[step]['conclusion'] == 'skipped', step
+    trace = [json.loads(line) for line in files['final-commit.trace2.jsonl'].splitlines() if line]
+    starts = [x for x in trace if x.get('event') == 'child_start' and x.get('hook_name') == 'pre-commit']
+    assert len(starts) == 1
+    start = starts[0]
+    exits = [x for x in trace if x.get('event') == 'child_exit' and x.get('sid') == start['sid'] and x.get('child_id') == start['child_id']]
+    assert len(exits) == 1 and exits[0]['code'] == 0 and start['time'] <= exits[0]['time']
+    rows = json.loads(files['history.json'])
+    assert len(rows) == len({x['commit'] for x in rows}) == 10
+    assert [x['commit'] for x in rows] == [h['commit'] for h in m['history']]+[candidate]
+    previous = B; trees = []
+    for i,row in enumerate(rows):
+        assert set(row) == {'commit','rawSha256'}, 'No fabricated rawBase64 native receipt'
+        raw = files['raw-'+row['commit']+'.commit']
+        assert sha(raw) == row['rawSha256']
+        assert hashlib.sha1(b'commit '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == row['commit']
+        headers,message = raw.split(b'\n\n',1); lines = headers.splitlines()
+        assert [x[7:].decode() for x in lines if x.startswith(b'parent ')] == [previous]
+        tree_rows = [x[5:].decode() for x in lines if x.startswith(b'tree ')]; assert len(tree_rows) == 1
+        tree = tree_rows[0]; trees.append(tree)
+        if i < 9:
+            h = m['history'][i]
+            assert raw == base64.b64decode(h['rawBase64'],validate=True)
+            assert sha(raw) == h['rawSha256'] and tree == h['expectedRebasedTree']
+        else:
+            assert previous == A and tree == T and message == MESSAGE
+            for role in (b'author ',b'committer '):
+                identities = [x[len(role):] for x in lines if x.startswith(role)]
+                assert len(identities) == 1 and identities[0].rsplit(b' ',2)[0] == IDENTITY
+        previous = row['commit']
+    assert trees[1] == trees[2]
+    return receipt
 
-verify_retained(m,{x:(r/x).read_bytes() for x in REQUIRED})
+verify_retained(m,{x:(r/x).read_bytes() for x in REQUIRED+['raw-'+h['commit']+'.commit' for h in m['history']]+['raw-'+m['commit']+'.commit']})
 
 (e/'producer-custody.json').write_text(json.dumps(m['producer'],indent=2)+chr(10))
 PY
@@ -240,7 +264,7 @@ import base64,hashlib,json,subprocess,sys
 m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2])
 def git(*a):return subprocess.check_output(['git',*a])
 actual=git('rev-list','--reverse',m['base']+'..'+m['commit']).decode().splitlines()
-assert actual==[s['commit'] for s in m['history']]+[m['commit']] and len(actual)==7
+assert actual==[s['commit'] for s in m['history']]+[m['commit']] and len(actual)==10
 assert not git('rev-list','--merges',m['base']+'..'+m['commit'])
 parent=m['base'];rows=[]
 for i,sha in enumerate(actual):
@@ -249,21 +273,20 @@ for i,sha in enumerate(actual):
     headers,msg=raw.split(bytes([10,10]),1);lines=headers.splitlines()
     assert [x[7:].decode() for x in lines if x.startswith(b'parent ')]==[parent]
     tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '))
-    if i<6:
+    if i<9:
         s=m['history'][i]
         assert raw==base64.b64decode(s['rawBase64'],validate=True)
         assert tree==s['expectedRebasedTree']
-        assert next(x for x in lines if x.startswith(b'author '))==base64.b64decode(s['authorBase64'])
-        assert msg==base64.b64decode(s['messageBase64'])
+        assert hashlib.sha256(raw).hexdigest()==s['rawSha256']
     else:
         assert parent==m['parent'] and tree==m['tree']
-        assert msg==(e/'retained/final-message.txt').read_bytes()
+        assert raw==(e/('retained/raw-'+sha+'.commit')).read_bytes()
         for role in (b'author ',b'committer '):
             identity=next(x[len(role):] for x in lines if x.startswith(role)).rsplit(b' ',2)
             assert identity[0]==b'roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>'
     rows.append(dict(commit=sha,parent=parent,tree=tree));parent=sha
 assert rows[1]['tree']==rows[2]['tree']
-(e/'seven-commit-chain.json').write_text(json.dumps(rows,indent=2)+chr(10))
+(e/'ten-commit-chain.json').write_text(json.dumps(rows,indent=2)+chr(10))
 # Attribute activation is checked at B and every admitted actual object before
 # checkout. Configured filter names alone are not activation or an LFS ban.
 def fields(data):
