@@ -185,10 +185,19 @@ jobs:
             printf 'FORMAT_HOSTED=%s\n' "$REBASE_HOSTED" >> "$GITHUB_ENV"
           fi
           if [[ "$SUITE" == provider-routing-repair ]]; then
-            test "$BASE_SHA" = e53ea87c66cb5d1deaefe5046069de4adbcde09a
+            mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
+            test "$BASE_SHA" = e0a53eaa04e450cf9c287e2f8ae1f687f3afdf23
             test "$PATCH_ID" = provider-routing-repair-20260927
-            test "$EXPECTED_TREE" = 8d016974aecaddff23a9a86ff502f500980cbb4d
-            test "$PATCH_SHA256" = 388710246627cfef1f16e41f34cfd4461e7a1a0f0eebfde7eb690e63ffacaba7
+            test "$EXPECTED_TREE" = e84e634a10fa84314b04119bd44d3a4a233a2999
+            test "$PATCH_SHA256" = 298c200e081b400b07197fa4dd061ea40aa43cf44dd69b2b19a596251f58a0c1
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
+            test "$GITHUB_RUN_ATTEMPT" = 1
+            test "$REBASE_HOSTED" = github-hosted
+            test "$RUNNER_OS" = Linux
+            test "$RUNNER_ARCH" = X64
+            printf 'SHADOW_HOSTED=%s\n' "$REBASE_HOSTED" >> "$GITHUB_ENV"
           fi
           if [[ "$SUITE" == provider-type-inventory ]]; then
             test "$BASE_SHA" = e0c476d18d326d05468135a37ed108e07eb8a466
@@ -231,7 +240,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || steps.input_guard.outputs.same_commit == 'true') && 2 || 1 }}
+          fetch-depth: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 2 || 1 }}
           persist-credentials: false
       - name: Preserve and verify patch data
         id: preserve_inputs
@@ -295,6 +304,25 @@ jobs:
             base64 --decode ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" > "$RUNNER_TEMP/candidate.patch"
             test "$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d " " -f1)" = "$PATCH_SHA256"
             cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
+            if [[ "$SUITE" == provider-routing-repair ]]; then
+              evidence="$RUNNER_TEMP/pr159178-same-commit"
+              test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+              test "$(git show -s --format=%P HEAD)" = 65ac9d7938639d65721958ef4baf22d335e9856f
+              test "$(git rev-parse HEAD^1^{tree})" = e4ca5d79d7cf27dd7260f9998b32db682fb68bca
+              git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
+              printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-routing-repair-20260927.patch.b64 .github/proof-inputs/pr135838/provider-routing-repair.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+              cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
+              for path in .github/proof-inputs/pr135838/provider-routing-repair-20260927.patch.b64 .github/proof-inputs/pr135838/provider-routing-repair.sh .github/workflows/pr135838-patch-validation.yml; do
+                test "$(git ls-tree HEAD "$path" | cut -d ' ' -f1)" = 100644
+              done
+              test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = 1bf93d69cafa858bdb87d4723d690cca11c0082774719c08acc8e91543e928fb
+              test "$(sha256sum ".github/proof-inputs/pr135838/$PATCH_ID.patch.b64" | cut -d ' ' -f1)" = cd8c13323ec8d30cb3090a5215224a0604e77102d95b7fb0ffff13bce6e87188
+              git diff --quiet HEAD
+              cp "$RUNNER_TEMP/candidate.patch" "$evidence/materialization.patch"
+              cp "$RUNNER_TEMP/validate-candidate.sh" "$evidence/controller-recipe.sh"
+              cp .github/workflows/pr135838-patch-validation.yml "$evidence/controller-workflow.yml"
+              git show -s --format='%H%n%P%n%T' HEAD > "$evidence/controller-identity.txt"
+            fi
             if [[ "$SUITE" == provider-format-preparation ]]; then
               evidence="$RUNNER_TEMP/pr159178-format-preparation"
               test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -328,7 +356,7 @@ jobs:
         id: base_checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
+          repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
           ref: ${{ inputs.base_sha }}
           fetch-depth: 0
           filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
@@ -368,7 +396,7 @@ jobs:
         with:
           node-version: ${{ inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
           install-bun: ${{ inputs.suite == 'custody-resume-windows' && 'false' || 'true' }}
-          cache-mode: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || steps.input_guard.outputs.same_commit == 'true') && 'off' || 'restore' }}
+          cache-mode: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'off' || 'restore' }}
       - name: Verify repaired source after dependency setup
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" after-setup
@@ -385,6 +413,7 @@ jobs:
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" format
       - name: Commit exact reviewed tree with normal hooks enabled
+        id: ordinary_commit
         if: inputs.suite != 'provider-rebase-focused' && inputs.suite != 'provider-format-preparation' && steps.input_guard.outputs.same_commit != 'true'
         run: |
           set -euo pipefail
@@ -393,8 +422,8 @@ jobs:
           test -z "$(git config --get hooks.blockedLiteralsFile || true)"
           case "$SUITE" in
             provider-routing-repair)
-              subject="test: keep worker invocation registration in canonical order"
-              detail="Preserve every Gateway worker test while placing the invocation regression in the sorted routing inventory."
+              subject="test(workers): avoid shadowing the capture profile key"
+              detail="Rename only the local capture profile key and its references; preserve all production code and assertions."
               ;;
             provider-type-inventory)
               subject="test: record worker-provider negative type assertions"
@@ -503,7 +532,18 @@ jobs:
           Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
           Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
           MESSAGE
+          if [[ "$SUITE" == provider-routing-repair ]]; then
+            export GIT_AUTHOR_NAME=roboclaw-bot GIT_COMMITTER_NAME=roboclaw-bot
+            export GIT_AUTHOR_EMAIL=309084314+roboclaw-bot@users.noreply.github.com
+            export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+            bash "$RUNNER_TEMP/validate-candidate.sh" before-commit
+            export GIT_TRACE2_EVENT="$RUNNER_TEMP/pr159178-same-commit/final-commit.trace2.jsonl"
+          fi
           git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com commit --file "$RUNNER_TEMP/commit-message.txt"
+          if [[ "$SUITE" == provider-routing-repair ]]; then
+            unset GIT_TRACE2_EVENT
+            bash "$RUNNER_TEMP/validate-candidate.sh" retain-commit
+          fi
           git log -1 --format="%H%n%P%n%T%n%B"
           test "$(git rev-parse HEAD^)" = "$BASE_SHA"
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
@@ -525,6 +565,9 @@ jobs:
         if: inputs.suite != 'provider-rebase-focused' && inputs.suite != 'provider-format-preparation' && steps.input_guard.outputs.same_commit != 'true'
         run: |
           set -euo pipefail
+          if [[ "$SUITE" == provider-routing-repair ]]; then
+            bash "$RUNNER_TEMP/validate-candidate.sh" export
+          else
           git bundle create "$RUNNER_TEMP/candidate.bundle" "$BASE_SHA..HEAD"
           git bundle verify "$RUNNER_TEMP/candidate.bundle"
           sdk_report_sha=""
@@ -533,6 +576,7 @@ jobs:
           fi
           jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api" or $suite == "provider-sdk-repair") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
+          fi
       - name: Export the same retained ninth commit after native proof
         id: export
         if: inputs.suite == 'provider-rebase-focused'
@@ -618,7 +662,7 @@ jobs:
           if-no-files-found: error
           path: ${{ runner.temp }}/pr159178-format-preparation
       - name: Preserve same-commit gate evidence on every outcome
-        if: always() && steps.input_guard.outputs.same_commit == 'true'
+        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair')
         env:
           SAME_COMMIT_STEP_OUTCOMES: ${{ toJSON(steps) }}
           SAME_COMMIT_JOB_STATUS: ${{ job.status }}
@@ -638,12 +682,15 @@ jobs:
             sha256sum --check "$evidence/always/source-checks.sha256" > "$evidence/always/source-checks.result.txt" 2>&1
             printf '%s\n' "$?" > "$evidence/always/source-checks.exit.txt"
           fi
+          if [[ "$SUITE" == provider-routing-repair ]]; then
+            printf '%s\n' 'Failure remains unclassified until raw diagnostics are reviewed: setup/guard/capture failure is not lint RED; retained commit is not passing proof. No retry or replacement commit.' > "$evidence/failure-classification.txt"
+          fi
           for path in candidate-sdk-api.json candidate-sdk-api.txt candidate.bundle candidate.json; do
             if [[ -f "$RUNNER_TEMP/$path" ]]; then cp "$RUNNER_TEMP/$path" "$evidence/always/"; fi
           done
           exit 0
       - name: Upload same-commit gate evidence on every outcome
-        if: always() && steps.input_guard.outputs.same_commit == 'true'
+        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: pr159178-same-commit-evidence
