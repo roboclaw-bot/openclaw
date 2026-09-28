@@ -283,10 +283,10 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'd04ef153895b3f69512d9918c987986fb0f70f1e'
-            test "$(git rev-parse HEAD^1^{tree})" = 'b2a0ac9355e623beb37ca025b01b83a027d01842'
+            test "$(git show -s --format=%P HEAD)" = '88dd40a1674d5a8e0fac5504d9491e0bf7639f02'
+            test "$(git rev-parse HEAD^1^{tree})" = 'ae4d0dfd5269b47dc540f6fda50cff13db2a9d07'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
@@ -357,7 +357,7 @@ jobs:
           repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
           ref: ${{ inputs.base_sha }}
           fetch-depth: 0
-          filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
+          filter: ${{ (inputs.suite == 'provider-upgrade-harness' || inputs.suite == 'provider-rebase-focused') && 'blob:none' || '' }}
           persist-credentials: false
       - name: Materialize only the reviewed candidate
         id: materialize
