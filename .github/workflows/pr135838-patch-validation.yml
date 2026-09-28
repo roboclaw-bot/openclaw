@@ -249,12 +249,11 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = cc1cd5448b7be6552334624a82e866255077eb7c
-            test "$(git rev-parse HEAD^1^{tree})" = 8f3d72933bdd3b95caa058b732795bbddd67c438
+            test "$(git show -s --format=%P HEAD)" = e38d4fbc8af63e7125e2cec80de30a66c7e3d2a0
+            test "$(git rev-parse HEAD^1^{tree})" = f230043c2c1abd2085bcdfb4f417dcdf1675b475
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
-          M	.github/proof-inputs/pr135838/provider-resume-build.sh
-          A	.github/proof-inputs/pr135838/publication/artifact.py
+          M	.github/proof-inputs/pr135838/publication/artifact.py
           M	.github/workflows/pr135838-patch-validation.yml
           PUBLICATION_PATHS
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
@@ -279,7 +278,7 @@ jobs:
             git show -s --format='%H%n%P%n%T' HEAD > "$evidence/controller-identity.txt"
             if [[ "$SUITE" == provider-resume-build ]]; then
               cp .github/proof-inputs/pr135838/publication/artifact.py "$RUNNER_TEMP/publication-artifact.py"
-              test "$(sha256sum "$RUNNER_TEMP/publication-artifact.py" | cut -d " " -f1)" = 7c5c33d9272644bbd129a02fd69d852978e5ff25abd2d2eee1514dbc793ad1be
+              test "$(sha256sum "$RUNNER_TEMP/publication-artifact.py" | cut -d " " -f1)" = 8b5729cb870afc2e561230a831ae54935e31cd5b91d278e17d37477b08974b72
             fi
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"

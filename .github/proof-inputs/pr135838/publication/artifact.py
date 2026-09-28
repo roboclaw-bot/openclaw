@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fixed publication artifact data contract. Never imports candidate modules."""
 from pathlib import Path, PurePosixPath
-import hashlib, io, json, os, stat, subprocess, sys, zipfile
+import hashlib, io, json, os, posixpath, re, stat, subprocess, sys, zipfile
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -54,12 +54,54 @@ def output_roots(owner):
     assert all(isinstance(name, str) and name and all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name) for name in names)
     return ['dist', *['packages/'+name+'/dist' for name in names]]
 
+def dependency_link_source(name):
+    # The actual source build owner links only plugin-installed package roots.
+    match = re.fullmatch(r'dist/extensions/([A-Za-z0-9_-]+)/node_modules/([.]bin|[A-Za-z0-9_-][A-Za-z0-9_.-]*|@[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*)', name)
+    assert match, 'Unowned output symlink: ' + name
+    return 'extensions/'+match[1]+'/node_modules/'+match[2]
+
+def validate_links(links, files):
+    assert isinstance(links, list) and links == sorted(links, key=lambda row: row['path'])
+    names = set()
+    for row in links:
+        assert set(row) == {'path','target','targetSha256','mode','source','canonicalTarget'}
+        name = safe_name(row['path']); assert name not in names and name not in files
+        names.add(name)
+        assert row['source'] == dependency_link_source(name) and row['mode'] == 0o777
+        target = row['target']; assert isinstance(target,str) and target and not target.startswith('/')
+        assert chr(0) not in target and chr(92) not in target and ':' not in target
+        assert sha(target.encode()) == row['targetSha256']
+        canonical = row['canonicalTarget']
+        if canonical != '.': safe_name(canonical)
+        assert posixpath.normpath(posixpath.join(posixpath.dirname(name),target)) == canonical
+        assert canonical == '.' or canonical.startswith(('node_modules/','extensions/','packages/'))
+    for name in names:
+        assert not any(path.startswith(name+'/') for path in set(files)|names)
+        assert not any(str(parent) in files for parent in PurePosixPath(name).parents)
+    return links
+
+def restore_links(links):
+    root = Path.cwd().resolve()
+    for row in links:
+        target = root/row['path']; source = root/row['source']
+        canonical = source.resolve(strict=True)
+        assert canonical.is_relative_to(root) and canonical.is_dir()
+        assert canonical.relative_to(root).as_posix() == row['canonicalTarget']
+        assert os.path.relpath(canonical,target.parent) == row['target']
+        # Only recreate the native producer's exact link text, never copy dependencies.
+        target.parent.mkdir(parents=True,exist_ok=True)
+        assert target.parent.resolve().is_relative_to(root/'dist')
+        assert not target.exists() and not target.is_symlink()
+        target.symlink_to(row['target'],target_is_directory=True)
+        assert os.readlink(target) == row['target'] and target.resolve(strict=True) == canonical
+
 def build_archive(data, candidate, tree, bundle_sha):
     files, rows = checked_zip(data)
     m = json.loads(files['manifest.json'])
     assert m['schema'] == 'pr135838-native-dist-v1'
     assert m['candidateSha'] == candidate and m['candidateTree'] == tree
     assert m['sourceBundleSha256'] == bundle_sha
+    validate_links(m['outputLinks'], files)
     expected = m['members']
     actual = [{k: row[k] for k in ('path', 'bytes', 'sha256', 'mode')}
               for row in rows if row['path'] != 'manifest.json']
@@ -105,17 +147,29 @@ def retain():
     candidate, tree = git('rev-parse', 'HEAD'), git('rev-parse', 'HEAD^{tree}')
     assert candidate == payload['commit'] and tree == payload['tree'] == git('write-tree')
     subprocess.run(['git', 'diff', '--quiet', 'HEAD'], check=True)
-    files = {}
+    files = {}; links = []; workspace = Path.cwd().resolve()
     owner = Path('scripts/lib/tsdown-output-roots.mts').read_bytes()
     roots = output_roots(owner)
     for root in roots:
         assert Path(root).is_dir() and not Path(root).is_symlink()
         for p in sorted(Path(root).rglob('*')):
-            assert not p.is_symlink(), 'Nonportable built symlink requires owner inspection: ' + str(p)
+            if p.is_symlink():
+                name = p.as_posix(); source = dependency_link_source(name)
+                canonical = Path(source).resolve(strict=True)
+                assert canonical.is_relative_to(workspace) and canonical.is_dir()
+                assert p.resolve(strict=True) == canonical
+                target = os.readlink(p)
+                assert target == os.path.relpath(canonical,p.parent)
+                links.append({'path':name,'target':target,'targetSha256':sha(target.encode()),
+                              'mode':stat.S_IMODE(p.lstat().st_mode),'source':source,
+                              'canonicalTarget':canonical.relative_to(workspace).as_posix()})
+                continue
             if p.is_dir(): continue
             assert p.is_file() and not p.stat().st_mode & 0o7000
             files[p.as_posix()] = (p.read_bytes(), stat.S_IMODE(p.stat().st_mode))
-    sources = {'build.result.json': evidence/'build.result.json',
+    links.sort(key=lambda row:row['path']); validate_links(links,files)
+    sources = {'dependency-links-owner.mjs': Path('scripts/lib/bundled-plugin-dependency-links.mjs'),
+               'build.result.json': evidence/'build.result.json',
                'build.command.txt': evidence/'build.command.txt',
                'build-after-HEAD.txt': evidence/'build-after/HEAD.txt',
                'build-after-tracked-status.txt': evidence/'build-after/tracked-status.txt',
@@ -127,7 +181,7 @@ def retain():
         assert p.is_file() and not p.is_symlink(); files['native/'+name] = (p.read_bytes(), 0o644)
     info = json.loads(files['dist/build-info.json'][0])
     m = {'schema': 'pr135838-native-dist-v1', 'candidateSha': candidate, 'candidateTree': tree,
-         'outputRoots': roots, 'sourceBundleSha256': payload['bundleSha256'], 'sourcePayloadSha256': sha(files['native/source-payload.json'][0]),
+         'outputRoots': roots, 'outputLinks':links, 'sourceBundleSha256': payload['bundleSha256'], 'sourcePayloadSha256': sha(files['native/source-payload.json'][0]),
          'controller': os.environ['GITHUB_SHA'], 'runId': os.environ['GITHUB_RUN_ID'], 'attempt': os.environ['GITHUB_RUN_ATTEMPT'],
          'recipeSha256': sha(files['native/build-recipe.sh'][0]), 'nativeBuildResult': json.loads(files['native/build.result.json'][0]),
          'buildInfoSha256': sha(files['dist/build-info.json'][0]), 'buildId': info['buildId'],
