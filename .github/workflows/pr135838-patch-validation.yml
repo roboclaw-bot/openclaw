@@ -283,8 +283,8 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = '88dd40a1674d5a8e0fac5504d9491e0bf7639f02'
-            test "$(git rev-parse HEAD^1^{tree})" = 'ae4d0dfd5269b47dc540f6fda50cff13db2a9d07'
+            test "$(git show -s --format=%P HEAD)" = 'e46448a0c732785b2ddbdbf560d2c868d6f9f130'
+            test "$(git rev-parse HEAD^1^{tree})" = 'bcdbcc6cc18976deba74808819d31128130b19af'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
@@ -356,9 +356,22 @@ jobs:
         with:
           repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
           ref: ${{ inputs.base_sha }}
-          fetch-depth: 0
-          filter: ${{ (inputs.suite == 'provider-upgrade-harness' || inputs.suite == 'provider-rebase-focused') && 'blob:none' || '' }}
+          fetch-depth: ${{ inputs.suite == 'provider-rebase-focused' && 1 || 0 }}
+          filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
           persist-credentials: false
+      - name: Complete only the exact source ancestry before native Git
+        if: inputs.suite == 'provider-rebase-focused'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = true
+          status=0
+          git config --name-only --get-regexp '^(remote\..*\.(promisor|partialclonefilter)|extensions\.partialclone)$' > "$RUNNER_TEMP/pr159178-rebase/promisor-config.txt" || status=$?
+          test "$status" = 1
+          git fetch --no-tags --unshallow origin "$BASE_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
       - name: Materialize only the reviewed candidate
         id: materialize
         run: |
