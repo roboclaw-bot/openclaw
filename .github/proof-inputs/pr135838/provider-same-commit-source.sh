@@ -41,7 +41,7 @@ finish() {
 }
 trap finish EXIT
 
-case "$SUITE" in provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types) ;; *) exit 2 ;; esac
+case "$SUITE" in provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-process) ;; *) exit 2 ;; esac
 test "$BASE_SHA" = "$base"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-same-commit

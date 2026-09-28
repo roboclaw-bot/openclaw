@@ -1,0 +1,749 @@
+diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.mjs b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
+new file mode 100644
+--- /dev/null
++++ b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
+@@ -0,0 +1,732 @@
++import assert from "node:assert/strict";
++import { createHash, randomUUID, X509Certificate } from "node:crypto";
++import fs from "node:fs/promises";
++import { appendFileSync, readFileSync, realpathSync } from "node:fs";
++import Module from "node:module";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { parse as parseJavaScript } from "acorn";
++import * as sdkResolverOwner from "../../plugins/plugin-sdk-native-resolver.js";
++import os from "node:os";
++import net from "node:net";
++import path from "node:path";
++import { DatabaseSync } from "node:sqlite";
++import { setTimeout as delay } from "node:timers/promises";
++import { vi } from "vitest";
++import * as processOwner from "../../process/exec-runner.js";
++import * as serviceOwner from "./service.js";
++import { observeSqliteWorkerAdmission } from "../../../test/helpers/sqlite-worker-admission.js";
++
++const PROFILE = "publication-proof";
++const HASH = (value) => createHash("sha256").update(value).digest("hex");
++const requireRecord = (value, label) => {
++  assert(value && typeof value === "object" && !Array.isArray(value), label);
++  return value;
++};
++const native = processOwner.runCommandWithTimeout;
++
++// Data-only ESTree linkage; never evaluate a built file to discover its names.
++// Acorn is already a candidate devDependency. Unsupported emitted graphs fail closed.
++function deriveNativeCommandBinding(consumer, publicSdk, resolveModule, readModule) {
++  const parse = (document) => parseJavaScript(document.source, { ecmaVersion: "latest", sourceType: "module" }).body;
++  const identifier = (node) => {
++    assert.equal(node?.type, "Identifier", "named identifier syntax required");
++    assert.match(node.name, /^[A-Za-z_$][A-Za-z0-9_$]*$/);
++    return node.name;
++  };
++  const one = (items, label) => {
++    assert.equal(items.length, 1, "one unambiguous " + label);
++    return items[0];
++  };
++  const exports = (body) => {
++    assert(!body.some((node) => node.type === "ExportAllDeclaration"), "star-export linkage unsupported");
++    return body.filter((node) => node.type === "ExportNamedDeclaration").flatMap((node) =>
++      node.specifiers.map((specifier) => ({ node, specifier })));
++  };
++  const imports = (body) => body.filter((node) => node.type === "ImportDeclaration").flatMap((node) =>
++    node.specifiers.map((specifier) => ({ node, specifier })));
++  const resolveImport = (entry, document) => {
++    assert.equal(entry.specifier.type, "ImportSpecifier", "direct named import required");
++    assert.equal(entry.node.attributes?.length ?? 0, 0, "import attributes unsupported");
++    assert.equal(typeof entry.node.source.value, "string");
++    assert(/^\.{1,2}\//.test(entry.node.source.value), "relative emitted import required");
++    return resolveModule(entry.node.source.value, document.url);
++  };
++  const publicBody = parse(publicSdk);
++  const publicExport = one(exports(publicBody).filter(({ specifier }) =>
++    specifier.exported.type === "Identifier" && specifier.exported.name === "runCommandWithTimeout"), "public SDK export");
++  assert.equal(publicExport.node.source, null, "direct public import/local-export required");
++  const publicLocal = identifier(publicExport.specifier.local);
++  const publicImport = one(imports(publicBody).filter(({ specifier }) => specifier.local.name === publicLocal), "public SDK import");
++  const chunkUrl = resolveImport(publicImport, publicSdk);
++  const alias = identifier(publicImport.specifier.imported);
++  const consumerImport = one(imports(parse(consumer)).filter((entry) =>
++    entry.specifier.type === "ImportSpecifier" && entry.specifier.imported.type === "Identifier" &&
++    entry.specifier.imported.name === alias && /^\.{1,2}\//.test(entry.node.source.value) &&
++    resolveImport(entry, consumer) === chunkUrl), "consumer/common-chunk binding");
++  const chunk = readModule(chunkUrl);
++  assert.equal(chunk.url, chunkUrl);
++  const chunkBody = parse(chunk);
++  const chunkExport = one(exports(chunkBody).filter(({ specifier }) =>
++    specifier.exported.type === "Identifier" && specifier.exported.name === alias), "common-chunk export");
++  assert.equal(chunkExport.node.source, null, "chunk re-export indirection unsupported");
++  const chunkLocal = identifier(chunkExport.specifier.local);
++  assert(chunkBody.some((node) =>
++    (node.type === "FunctionDeclaration" && node.id?.name === chunkLocal) ||
++    (node.type === "VariableDeclaration" && node.declarations.some((item) => item.id.type === "Identifier" && item.id.name === chunkLocal))),
++  "chunk export must own its declaration");
++  const receipt = (document) => ({ url: document.url, sha256: HASH(document.source) });
++  return {
++    consumer: { ...receipt(consumer), localName: identifier(consumerImport.specifier.local), importedName: alias, specifier: consumerImport.node.source.value, importRange: [consumerImport.node.start, consumerImport.node.end] },
++    publicSdk: { ...receipt(publicSdk), publicName: "runCommandWithTimeout", localName: publicLocal, importedName: alias, specifier: publicImport.node.source.value, importRange: [publicImport.node.start, publicImport.node.end], exportRange: [publicExport.node.start, publicExport.node.end] },
++    chunk: { ...receipt(chunk), hasDefaultExport: chunkBody.some((node) => node.type === "ExportDefaultDeclaration") || exports(chunkBody).some(({ specifier }) => (specifier.exported.name ?? specifier.exported.value) === "default"), exportAlias: alias, localName: chunkLocal, exportRange: [chunkExport.node.start, chunkExport.node.end] },
++  };
++}
++
++// No command result, owner predicate, grant, registry, pairing result, or READY row is supplied.
++export async function runPublicationProof(signal) {
++  assert.equal(process.env.OPENCLAW_PUBLICATION_LIVE, "1");
++  assert.equal(process.env.GITHUB_ACTIONS, "true");
++  assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
++  assert.equal(process.platform, "linux");
++  const binary = await fs.realpath(process.env.CRABBOX_PROOF_BINARY);
++  const evidenceDir = path.resolve(process.env.PUBLICATION_EVIDENCE_DIR);
++  const root = path.resolve(process.env.PUBLICATION_PRIVATE_DIR);
++  const expected = requireRecord(JSON.parse(await fs.readFile(process.env.PUBLICATION_BINDING, "utf8")), "binding");
++  assert.match(expected.candidateSha ?? "", /^[a-f0-9]{40}$/);
++  assert.match(expected.candidateTree ?? "", /^[a-f0-9]{40}$/);
++  assert.match(expected.overlayTree ?? "", /^[a-f0-9]{40}$/);
++  assert.equal(expected.reviewed, true);
++  assert.equal(expected.provider, "local-container");
++  assert.equal(HASH(await fs.readFile(binary)), expected.crabboxExecutableSha256);
++  await fs.mkdir(evidenceDir, { recursive: true });
++  await fs.mkdir(root, { recursive: true, mode: 0o700 });
++  const stateDir = path.join(root, "gateway");
++  const projectDir = path.join(root, "project");
++  const dbPath = path.join(stateDir, "state", "openclaw.sqlite");
++  const configPath = path.join(root, "openclaw.json");
++  const certPath = path.join(root, "tls", "cert.pem");
++  const keyPath = path.join(root, "tls", "key.pem");
++  const token = randomUUID();
++  function redact(value) {
++    if (typeof value !== "string") return value;
++    return value.replaceAll(root, "<private>").replaceAll(token, "<gateway-token>")
++      .replace(/(?:https?|wss?):\/\/[^\s"'<>]+/g, "<redacted-url>")
++      .replace(/-----BEGIN[\s\S]*?-----END[^-]+-----/g, "<redacted-key>")
++      .replace(/(token|secret|password|authorization|capability|setupCode)([=: ]+)[^\s,;]+/gi, "$1$2<redacted>");
++  }
++  const safeJson = (value, space) => JSON.stringify(value, (key, item) => /^(?:token|secret|password|authorization|capability|setupCode|privateKey)$/i.test(key) ? "<redacted>" : redact(item), space);
++  const errorReceipt = (error) => ({ name: error?.name ?? "Error", message: redact(String(error)).slice(0, 2000) });
++  const commands = [];
++  const snapshots = [];
++  const images = [];
++  const leases = new Set();
++  const containerIds = new Map();
++  const cleanupErrors = [];
++  let factoryOptions;
++  let service;
++  let server;
++  let client;
++  let observer;
++  let sourceStop;
++  let activeStage = "preflight";
++  let failed;
++  let sequencePassed = false;
++  let registeredCatalogVerified = false;
++  let bootCount = 0;
++  const proofStartedAt = Date.now();
++  const nativePending = new Set();
++  const commandGroups = new Set();
++  const observationErrors = [];
++  const stopPromises = new Set();
++  const nativeCounts = { warmup: 0, fork: 0, create: 0 };
++  let baselineContainers;
++  let baselineImages;
++  let custodyStopRelease;
++  let custodyStopObserved;
++  let custodyStopBarrier;
++  let captureBeforePublication;
++  let blockedStop;
++  let cancelled = false;
++  const abort = () => {
++    cancelled = true;
++    custodyStopRelease?.();
++    if (service && !service.isStopping()) retainStop(service.stop());
++  };
++  signal?.addEventListener("abort", abort, { once: true });
++  if (signal?.aborted) abort();
++  let snapshotKey;
++  let closure;
++  const servers = new Set();
++  const clients = new Set();
++  // Test setup has its own disposable HOME. Retain one explicit proof-owned
++  // native catalog across host generations and outside test setup's exit cleanup.
++  for (const [name, value] of Object.entries({ HOME: path.join(root, "home"), XDG_CONFIG_HOME: path.join(root, "config"), XDG_STATE_HOME: path.join(root, "state"), XDG_CACHE_HOME: path.join(root, "cache") })) {
++    await fs.mkdir(value, { recursive: true, mode: 0o700 });
++    process.env[name] = value;
++  }
++  function retainStop(promise) {
++    stopPromises.add(promise);
++    void promise.catch(() => {});
++    return promise;
++  }
++  function assertObservations() {
++    if (observationErrors.length) throw new AggregateError(observationErrors, "Native observation failed; authentic results preserved");
++  }
++  async function inventory() {
++    const containers = (await docker("ps", "-aq", "--no-trunc")).split(/\s+/).filter(Boolean).sort();
++    const imageIds = [...new Set((await docker("image", "ls", "-aq", "--no-trunc")).split(/\s+/).filter(Boolean))].sort();
++    return { containers, imageIds };
++  }
++  async function exactImage(image, absent = false) {
++    assert.match(image.imageId ?? "", /^sha256:[a-f0-9]{64}$/);
++    assert.equal((await inventory()).imageIds.includes(image.imageId), !absent, "full immutable Docker image identity");
++    if (!absent) assert.equal(await docker("image", "inspect", image.imageName || image.imageId, "--format", "{{.Id}}"), image.imageId);
++    return { checkpointId: image.checkpointId, imageId: image.imageId, imageName: image.imageName, absent, at: new Date().toISOString() };
++  }
++
++  function warmRows() {
++    const db = new DatabaseSync(dbPath, { readOnly: true });
++    try {
++      return db.prepare("SELECT entry_key,value_json FROM plugin_state_entries WHERE plugin_id=? AND namespace=?").all("crabbox", "warm-images").map((row) => ({ key: row.entry_key, value: JSON.parse(row.value_json) }));
++    } finally { db.close(); }
++  }
++  function snapshot(label) {
++    const rows = warmRows();
++    const item = { label, at: new Date().toISOString(), rows };
++    snapshots.push(item);
++    return rows;
++  }
++  function ownedRow() {
++    const rows = warmRows();
++    if (snapshotKey) return rows.find((row) => row.key === snapshotKey)?.value;
++    assert.equal(rows.length, 1, "one isolated warm profile");
++    snapshotKey = rows[0].key;
++    return rows[0].value;
++  }
++  async function command(argv, timeoutMs = 120000) {
++    const result = await observeCommand(native, [argv, { timeoutMs, killProcessTree: true, requireProcessTreeExtinction: true, maxOutputBytes: 1024 * 1024 }]);
++    assert.equal(result.termination, "exit", "real command must settle normally");
++    assert.equal(result.code, 0, "real command failed: " + argv.slice(0, 3).join(" "));
++    return result.stdout.trim();
++  }
++  const docker = (...args) => command(["docker", ...args]);
++  async function exactContainer(leaseId, absent = false) {
++    const output = await docker("ps", "-aq", "--no-trunc", "--filter", "label=provider=local-container", "--filter", "label=lease=" + leaseId);
++    const ids = output.split(/\s+/).filter(Boolean);
++    assert.equal(ids.length, absent ? 0 : 1, "exact task lease container inventory");
++    if (absent) {
++      const known = containerIds.get(leaseId);
++      if (known) {
++        const all = (await docker("ps", "-aq", "--no-trunc")).split(/\s+/).filter(Boolean);
++        assert(!all.includes(known), "full native container ID must also be absent");
++      }
++      return { leaseId, containerId: known, absent: true };
++    }
++    assert.match(ids[0], /^[a-f0-9]{64}$/);
++    const info = JSON.parse(await docker("inspect", ids[0], "--format", "{{json .}}"));
++    assert.equal(info.Id, ids[0]);
++    const known = containerIds.get(leaseId);
++    assert(!known || known === info.Id, "native lease identity must not change");
++    containerIds.set(leaseId, info.Id);
++    assert.equal(info.Config.Labels.lease, leaseId);
++    assert.equal(info.HostConfig.NetworkMode, "bridge");
++    assert.equal(info.HostConfig.NanoCpus, 2000000000);
++    assert.equal(info.HostConfig.Memory, 4 * 1024 ** 3);
++    assert.equal(info.HostConfig.Privileged, false);
++    assert(info.Mounts.every((mount) => mount.Type === "bind" && mount.Destination === "/tmp/crabbox-bootstrap" && mount.RW === false), "only native read-only bootstrap mount; no workdir, socket, or cache mounts");
++    return { leaseId, containerId: ids[0], imageId: info.Image, running: info.State.Running };
++  }
++  async function waitFor(label, check, timeoutMs = 900000) {
++    const until = Date.now() + timeoutMs;
++    while (Date.now() < until) {
++      if (cancelled) throw new Error("Proof cancelled; joining original host custody");
++      assertObservations();
++      const value = await check();
++      if (value) return value;
++      await delay(100);
++    }
++    throw new Error("Timed out observing actual state: " + label);
++  }
++  const readyReceipts = new Map();
++  let unsubscribeReady;
++  async function readReady(environmentId) {
++    return waitFor("real worker READY", () => {
++      const record = readyReceipts.get(environmentId) ?? factoryOptions.store.get(environmentId);
++      assert(record, "real admitted environment");
++      if (["failed", "destroyed", "orphaned"].includes(record.state)) throw new Error("Worker ended before READY: " + record.state);
++      if (record.state !== "ready") return undefined;
++      assert(record.leaseId && record.nodeDeviceId && record.bootstrapReceipt, "native enrollment and bundle receipt");
++      return record;
++    });
++  }
++  async function stopPhysical(leaseId) {
++    const result = await observeCommand(native, [[binary, "stop", "--provider", "local-container", "--id", leaseId], { timeoutMs: 180000, killProcessTree: true, requireProcessTreeExtinction: true, maxOutputBytes: 65536 }]);
++    assert.equal(result.termination, "exit");
++    assert.equal(result.code, 0, "exact independent stop must succeed");
++    const physical = await exactContainer(leaseId, true);
++    snapshots.push({ label: "physical-stop-joined", ...physical, at: new Date().toISOString() });
++    return physical;
++  }
++  async function stopReady(record) {
++    const current = factoryOptions.store.get(record.environmentId);
++    if (current && !["destroyed", "failed"].includes(current.state)) await service.destroyUnattached(record.environmentId);
++    await waitFor("canonical manual-build container cleanup", async () => {
++      const all = (await inventory()).containers;
++      const known = containerIds.get(record.leaseId);
++      return known && !all.includes(known);
++    });
++    await exactContainer(record.leaseId, true);
++    assert(!ownedRow()?.allocations?.[record.leaseId]);
++  }
++  function selectWarm(commandValue, predicate) {
++    if (commandValue?.type !== "pluginState.compareUpdate") return undefined;
++    const input = commandValue.input;
++    if (input?.pluginId !== "crabbox" || input.namespace !== "warm-images" || input.action !== "set" || typeof input.valueJson !== "string") return undefined;
++    if (snapshotKey && input.key !== snapshotKey) return undefined;
++    const value = JSON.parse(input.valueJson);
++    return predicate(value) ? { key: input.key, value } : undefined;
++  }
++  function watchPublication(index, closeSource) {
++    observer?.restore();
++    observer = observeSqliteWorkerAdmission({
++      selectSubmission: (value) => selectWarm(value, (row) => images[index] && row.image?.checkpointId === images[index].checkpointId && row.operation?.type !== "capture"),
++      beforeAdmit: (stage) => {
++        if (stage !== "commit" || !closeSource) return;
++        assert(images[index]?.normalExit, "actual CLI create completed before source closure");
++        const row = ownedRow();
++        assert.equal(row.operation?.type, "capture");
++        assert.notEqual(row.operation.id, images[index].checkpointId, "capture selector is not returned checkpoint id");
++        closure = { at: new Date().toISOString(), selector: row.operation.id, checkpointId: images[index].checkpointId, oldImage: row.image?.checkpointId };
++        captureBeforePublication = structuredClone(row);
++        sourceStop = retainStop(service.stop());
++        void sourceStop.catch(() => {});
++        assert.equal(service.isStopping(), true, "actual host owner closed synchronously");
++      },
++    });
++  }
++  async function observeCommand(original, args, graphReceipt) {
++    const [argv] = args;
++    if (argv[0] !== binary) return Reflect.apply(original, undefined, args);
++    const action = argv[1] === "checkpoint" ? "checkpoint " + argv[2] : argv[1];
++    const receipt = { nativeSdk: graphReceipt ? { originalUrl: graphReceipt.originalUrl, originalSha256: graphReceipt.originalSha256, facadeSha256: graphReceipt.facadeSha256 } : null, sequence: commands.length, stage: activeStage, argv: ["<crabbox>", ...argv.slice(1).map((arg) => arg.length > 200 || arg.includes("\n") ? "<script-or-long-argument>" : redact(arg))], action, startedAt: new Date().toISOString() };
++    commands.push(receipt);
++    appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "planned", ...receipt }) + "\n");
++    const leaseFlag = argv.indexOf("--lease-id");
++    if (leaseFlag >= 0) {
++      const id = argv[leaseFlag + 1];
++      if (!leases.has(id) && leases.size >= 3) {
++        const error = new Error("Fourth worker attempted; refused before native effect");
++        observationErrors.push(error); throw error;
++      }
++      leases.add(id);
++      appendFileSync(path.join(root, "owned-leases.jsonl"), JSON.stringify({ leaseId: id }) + "\n");
++    }
++    const allocation = action === "warmup" || action === "checkpoint fork";
++    if (cancelled && (allocation || action === "checkpoint create")) throw new Error("Proof resource acquisition closed");
++    if (allocation) {
++      assert(registeredCatalogVerified && graphReceipt?.nativeFunctionIdentityVerified, "actual registered native catalog oracle required before allocation");
++      for (const id of leases) if (id !== argv[leaseFlag + 1]) await exactContainer(id, true);
++      const kind = action === "warmup" ? "warmup" : "fork";
++      if (nativeCounts[kind] >= (kind === "warmup" ? 1 : 2)) {
++        const error = new Error("Allocation dispatch budget exceeded before native effect");
++        observationErrors.push(error); throw error;
++      }
++      nativeCounts[kind] += 1;
++    }
++    if (action === "checkpoint create") {
++      if (nativeCounts.create >= 2) {
++        const error = new Error("Third capture attempted; refused before native effect");
++        observationErrors.push(error); throw error;
++      }
++      nativeCounts.create += 1;
++    }
++    receipt.dispatchedAt = new Date().toISOString();
++    appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "dispatch", ...receipt }) + "\n");
++    if (graphReceipt) graphReceipt.originalCallCount += 1;
++    const operation = Reflect.apply(original, undefined, args);
++    nativePending.add(operation);
++    let result;
++    try { result = await operation; }
++    catch (error) {
++      Object.assign(receipt, { rejected: true, error: errorReceipt(error), endedAt: new Date().toISOString() });
++      appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "rejected", ...receipt }) + "\n");
++      throw error;
++    } finally { nativePending.delete(operation); }
++    try {
++    Object.assign(receipt, { executableSha256: expected.crabboxExecutableSha256, pid: result.pid, code: result.code, termination: result.termination, signal: result.signal, cleanup: result.cleanup, stdoutSha256: HASH(result.stdout), stderrSha256: HASH(result.stderr), diagnostic: result.code !== 0 ? redact(result.stderr).slice(0, 2000) : undefined, endedAt: new Date().toISOString(), wallMs: Date.now() - Date.parse(receipt.startedAt) });
++    appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "settled", ...receipt }) + "\n");
++    assert(Number.isInteger(result.pid) && result.pid !== process.pid, "actual CLI process PID");
++    commandGroups.add(result.pid); // Original runner uses detached group ownership on Linux.
++    assert(!["forced", "uncertain"].includes(result.cleanup) && result.signal !== "SIGKILL", "forced or uncertain native cleanup is missing proof");
++    if (action === "checkpoint create" && result.termination === "exit" && result.code === 0) {
++      const output = JSON.parse(result.stdout);
++      assert.match(output.id, /^chk_[A-Za-z0-9_-]+$/);
++      assert.equal(output.kind, "docker-commit");
++      assert.match(output.native.imageId, /^sha256:[a-f0-9]{64}$/);
++      assert.equal(output.native.state, "available");
++      const image = { checkpointId: output.id, leaseId: output.leaseId, imageId: output.native.imageId, imageName: output.native.name, normalExit: true, commandSequence: receipt.sequence };
++      images.push(image);
++      snapshots.push({ label: "native-created-image", physical: await exactImage(image), source: await exactContainer(image.leaseId) });
++      appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "physical-image", ...image }) + "\n");
++    }
++    if (action === "providers" && result.termination === "exit" && result.code === 0) {
++      const entries = JSON.parse(result.stdout);
++      assert(Array.isArray(entries));
++      const local = entries.find((entry) => entry.provider === "local-container");
++      assert(local?.targets?.includes("linux"));
++      assert.equal(local.classCatalog?.disposition, "unmapped");
++      receipt.localProviderCatalog = { provider: local.provider, targets: local.targets, classDisposition: local.classCatalog.disposition };
++    }
++    if (action === "checkpoint fork" && result.termination === "exit" && result.code === 0) {
++      const output = JSON.parse(result.stdout);
++      receipt.fork = { checkpointId: output.checkpointId, leaseId: output.leaseId, provider: output.provider };
++      assert.equal(output.provider, "local-container");
++    }
++    } catch (error) { observationErrors.push(error); }
++    try { appendFileSync(path.join(evidenceDir, "commands.jsonl"), safeJson({ event: "observed", ...receipt }) + "\n"); } catch (error) { observationErrors.push(error); }
++    // Retain only a genuinely successful stop response, never a made-up failure.
++    if (action === "stop" && custodyStopBarrier && result.code === 0 && result.termination === "exit" && argv[argv.indexOf("--id") + 1] === images[1]?.leaseId) {
++      custodyStopObserved = true;
++      await custodyStopBarrier;
++    }
++    return result;
++  }
++  // Real host resolver first, then this outer LIFO hook before plugin evaluation.
++  const bridgeKey = "openclaw.publication-proof." + randomUUID();
++  const nativeGraphs = [];
++  const originalFunctions = new Map();
++  const builtRoots = new Set();
++  let nativeHooks;
++  globalThis[Symbol.for(bridgeKey)] = (original, args, graphIndex) => {
++    const previous = originalFunctions.get(graphIndex);
++    assert(!previous || previous === original, "native function identity must remain stable");
++    originalFunctions.set(graphIndex, original);
++    return observeCommand(original, args, nativeGraphs[graphIndex]);
++  };
++  const installOriginal = sdkResolverOwner.installOpenClawPluginSdkNativeResolver;
++  const resolverSpy = vi.spyOn(sdkResolverOwner, "installOpenClawPluginSdkNativeResolver").mockImplementation((options) => {
++    const result = installOriginal(options);
++    if (!options?.pluginModulePath) return result;
++    const canonical = realpathSync(options.pluginModulePath);
++    const expectedRoot = realpathSync(path.join(process.cwd(), "dist", "extensions", "crabbox"));
++    if (!canonical.startsWith(expectedRoot + path.sep)) return result;
++    builtRoots.add(expectedRoot);
++    const consumerUrl = pathToFileURL(canonical).href;
++    if (nativeHooks) {
++      assert.equal(consumerUrl, nativeGraphs[0].consumer.url, "one actual Crabbox entry across host generations");
++      return result;
++    }
++    const distRoot = realpathSync(path.join(process.cwd(), "dist"));
++    const checkedUrl = (filename) => {
++      const actual = realpathSync(filename);
++      assert(actual.startsWith(distRoot + path.sep), "linkage must stay in actual candidate dist");
++      return pathToFileURL(actual).href;
++    };
++    const readModule = (url) => {
++      assert.equal(checkedUrl(fileURLToPath(url)), url, "canonical unqualified candidate URL");
++      return { url, source: readFileSync(fileURLToPath(url), "utf8") };
++    };
++    // Public package specifier uses the just-installed genuine host resolver;
++    // never guess its file path or evaluate the SDK to discover aliases.
++    const publicSdkUrl = checkedUrl(Module.createRequire(consumerUrl).resolve("openclaw/plugin-sdk/process-runtime"));
++    const linkage = deriveNativeCommandBinding(readModule(consumerUrl), readModule(publicSdkUrl),
++      (specifier, parentUrl) => checkedUrl(Module.createRequire(parentUrl).resolve(specifier)), readModule);
++    const originalUrl = JSON.stringify(linkage.chunk.url);
++    const alias = linkage.chunk.exportAlias;
++    const source = (linkage.chunk.hasDefaultExport ? 'export { default } from ' + originalUrl + ';\n' : '') + 'export * from ' + originalUrl + ';\nimport { ' + alias + ' as original } from ' + originalUrl + ';\nconst observed = (...args) => globalThis[Symbol.for(' + JSON.stringify(bridgeKey) + ')](original, args, 0);\nexport { observed as ' + alias + ' };';
++    // Validate the generated identifier/export grammar without executing source.
++    parseJavaScript(source, { ecmaVersion: "latest", sourceType: "module" });
++    const url = "data:text/javascript," + encodeURIComponent(source);
++    nativeGraphs.push({ ...linkage, publicSpecifier: "openclaw/plugin-sdk/process-runtime", parentUrl: consumerUrl, originalUrl: linkage.chunk.url, originalSha256: linkage.chunk.sha256, facadeUrl: url, facadeSha256: HASH(source), originalCallCount: 0, resolvedConsumerEdges: 0, nativeFunctionIdentityVerified: false });
++    assert.equal(typeof Module.registerHooks, "function");
++    nativeHooks = Module.registerHooks({
++      resolve(specifier, context, nextResolve) {
++        const resolved = nextResolve(specifier, context);
++        if (context.parentURL !== consumerUrl || specifier !== linkage.consumer.specifier) return resolved;
++        assert.equal(resolved.url, linkage.chunk.url, "native loader must agree with derived common chunk");
++        assert.equal(HASH(readFileSync(canonical)), linkage.consumer.sha256);
++        assert.equal(HASH(readFileSync(fileURLToPath(publicSdkUrl))), linkage.publicSdk.sha256);
++        assert.equal(HASH(readFileSync(fileURLToPath(resolved.url))), linkage.chunk.sha256);
++        nativeGraphs[0].resolvedConsumerEdges += 1;
++        return { ...resolved, url, format: "module", shortCircuit: true };
++      },
++    });
++    return result;
++  });
++  const originalFactory = serviceOwner.createWorkerEnvironmentService;
++  const factorySpy = vi.spyOn(serviceOwner, "createWorkerEnvironmentService").mockImplementation((options) => {
++    factoryOptions = options;
++    service = originalFactory(options);
++    return service;
++  });
++  try {
++    assert.equal(await command([binary, "--version"]), "0.66.0");
++    assert(os.availableParallelism() >= 4 && os.totalmem() >= 7 * 1024 ** 3, "runner must fit 2 CPU / 4 GiB worker plus real Gateway");
++    const baseImage = process.env.CRABBOX_LOCAL_CONTAINER_IMAGE;
++    assert.equal(baseImage, "docker.io/library/node:24-bookworm@sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2");
++    await docker("pull", baseImage);
++    ({ containers: baselineContainers, imageIds: baselineImages } = await inventory());
++    assert.equal(baselineContainers.length, 0, "disposable VM must have no preexisting containers");
++    await fs.writeFile(path.join(root, "baseline.json"), JSON.stringify({ containers: baselineContainers, imageIds: baselineImages }));
++    snapshots.push({ label: "native-daemon-baseline", daemonId: await docker("info", "--format", "{{.ID}}"), containers: baselineContainers, imageIds: baselineImages, baseImageId: await docker("image", "inspect", baseImage, "--format", "{{.Id}}") });
++    const bridge = await docker("network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}");
++    assert(net.isIPv4(bridge) && !bridge.startsWith("127.") && !bridge.startsWith("169.254.") && bridge !== "0.0.0.0");
++    const listener = net.createServer();
++    await new Promise((resolve, reject) => listener.once("error", reject).listen(0, bridge, resolve));
++    const port = listener.address().port;
++    await new Promise((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
++    await fs.mkdir(projectDir, { recursive: true });
++    await command(["git", "init", "--quiet", projectDir]);
++    const git = (...args) => command(["git", "-C", projectDir, ...args]);
++    await git("config", "user.name", "OpenClaw proof fixture");
++    await git("config", "user.email", "proof@example.invalid");
++    await fs.writeFile(path.join(projectDir, "source.txt"), "first\n");
++    await git("add", "source.txt"); await git("commit", "--quiet", "-m", "fixture: first source");
++    const c1 = await git("rev-parse", "HEAD");
++    Object.assign(process.env, { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_CONFIG_PATH: configPath, OPENCLAW_SKIP_CHANNELS: "1", OPENCLAW_SKIP_CRON: "1", OPENCLAW_SKIP_BROWSER_CONTROL_SERVER: "1", OPENCLAW_SKIP_CANVAS_HOST: "1", OPENCLAW_SKIP_GMAIL_WATCHER: "1", OPENCLAW_TEST_MINIMAL_GATEWAY: "0" });
++    const settings = { provider: "local-container", class: "tiny", target: "linux", warmImage: true, ttl: "60m", idleTimeout: "20m", binary };
++    await fs.writeFile(configPath, JSON.stringify({ gateway: { mode: "local", bind: "custom", customBindHost: bridge, port, auth: { mode: "token", token }, tls: { enabled: true, autoGenerate: true, certPath, keyPath }, controlUi: { enabled: false } }, agents: { defaults: { workspace: projectDir, skipBootstrap: true, heartbeat: { every: "0m" } } }, plugins: { allow: ["crabbox"], entries: { crabbox: { enabled: true } } }, cloudWorkers: { preparedPool: { maxTotal: 1 }, profiles: { [PROFILE]: { provider: "crabbox", install: "bundle", readyWorkers: 0, settings } } } }), { mode: 0o600 });
++    const { clearRuntimeConfigSnapshot } = await import("../../config/config.js");
++    const { startGatewayServer } = await import("../server.js");
++    const { resolveRuntimeServiceBuildId } = await import("../../version.js");
++    const buildInfoBytes = await fs.readFile(path.join(process.cwd(), "dist", "build-info.json"));
++    const buildInfo = JSON.parse(buildInfoBytes);
++    assert.equal(HASH(buildInfoBytes), expected.buildInfoSha256, "exact generated build metadata");
++    assert.equal(buildInfo.commit, expected.candidateSha);
++    assert.equal(resolveRuntimeServiceBuildId(), buildInfo.buildId, "source host must load the genuine built identity before any allocation");
++    const { getActivePluginRegistry } = await import("../../plugins/runtime.js");
++    const { getPluginModuleLoaderStats } = await import("../../plugins/plugin-module-loader-cache.js");
++    const { getPluginRuntimeEntrySource, hasCompletedPluginRuntimeRegistration } = await import("../../plugins/plugin-runtime-artifact-binding.js");
++    const { sessionChanges } = await import("../../sessions/session-row-changes.js");
++    const { acquireGatewayTestClient } = await import("../../../test/helpers/gateway-client.js");
++    const { GATEWAY_CLIENT_NAMES, GATEWAY_CLIENT_MODES } = await import("../../../packages/gateway-protocol/src/client-info.js");
++    async function boot() {
++      clearRuntimeConfigSnapshot();
++      factoryOptions = undefined; service = undefined;
++      registeredCatalogVerified = false;
++      bootCount += 1;
++      const loaderBefore = getPluginModuleLoaderStats();
++      const bootCommandStart = commands.length;
++      const callsBeforeCatalog = nativeGraphs.reduce((n, item) => n + item.originalCallCount, 0);
++      unsubscribeReady?.();
++      unsubscribeReady = sessionChanges.subscribe((change) => {
++        if (change.scope !== "worker-environments" || !factoryOptions) return;
++        for (const record of factoryOptions.store.list()) {
++          if (record.state === "ready" && !readyReceipts.has(record.environmentId)) {
++            readyReceipts.set(record.environmentId, structuredClone(record));
++            snapshots.push({ label: "canonical-ready-publication", at: new Date().toISOString(), environmentId: record.environmentId, leaseId: record.leaseId, nodeDeviceId: record.nodeDeviceId, preparationPurpose: record.preparation?.purpose, bootstrapReceipt: record.bootstrapReceipt });
++          }
++        }
++      });
++      server = await startGatewayServer(port, { bind: "custom", controlUiEnabled: false });
++      servers.add(server); await server.startupSettled;
++      assert(service && factoryOptions, "real worker service factory observation must be reached");
++      const provider = factoryOptions.resolveProvider("crabbox");
++      assert.equal(provider?.liveAuthorityVersion, 1);
++      const registry = getActivePluginRegistry();
++      const plugin = registry?.plugins.find((entry) => entry.id === "crabbox");
++      assert(plugin && hasCompletedPluginRuntimeRegistration(plugin), "actual manifest-owned Crabbox registration completed");
++      const runtimeSource = getPluginRuntimeEntrySource(plugin);
++      assert(runtimeSource, "recorded actual runtime entry source");
++      assert([...builtRoots].some((root) => realpathSync(runtimeSource).startsWith(root + path.sep)), "actual registered entry must be the native built Crabbox graph");
++      assert.equal(pathToFileURL(realpathSync(runtimeSource)).href, nativeGraphs[0]?.consumer.url, "derivation must describe the actual registered entry");
++      assert(nativeHooks && nativeGraphs.length === 1 && nativeGraphs[0].resolvedConsumerEdges > 0, "exact native facade must resolve before allocation");
++      const loaderAfter = getPluginModuleLoaderStats();
++      assert.equal(loaderAfter.sourceTransformFallbacks, loaderBefore.sourceTransformFallbacks, "no native-load fallback accepted");
++      assert.equal(loaderAfter.sourceTransformForced, loaderBefore.sourceTransformForced, "no forced source-transform provider accepted");
++      if (bootCount === 1) assert(loaderAfter.nativeHits > loaderBefore.nativeHits, "first built registration must load natively");
++      const graph = { label: "registered-provider-graph", loaderBefore, loaderAfter, nativeGraphs, runtimeSource, runtimeEntrySha256: HASH(await fs.readFile(runtimeSource)), serviceFactoryObserved: true, buildId: resolveRuntimeServiceBuildId() };
++      snapshots.push(graph);
++      await provider.listMachineOptions(settings);
++      assertObservations();
++      assert(nativeGraphs.reduce((n, item) => n + item.originalCallCount, 0) > callsBeforeCatalog, "registered catalog must call original native SDK before allocation");
++      assert(commands.slice(bootCommandStart).some((entry) => entry.nativeSdk && entry.action === "providers" && entry.code === 0 && entry.localProviderCatalog?.provider === "local-container"), "pass-through CLI observer must reach the actual registered provider before any allocation");
++      const nativeGraph = nativeGraphs[0];
++      const publicSdk = Module.createRequire(nativeGraph.publicSdk.url)(fileURLToPath(nativeGraph.publicSdk.url));
++      assert.equal(typeof publicSdk.runCommandWithTimeout, "function");
++      assert.equal(originalFunctions.get(0), publicSdk.runCommandWithTimeout, "observed original must be the actual native public SDK function");
++      nativeGraph.nativeFunctionIdentityVerified = true;
++      await fs.writeFile(path.join(evidenceDir, "registered-provider-graph.json"), safeJson(graph, 2) + "\n");
++      registeredCatalogVerified = true;
++      // Custom IPv4 bind also owns canonical loopback (net.ts). Normal backend
++      // shared-token auth needs no fabricated operator or worker pairing.
++      const tlsFingerprint = new X509Certificate(await fs.readFile(certPath)).fingerprint256;
++      client = await acquireGatewayTestClient({ url: "wss://127.0.0.1:" + port, token, tlsFingerprint, deviceIdentity: null, clientName: GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT, mode: GATEWAY_CLIENT_MODES.BACKEND, role: "operator", scopes: ["operator.admin"] }, { timeoutMs: 60000, timeoutMessage: "owned Gateway connection", closeMessage: "owned Gateway closed" });
++      clients.add(client);
++    }
++    async function closeHost() {
++      unsubscribeReady?.(); unsubscribeReady = undefined;
++      if (client) { await client.stopAndWait({ timeoutMs: 5000 }); clients.delete(client); client = undefined; }
++      if (server) { await server.close(); servers.delete(server); server = undefined; }
++    }
++    await boot();
++    activeStage = "allowed-source"; watchPublication(0, false);
++    const a = await client.request("environments.prepare", { profileId: PROFILE, projectPath: projectDir }, { timeoutMs: 900000 });
++    const readyA = await readReady(a.environmentId);
++    assert.equal(images.length, 1); assert.equal(images[0].leaseId, readyA.leaseId);
++    snapshot("allowed-publication");
++    assert.equal(ownedRow().image.checkpointId, images[0].checkpointId);
++    assert.notEqual(ownedRow().image.lastDemandAtMs, null);
++    assert(observer.decisions.some((entry) => entry.stage === "commit" && entry.granted));
++    snapshots.push({ label: "allowed-admission", decisions: observer.decisions.map(({ stage, granted }) => ({ stage, granted })), ready: { environmentId: readyA.environmentId, leaseId: readyA.leaseId, nodeDeviceId: readyA.nodeDeviceId, bootstrapReceipt: readyA.bootstrapReceipt } });
++    observer.restore(); observer = undefined;
++    await stopReady(readyA);
++    assert.equal(nativeCounts.create, 1, "L1 teardown must not capture again");
++    assert.equal(nativeCounts.warmup + nativeCounts.fork, 1, "L1 cleanup must not refill");
++    activeStage = "closed-replacement";
++    await fs.writeFile(path.join(projectDir, "source.txt"), "second\n");
++    await git("add", "source.txt"); await git("commit", "--quiet", "-m", "fixture: replacement source");
++    custodyStopBarrier = new Promise((resolve) => { custodyStopRelease = resolve; });
++    watchPublication(1, true);
++    const b = await client.request("environments.prepare", { profileId: PROFILE, projectPath: projectDir }, { timeoutMs: 900000 });
++    await waitFor("real source final admission", () => closure);
++    // Manual builds use provider reserve custody, not target-one retention.
++    // Cancellation normally retains core cleanup custody. A successful
++    // early stop is held only until the independent read captures returned debt.
++    let sourceSettled = false;
++    void sourceStop.then(() => { sourceSettled = true; }, () => { sourceSettled = true; });
++    await waitFor("source settlement or successful stop barrier", () => sourceSettled || custodyStopObserved);
++    if (sourceSettled) await sourceStop;
++    assert.equal(images.length, 2);
++    assert(observer.decisions.some((entry) => entry.stage === "commit" && !entry.granted), "original final grant must refuse");
++    const i1 = images[0], i2 = images[1];
++    const rowB = ownedRow();
++    assert.deepEqual(rowB.image, captureBeforePublication.image, "current image and demand preserved");
++    assert.deepEqual(rowB.previous, captureBeforePublication.previous, "predecessor preserved");
++    assert.equal(rowB.image.checkpointId, i1.checkpointId);
++    assert.equal(rowB.operation?.type, "retire"); assert.equal(rowB.operation.checkpointId, i2.checkpointId);
++    assert(!rowB.allocations[i2.leaseId] || rowB.allocations[i2.leaseId].phase !== "enrolled");
++    snapshots.push({ label: "closed-admission", closure, decisions: observer.decisions.map(({ stage, granted }) => ({ stage, granted })) });
++    snapshot("closed-returned-custody");
++    assert(commands.some((entry) => entry.fork?.leaseId === i2.leaseId && entry.fork.checkpointId === i1.checkpointId));
++    snapshots.push({ label: "allowed-fork-before-revocation", physical: await exactContainer(i2.leaseId, custodyStopObserved === true) });
++    observer.restore(); observer = undefined;
++    custodyStopRelease?.(); custodyStopBarrier = undefined;
++    await sourceStop;
++    await stopPhysical(i2.leaseId);
++    await closeHost();
++    await git("checkout", "--quiet", c1);
++    activeStage = "reopen-and-cleanup";
++    await boot();
++    await service.destroyUnattached(b.environmentId);
++    assert.equal(images.length, 2, "cleanup must not submit another capture");
++    assert(!ownedRow()?.allocations?.[i2.leaseId]);
++    const i2Absent = JSON.parse(await command([binary, "checkpoint", "inspect", i2.checkpointId, "--verify", "--json"]));
++    assert.equal(i2Absent.providerState, "missing");
++    snapshots.push({ label: "I2-native-absent", physical: await exactImage(i2, true) });
++    snapshot("reopened-custody-settled");
++    activeStage = "fresh-allowed-borrower";
++    const c = await service.createWithRequest({ profileId: PROFILE, idempotencyKey: "publication-fresh-" + randomUUID(), executionMode: "worker-turn", projectPath: projectDir });
++    assert.equal(c.state, "ready"); assert(c.leaseId && c.nodeDeviceId);
++    assert.equal(ownedRow().allocations[c.leaseId].choice.checkpointId, i1.checkpointId);
++    const physicalC = await exactContainer(c.leaseId);
++    assert.equal(physicalC.imageId, i1.imageId);
++    assert.equal(physicalC.running, true);
++    assert(commands.some((entry) => entry.fork?.leaseId === c.leaseId && entry.fork.checkpointId === i1.checkpointId));
++    assert(!commands.some((entry) => entry.fork?.checkpointId === i2.checkpointId));
++    snapshots.push({ label: "fresh-real-fork-ready", physical: physicalC }); snapshot("fresh-borrower-choice");
++    await stopReady(c);
++    activeStage = "nearest-closed-borrower";
++    const before = new Set(Object.keys(ownedRow().allocations));
++    const closedRecordIds = new Set(factoryOptions.store.list().map((record) => record.environmentId));
++    let blockedLease;
++    const beforeClosedInventory = await inventory();
++    observer = observeSqliteWorkerAdmission({ selectSubmission: (value) => selectWarm(value, (row) => {
++      const fresh = Object.keys(row.allocations).filter((id) => !before.has(id));
++      if (fresh.length !== 1) return false;
++      blockedLease = fresh[0]; return true;
++    }), beforeAdmit: (stage) => {
++      if (stage !== "commit") return;
++      blockedStop = retainStop(service.stop()); void blockedStop.catch(() => {});
++      assert(service.isStopping());
++    } });
++    const beforeClosedCommands = commands.length;
++    const denied = await service.createWithRequest({ profileId: PROFILE, idempotencyKey: "publication-closed-" + randomUUID(), executionMode: "worker-turn", projectPath: projectDir }).then(() => false, () => true);
++    assert.equal(denied, true); assert(blockedLease && blockedStop);
++    await blockedStop;
++    assert(observer.decisions.some((entry) => entry.stage === "commit" && !entry.granted));
++    assert(!ownedRow().allocations[blockedLease]);
++    assert.deepEqual(await inventory(), beforeClosedInventory, "zero-resource borrower preserves full backend inventory");
++    assert.equal(commands.length, beforeClosedCommands, "closed borrower must dispatch no CLI command");
++    const closedRecords = factoryOptions.store.list().filter((record) => !closedRecordIds.has(record.environmentId));
++    assert.equal(closedRecords.length, 1, "one original closed-borrower intent");
++    const resolvedClosed = await factoryOptions.resolveProvider("crabbox").resolveAllocation(settings, closedRecords[0].provisionOperationId);
++    assert.equal(resolvedClosed.leaseId, blockedLease, "closed selector belongs to authoritative original provision operation");
++    snapshots.push({ label: "nearest-closed-no-fork", physical: await exactContainer(blockedLease, true), decisions: observer.decisions.map(({ stage, granted }) => ({ stage, granted })) });
++    observer.restore(); observer = undefined;
++    await closeHost();
++    activeStage = "final-canonical-cleanup";
++    await boot();
++    await client.request("crabbox.images.delete", { checkpointId: i1.checkpointId }, { timeoutMs: 180000 });
++    await closeHost();
++    assert.equal(images.length, 2);
++    assert.equal(commands.filter((entry) => entry.action === "checkpoint create").length, 2);
++    assert.equal(commands.filter((entry) => entry.fork).length, 2);
++    assert.equal(leases.size, 3);
++    assertObservations();
++    sequencePassed = true;
++  } catch (error) { failed = error; }
++  finally {
++    custodyStopRelease?.(); custodyStopBarrier = undefined;
++    unsubscribeReady?.();
++    observer?.restore();
++    if (service && !service.isStopping()) retainStop(service.stop());
++    for (const pending of stopPromises) try { await pending; } catch (error) { cleanupErrors.push(error); }
++    // Join host and command owners before exact-ID independent recovery.
++    for (const item of clients) try { await item.stopAndWait({ timeoutMs: 5000 }); } catch (error) { cleanupErrors.push(error); }
++    for (const item of servers) try { await item.close(); } catch (error) { cleanupErrors.push(error); }
++    for (const pending of nativePending) try { await pending; } catch (error) { cleanupErrors.push(error); }
++    const hostsJoined = cleanupErrors.length === 0;
++    if (hostsJoined) {
++    for (const lease of leases) try { await stopPhysical(lease); } catch (error) { cleanupErrors.push(error); }
++    // A failed/lost create reply can still leave an actual catalog-owned image.
++    // Recover only records bound to this task's observed lease IDs in its isolated catalog.
++    try {
++      const catalog = JSON.parse(await command([binary, "checkpoint", "list", "--local-only", "--json"]));
++      assert(Array.isArray(catalog));
++      for (const item of catalog) {
++        if (item.provider !== "local-container" || !leases.has(item.leaseId) || images.some((image) => image.checkpointId === item.id)) continue;
++        assert.match(item.id, /^chk_[A-Za-z0-9_-]+$/);
++        images.push({ checkpointId: item.id, leaseId: item.leaseId, imageId: item.native?.imageId, normalExit: false, recoveredFromActualCatalog: true });
++      }
++    } catch (error) { cleanupErrors.push(error); }
++    for (const image of images) try {
++      await command([binary, "checkpoint", "delete", image.checkpointId]);
++      const check = JSON.parse(await command([binary, "checkpoint", "inspect", image.checkpointId, "--verify", "--json"]));
++      assert.equal(check.providerState, "missing");
++      snapshots.push({ label: "final-native-image-absence", physical: await exactImage(image, true) });
++    } catch (error) { cleanupErrors.push(error); }
++    } else cleanupErrors.push(new Error("Host/native join failed; independent destructive cleanup deferred to controller always step"));
++    try {
++      const remainingGroups = [];
++      for (const entry of await fs.readdir("/proc")) {
++        if (!/^\d+$/.test(entry)) continue;
++        try {
++          const stat = (await fs.readFile("/proc/" + entry + "/stat", "utf8")).split(") ").at(-1).split(" ");
++          if (commandGroups.has(Number(stat[2]))) remainingGroups.push({ pid: Number(entry), pgid: Number(stat[2]), start: stat[19] });
++        } catch (error) { if (error.code !== "ENOENT" && error.code !== "ESRCH") throw error; }
++      }
++      snapshots.push({ label: "native-command-group-extinction", groups: [...commandGroups], remainingGroups });
++      assert.equal(remainingGroups.length, 0, "every original CLI command group must be extinct");
++      const finalBackend = await inventory();
++      if (baselineContainers) assert.deepEqual(finalBackend.containers, baselineContainers, "full backend container absence");
++      if (baselineImages) assert.deepEqual(finalBackend.imageIds, baselineImages, "full backend image absence including unreturned effects");
++      const finalRows = warmRows();
++      assert(finalRows.every(({ value }) => Object.keys(value.allocations).length === 0 && !value.operation && !value.image && !value.previous), "no retained reusable or cleanup custody after complete deletion");
++      snapshots.push({ label: "final-reopened-state", rows: finalRows, backend: finalBackend });
++    } catch (error) { cleanupErrors.push(error); }
++    cleanupErrors.push(...observationErrors);
++    signal?.removeEventListener("abort", abort);
++    // Uncertain host closure cannot revoke callbacks from still-owned cleanup.
++    // Its failed process remains the controller always-step responsibility.
++    if (hostsJoined) {
++      nativeHooks?.deregister(); resolverSpy.mockRestore();
++      delete globalThis[Symbol.for(bridgeKey)];
++      factorySpy.mockRestore();
++    }
++    const result = { wallMs: Date.now() - proofStartedAt, nativeCounts, provider: "local-container", cloudProof: false, binding: expected, stage: activeStage, sequencePassed, cleanupPassed: cleanupErrors.length === 0, passed: sequencePassed && !failed && cleanupErrors.length === 0, commands, snapshots, images, leases: [...leases], failure: failed ? errorReceipt(failed) : null, cleanupErrors: cleanupErrors.map(errorReceipt), nativeGraphs };
++    await fs.writeFile(path.join(evidenceDir, "live-publication.json"), safeJson(result, 2) + "\n");
++  }
++  if (failed || cleanupErrors.length) throw new AggregateError([...(failed ? [failed] : []), ...cleanupErrors], "Real local-container publication proof incomplete; inspect owned evidence");
++  assert(sequencePassed);
++}
+diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.test.ts b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
+@@ -0,0 +1,7 @@
++import { it } from "vitest";
++import { runQaGatewayTestFixture } from "../../../test/helpers/qa-gateway-test-lifetime.js";
++import { runPublicationProof } from "./provider-publication.local-container.live.mjs";
++
++it("real local-container publication admits live source, fences closed source, and joins owned cleanup", async (context) => {
++  await runQaGatewayTestFixture(context, ({ signal }) => runPublicationProof(signal));
++}, 1_500_000);

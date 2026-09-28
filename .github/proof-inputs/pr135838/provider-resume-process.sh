@@ -1,9 +1,20 @@
+#!/usr/bin/env bash
 set -euo pipefail
-test "$BASE_SHA" = 1844d933b2dc10673db973608d5d4d9bd0ca9105
-test "$(git rev-parse HEAD^)" = "$BASE_SHA"
-test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
-git diff --quiet HEAD
-
-/usr/bin/time -f 'DELEGATION_PROOF file=src/gateway/worker-environments/provider-host-authority.process.test.ts wall_s=%e user_s=%U sys_s=%S maxrss_kib=%M exit=%x' pnpm test src/gateway/worker-environments/provider-host-authority.process.test.ts --maxWorkers=1 --reporter=verbose --reporter=github-actions --reporter=./scripts/lib/vitest-resource-reporter.mts
-
-git diff --quiet HEAD
+: "${RUNNER_TEMP:?}"
+# EXIT records the outer status, including 124/137; never converts death to 0.
+# 137 may mean watchdog KILL or another SIGKILL: do not invent a timedOut fact.
+record_outer() {
+  local status=$?
+  trap - EXIT
+  printf '{"exitStatus":%s,"proofMissing":%s}\n' "$status" "$([[ "$status" == 0 ]] && echo false || echo true)" > "$RUNNER_TEMP/publication-outer.json" || status=2
+  exit "$status"
+}
+trap record_outer EXIT
+test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}${NODE_AUTH_TOKEN:-}${NPM_TOKEN:-}"
+PUBLICATION_NATIVE_BUDGET=$(python3 "$RUNNER_TEMP/publication-inputs/host.py" budget)
+[[ "$PUBLICATION_NATIVE_BUDGET" =~ ^[0-9]{4}$ ]]
+(( PUBLICATION_NATIVE_BUDGET >= 1510 && PUBLICATION_NATIVE_BUDGET <= 1680 ))
+export PUBLICATION_NATIVE_BUDGET
+# Hard outer kill at budget+10, NOT TERM at budget+10 then ten MORE seconds.
+# Exact descendants are joined by the unchanged same-VM always owner.
+timeout --signal=KILL "$(( PUBLICATION_NATIVE_BUDGET + 10 ))s" bash "$RUNNER_TEMP/publication-inputs/hosted-run.sh"

@@ -116,6 +116,9 @@ jobs:
       run:
         shell: bash
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
     env:
       BASE_SHA: ${{ inputs.base_sha }}
       EXPECTED_TREE: ${{ inputs.expected_tree }}
@@ -134,15 +137,19 @@ jobs:
           REBASE_HOSTED: ${{ runner.environment }}
         run: |
           set -euo pipefail
+          if [[ "$SUITE" == provider-resume-process ]]; then
+            python3 -c 'import time; print("PUBLICATION_JOB_STARTED="+str(int(time.time()))); print("PUBLICATION_JOB_STARTED_MONOTONIC_NS="+str(time.monotonic_ns()))' >> "$GITHUB_ENV"
+            echo "RUNNER_ENVIRONMENT=$REBASE_HOSTED" >> "$GITHUB_ENV"
+          fi
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PATCH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$PATCH_ID" =~ ^[a-z0-9-]+$ ]]
           case "$SUITE" in provider-format-preparation|provider-rebase-focused|provider-routing-repair|provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
           case "$SUITE" in
-            provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types)
+            provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-process)
               echo 'same_commit=true' >> "$GITHUB_OUTPUT"
-              echo 'SAME_COMMIT_SOURCE_SHA256=266f05d8ea589fff2afa533278b45758ae12bb0e91f711a6f5913c189fae1bb1' >> "$GITHUB_ENV"
+              echo 'SAME_COMMIT_SOURCE_SHA256=2b1d9aa8ad9bfc3d3a15cbd2a7ff417d01626d23043bee6ab6292d084106a801' >> "$GITHUB_ENV"
               mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
               test "$BASE_SHA" = e433bfda89c486f98dfb03586dacd1e23b6f820b
               test "$EXPECTED_TREE" = 6e181a3dd95b720f9bfbac1b7804c6ce23df431b
@@ -249,25 +256,31 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = b1bb6d712a0a25e11f637811dbb64b99c817852d
-            test "$(git rev-parse HEAD^1^{tree})" = 1c5dfd93a176d7275d51c7d305d5fe4e60b51710
+            test "$(git show -s --format=%P HEAD)" = 632614990ce0fa6a5e20409985a6f6362da98157
+            test "$(git rev-parse HEAD^1^{tree})" = 6d8e93ba5572ad0abf35a5c75bc9115fece69023
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
+          M	.github/proof-inputs/pr135838/provider-resume-process.sh
+          M	.github/proof-inputs/pr135838/provider-same-commit-source.sh
+          A	.github/proof-inputs/pr135838/publication/always-cleanup.sh
+          A	.github/proof-inputs/pr135838/publication/binding.json
+          A	.github/proof-inputs/pr135838/publication/controller.py
+          A	.github/proof-inputs/pr135838/publication/host.py
+          A	.github/proof-inputs/pr135838/publication/hosted-run.sh
+          A	.github/proof-inputs/pr135838/publication/proof-only-overlay.patch
+          M	.github/workflows/pr135838-patch-validation.yml
+          PUBLICATION_PATHS
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-api.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-build.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-test-types-a.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-test-types-b.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit-source.sh | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit.payload.json | cut -d ' ' -f1)" = 100644
-            test "$(git ls-tree HEAD .github/workflows/pr135838-patch-validation.yml | cut -d ' ' -f1)" = 100644
+            for path in .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-process.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/proof-inputs/pr135838/publication/always-cleanup.sh .github/proof-inputs/pr135838/publication/artifact.py .github/proof-inputs/pr135838/publication/binding.json .github/proof-inputs/pr135838/publication/controller.py .github/proof-inputs/pr135838/publication/host.py .github/proof-inputs/pr135838/publication/hosted-run.sh .github/proof-inputs/pr135838/publication/proof-only-overlay.patch .github/workflows/pr135838-patch-validation.yml; do
+              test "$(git ls-tree HEAD "$path" | cut -d " " -f1)" = 100644
+            done
             cp .github/proof-inputs/pr135838/provider-same-commit.payload.json "$RUNNER_TEMP/same-commit-payload.json"
             cp .github/proof-inputs/pr135838/provider-same-commit-source.sh "$RUNNER_TEMP/same-commit-source.sh"
             cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
+              provider-resume-process) recipe_sha='e29beb6d517997e4336fefd19dcc48ea7611309f4c10e85dc3a6014385bf6f46' ;;
               provider-resume-build) recipe_sha='c5b3d415d97408f2466392ace3707bef0f13cf652b145b7fa37839e6ce59271f' ;;
               provider-resume-api) recipe_sha='866ce2e7124854fa821aca084673495272ef84f1f2150560468e4d6f04ecb21b' ;;
               provider-resume-test-types-a) recipe_sha='7249b9f14306fe900683befd081ae0e73c50b8bdaffaec6f1c0ee529888709e7' ;;
@@ -281,6 +294,9 @@ jobs:
             if [[ "$SUITE" == provider-resume-build ]]; then
               cp .github/proof-inputs/pr135838/publication/artifact.py "$RUNNER_TEMP/publication-artifact.py"
               test "$(sha256sum "$RUNNER_TEMP/publication-artifact.py" | cut -d " " -f1)" = 8b5729cb870afc2e561230a831ae54935e31cd5b91d278e17d37477b08974b72
+            fi
+            if [[ "$SUITE" == provider-resume-process ]]; then
+              python3 .github/proof-inputs/pr135838/publication/host.py preserve
             fi
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
@@ -352,6 +368,17 @@ jobs:
               test "$(sha256sum "$RUNNER_TEMP/transport-ci-original-groups.json" | cut -d " " -f1)" = 3aad0a524a13cec6bf1fbaaf540b48c14df64e5197caaacf36edffbd8a29b204
             fi
           fi
+      - name: Acquire only the reviewed same-C built artifact
+        if: inputs.suite == 'provider-resume-process'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: roboclaw-bot/openclaw
+          run-id: ${{ steps.preserve_inputs.outputs.build_run }}
+          artifact-ids: ${{ steps.preserve_inputs.outputs.build_artifact }}
+          github-token: ${{ github.token }}
+          skip-decompress: true
+          digest-mismatch: error
+          path: ${{ runner.temp }}/publication-download
       - name: Check out exact parent
         id: base_checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -407,7 +434,7 @@ jobs:
         id: dependencies
         uses: ./.github/actions/setup-node-env
         with:
-          node-version: ${{ (inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && '24.x' || inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
+          node-version: ${{ inputs.suite == 'provider-resume-process' && '24.21.0' || (inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && '24.x' || inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
           semantic-checks: ${{ (inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && 'true' || 'false' }}
           install-bun: ${{ inputs.suite == 'custody-resume-windows' && 'false' || 'true' }}
           cache-mode: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'off' || 'restore' }}
@@ -567,14 +594,37 @@ jobs:
         id: commit
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" commit
+      - name: Adopt reviewed built dist before the proof-only overlay
+        if: inputs.suite == 'provider-resume-process'
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/same-commit-source.sh" source
+          python3 "$RUNNER_TEMP/publication-inputs/host.py" prepare
       - name: Run the controller-owned validation recipe
         id: tests
         if: inputs.suite != 'provider-format-preparation'
         run: |
           set -euo pipefail
           bash "$RUNNER_TEMP/validate-candidate.sh"
-          git diff --quiet HEAD
+          if [[ "$SUITE" == provider-resume-process ]]; then python3 "$RUNNER_TEMP/publication-inputs/host.py" verify-source; else git diff --quiet HEAD; fi
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+      - name: Always join and clean exact proof resources on the same VM
+        if: always() && inputs.suite == 'provider-resume-process'
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=10s 340s bash "$RUNNER_TEMP/publication-inputs/always-cleanup.sh"
+      - name: Select only sanitized publication evidence
+        if: always() && inputs.suite == 'provider-resume-process'
+        run: timeout --signal=KILL 10s python3 "$RUNNER_TEMP/publication-inputs/host.py" collect
+      - name: Upload sanitized publication evidence only
+        timeout-minutes: 1
+        if: always() && inputs.suite == 'provider-resume-process'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr135838-live-publication-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/publication-sanitized/
       - name: Export verified commit without repository write credentials
         if: inputs.suite != 'provider-rebase-focused' && inputs.suite != 'provider-format-preparation' && steps.input_guard.outputs.same_commit != 'true'
         run: |
@@ -597,10 +647,10 @@ jobs:
         run: bash "$RUNNER_TEMP/validate-candidate.sh" export
       - name: Export the identical producer bundle after the selected gate
         id: same_commit_export
-        if: steps.input_guard.outputs.same_commit == 'true'
+        if: steps.input_guard.outputs.same_commit == 'true' && inputs.suite != 'provider-resume-process'
         run: bash "$RUNNER_TEMP/same-commit-source.sh" export
       - name: Upload the verified commit artifact
-        if: inputs.suite != 'provider-format-preparation'
+        if: inputs.suite != 'provider-format-preparation' && inputs.suite != 'provider-resume-process'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: verified-candidate
@@ -677,7 +727,7 @@ jobs:
           if-no-files-found: error
           path: ${{ runner.temp }}/pr159178-format-preparation
       - name: Preserve same-commit gate evidence on every outcome
-        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair')
+        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair') && inputs.suite != 'provider-resume-process'
         env:
           SAME_COMMIT_STEP_OUTCOMES: ${{ toJSON(steps) }}
           SAME_COMMIT_JOB_STATUS: ${{ job.status }}
@@ -705,7 +755,7 @@ jobs:
           done
           exit 0
       - name: Upload same-commit gate evidence on every outcome
-        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair')
+        if: always() && (steps.input_guard.outputs.same_commit == 'true' || inputs.suite == 'provider-routing-repair') && inputs.suite != 'provider-resume-process'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: pr159178-same-commit-evidence
