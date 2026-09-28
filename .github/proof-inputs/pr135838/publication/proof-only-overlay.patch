@@ -1,9 +1,9 @@
 diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.mjs b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
 new file mode 100644
-index 0000000000000..35a414dea2ab9
+index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e638f206c4
 --- /dev/null
 +++ b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
-@@ -0,0 +1,879 @@
+@@ -0,0 +1,1017 @@
 +import assert from "node:assert/strict";
 +import { createHash, randomUUID, X509Certificate } from "node:crypto";
 +import fs from "node:fs/promises";
@@ -32,7 +32,7 @@ index 0000000000000..35a414dea2ab9
 +
 +// Data-only ESTree linkage; never evaluate a built file to discover its names.
 +// Acorn is already a candidate devDependency. Unsupported emitted graphs fail closed.
-+function deriveNativeCommandBinding(consumer, publicSdk, resolveModule, readModule) {
++function deriveNativeCommandBinding(consumer, publicSdk, resolveModule, readModule, observePhase) {
 +  const parse = (document) => parseJavaScript(document.source, { ecmaVersion: "latest", sourceType: "module" }).body;
 +  const identifier = (node) => {
 +    assert.equal(node?.type, "Identifier", "named identifier syntax required");
@@ -57,6 +57,7 @@ index 0000000000000..35a414dea2ab9
 +    assert(/^\.{1,2}\//.test(entry.node.source.value), "relative emitted import required");
 +    return resolveModule(entry.node.source.value, document.url);
 +  };
++  observePhase("derive-public-binding");
 +  const publicBody = parse(publicSdk);
 +  const publicExport = one(exports(publicBody).filter(({ specifier }) =>
 +    specifier.exported.type === "Identifier" && specifier.exported.name === "runCommandWithTimeout"), "public SDK export");
@@ -65,12 +66,14 @@ index 0000000000000..35a414dea2ab9
 +  const publicImport = one(imports(publicBody).filter(({ specifier }) => specifier.local.name === publicLocal), "public SDK import");
 +  const chunkUrl = resolveImport(publicImport, publicSdk);
 +  const alias = identifier(publicImport.specifier.imported);
++  observePhase("derive-consumer-binding");
 +  const consumerImport = one(imports(parse(consumer)).filter((entry) =>
 +    entry.specifier.type === "ImportSpecifier" && entry.specifier.imported.type === "Identifier" &&
 +    entry.specifier.imported.name === alias && /^\.{1,2}\//.test(entry.node.source.value) &&
 +    resolveImport(entry, consumer) === chunkUrl), "consumer/common-chunk binding");
 +  const chunk = readModule(chunkUrl);
 +  assert.equal(chunk.url, chunkUrl);
++  observePhase("derive-owner-binding");
 +  const chunkBody = parse(chunk);
 +  const chunkExport = one(exports(chunkBody).filter(({ specifier }) =>
 +    specifier.exported.type === "Identifier" && specifier.exported.name === alias), "common-chunk export");
@@ -416,9 +419,57 @@ index 0000000000000..35a414dea2ab9
 +    originalFunctions.set(graphIndex, original);
 +    return observeCommand(original, args, nativeGraphs[graphIndex]);
 +  };
++  // Diagnostic identities only: never read a target or alter resolver/admission policy.
++  let linkageDiagnostic;
++  let linkageCandidateRoot;
++  const diagnosticOwn = (value, key) => {
++    const descriptor = value == null ? undefined : Object.getOwnPropertyDescriptor(value, key);
++    if (!descriptor && value != null && key in Object(value)) throw new Error("diagnostic-inherited-input");
++    if (descriptor && !("value" in descriptor)) throw new Error("diagnostic-accessor");
++    return descriptor?.value;
++  };
++  const lexicalFile = (value) => {
++    if (typeof value !== "string") return undefined;
++    try {
++      const filename = value.startsWith("file:") ? fileURLToPath(value) : value;
++      return path.isAbsolute(filename) ? path.normalize(filename) : undefined;
++    } catch { return undefined; }
++  };
++  const linkagePathClass = (filename) => {
++    if (!linkageCandidateRoot || !filename || !path.isAbsolute(filename)) return "unavailable";
++    const relative = path.relative(linkageCandidateRoot, filename).split(path.sep).join("/");
++    if (relative === ".." || relative.startsWith("../") || path.isAbsolute(relative)) return "external-private";
++    if (relative.startsWith("src/plugin-sdk/")) return "source-sdk";
++    if (relative.startsWith("dist/plugin-sdk/")) return "dist-sdk";
++    if (relative.startsWith("src/")) return "source-other";
++    if (relative.startsWith("extensions/")) return "plugin-source";
++    if (/^packages[/][^/]+[/]dist[/]/.test(relative)) return "package-dist";
++    return "candidate-other";
++  };
++  const noteLinkage = (update) => {
++    if (!linkageDiagnostic || bootCount !== 1 || providerLookupCount !== 0) return;
++    try { update(linkageDiagnostic); }
++    catch { linkageDiagnostic.diagnosticError = "diagnostic-helper-failed"; }
++  };
++  const linkagePhase = (phase, check = false) => noteLinkage((record) => {
++    if (check) {
++      if (record.checkCount < 16) record.checkCount += 1;
++      else record.checkOverflow = true;
++    }
++    record.current = { phase, check: record.checkCount, targetClass: "unavailable", publicEntry: null };
++  });
++  const linkageRejection = (error) => noteLinkage((record) => {
++    if (record.firstRejection) return;
++    record.firstRejection = { ...record.current };
++    const code = diagnosticOwn(error, "code");
++    record.firstRejection.errorCode = ["ERR_ASSERTION", "ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ENOENT", "EACCES", "EPERM"].includes(code) ? code : "other";
++  });
 +  const installOriginal = sdkResolverOwner.installOpenClawPluginSdkNativeResolver;
 +  const resolverSpy = vi.spyOn(sdkResolverOwner, "installOpenClawPluginSdkNativeResolver").mockImplementation((options) => {
 +    let diagnosticStage = "original-sdk-owner";
++    let observingLinkage = false;
++    let recordLinkage = () => {};
++    let phaseLinkage = () => {};
 +    try {
 +    const result = installOriginal(options);
 +    diagnosticStage = "existing-native-observer";
@@ -432,21 +483,61 @@ index 0000000000000..35a414dea2ab9
 +      assert.equal(consumerUrl, nativeGraphs[0].consumer.url, "one actual Crabbox entry across host generations");
 +      return result;
 +    }
++    if (bootCount === 1 && !linkageDiagnostic) {
++      linkageDiagnostic = { checkCount: 0, checkOverflow: false, current: null, firstRejection: null,
++        publicTarget: null, inputs: null, diagnosticError: null };
++      observingLinkage = true;
++      recordLinkage = noteLinkage;
++      phaseLinkage = linkagePhase;
++    }
++    phaseLinkage("dist-root-realpath");
 +    const distRoot = realpathSync(path.join(process.cwd(), "dist"));
-+    const checkedUrl = (filename) => {
++    recordLinkage((record) => {
++      // Reuse the existing canonical dist result. A relocated/symlinked dist cannot establish this root.
++      linkageCandidateRoot = distRoot === path.join(process.cwd(), "dist") ? path.dirname(distRoot) : undefined;
++      const preference = diagnosticOwn(options, "pluginSdkResolution");
++      const moduleUrl = diagnosticOwn(options, "moduleUrl");
++      const host = typeof moduleUrl === "string" && moduleUrl.startsWith("file:") ? lexicalFile(moduleUrl) : undefined;
++      const hostRelative = host && linkageCandidateRoot ? path.relative(linkageCandidateRoot, host) : "";
++      const devRoot = diagnosticOwn(options, "devSourceRoot");
++      record.inputs = {
++        pluginSdkResolution: preference === undefined ? "unset" : ["auto", "src", "dist"].includes(preference) ? preference : "other",
++        hostModuleURLClass: hostRelative.startsWith("src" + path.sep) ? "source" : hostRelative.startsWith("dist" + path.sep) ? "built" : "other",
++        hostModuleURLBasis: "lexical-not-canonical",
++        devSourceRootKind: devRoot === undefined ? "unset" : devRoot === null ? "null" : linkageCandidateRoot && lexicalFile(devRoot) === linkageCandidateRoot ? "candidate" : "other",
++        candidateRootEstablished: Boolean(linkageCandidateRoot),
++      };
++    });
++    const checkedUrl = (filename, phase) => {
++      phaseLinkage(phase, true);
 +      const actual = realpathSync(filename);
++      recordLinkage((record) => {
++        const publicEntry = !linkageCandidateRoot ? null :
++          actual === path.join(linkageCandidateRoot, "src/plugin-sdk/process-runtime.ts") ? "source-process-runtime" :
++          actual === path.join(linkageCandidateRoot, "dist/plugin-sdk/process-runtime.js") ? "dist-process-runtime" : null;
++        Object.assign(record.current, { targetClass: linkagePathClass(actual), publicEntry });
++        if (phase === "public-sdk-containment") record.publicTarget = { ...record.current };
++      });
 +      assert(actual.startsWith(distRoot + path.sep), "linkage must stay in actual candidate dist");
 +      return pathToFileURL(actual).href;
 +    };
 +    const readModule = (url) => {
-+      assert.equal(checkedUrl(fileURLToPath(url)), url, "canonical unqualified candidate URL");
++      const role = url === consumerUrl ? "consumer" : url === publicSdkUrl ? "public-sdk" : "owner";
++      phaseLinkage(role + "-read");
++      assert.equal(checkedUrl(fileURLToPath(url), role + "-read-containment"), url, "canonical unqualified candidate URL");
++      phaseLinkage(role + "-read");
 +      return { url, source: readFileSync(fileURLToPath(url), "utf8") };
 +    };
 +    // Public package specifier uses the just-installed genuine host resolver;
 +    // never guess its file path or evaluate the SDK to discover aliases.
-+    const publicSdkUrl = checkedUrl(Module.createRequire(consumerUrl).resolve("openclaw/plugin-sdk/process-runtime"));
++    phaseLinkage("public-sdk-resolve");
++    const publicSdkUrl = checkedUrl(Module.createRequire(consumerUrl).resolve("openclaw/plugin-sdk/process-runtime"), "public-sdk-containment");
 +    const linkage = deriveNativeCommandBinding(readModule(consumerUrl), readModule(publicSdkUrl),
-+      (specifier, parentUrl) => checkedUrl(Module.createRequire(parentUrl).resolve(specifier)), readModule);
++      (specifier, parentUrl) => {
++        const role = parentUrl === publicSdkUrl ? "public-import" : "consumer-import";
++        phaseLinkage(role + "-resolve");
++        return checkedUrl(Module.createRequire(parentUrl).resolve(specifier), role + "-containment");
++      }, readModule, phaseLinkage);
 +    const originalUrl = JSON.stringify(linkage.chunk.url);
 +    const alias = linkage.chunk.exportAlias;
 +    const source = (linkage.chunk.hasDefaultExport ? 'export { default } from ' + originalUrl + ';\n' : '') + 'export * from ' + originalUrl + ';\nimport { ' + alias + ' as original } from ' + originalUrl + ';\nconst observed = (...args) => globalThis[Symbol.for(' + JSON.stringify(bridgeKey) + ')](original, args, 0);\nexport { observed as ' + alias + ' };';
@@ -457,6 +548,9 @@ index 0000000000000..35a414dea2ab9
 +    assert.equal(typeof Module.registerHooks, "function");
 +    nativeHooks = Module.registerHooks({
 +      resolve(specifier, context, nextResolve) {
++        const observedEdge = context.parentURL === consumerUrl && specifier === linkage.consumer.specifier;
++        if (observedEdge) phaseLinkage("native-consumer-edge");
++        try {
 +        const resolved = nextResolve(specifier, context);
 +        if (context.parentURL !== consumerUrl || specifier !== linkage.consumer.specifier) return resolved;
 +        assert.equal(resolved.url, linkage.chunk.url, "native loader must agree with derived common chunk");
@@ -465,10 +559,15 @@ index 0000000000000..35a414dea2ab9
 +        assert.equal(HASH(readFileSync(fileURLToPath(resolved.url))), linkage.chunk.sha256);
 +        nativeGraphs[0].resolvedConsumerEdges += 1;
 +        return { ...resolved, url, format: "module", shortCircuit: true };
++        } catch (error) {
++          if (observedEdge) linkageRejection(error);
++          throw error;
++        }
 +      },
 +    });
 +    return result;
 +    } catch (error) {
++      if (observingLinkage) linkageRejection(error);
 +      sdkResolverFailureCount += 1;
 +      if (sdkResolverFailures.length < 4) sdkResolverFailures.push({ stage: diagnosticStage, modulePath: options?.pluginModulePath, error });
 +      throw error; // Preserve the exact original owner/observer exception.
@@ -602,6 +701,38 @@ index 0000000000000..35a414dea2ab9
 +      }
 +      return result;
 +    });
++    const transformTargets = (data, registry) => {
++      try {
++      const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
++      const forced = count(data?.sourceTransformForced), fallback = count(data?.sourceTransformFallbacks);
++      const total = forced !== null && fallback !== null ? count(forced + fallback) : null;
++      const targets = data?.topSourceTransformTargets;
++      const plugins = registry?.plugins;
++      let incomplete = !Array.isArray(targets) || targets.length > 8;
++      let sum = 0;
++      const rows = (Array.isArray(targets) ? targets.slice(0, 8) : []).map((entry) => {
++        const target = lexicalFile(entry.target), targetClass = linkagePathClass(target);
++        const n = count(entry.count), matches = [];
++        let matchesIncomplete = !Array.isArray(plugins) || plugins.length > 256;
++        if (target) for (const plugin of (Array.isArray(plugins) ? plugins.slice(0, 256) : [])) {
++          const source = lexicalFile(plugin.source), runtime = lexicalFile(getPluginRuntimeEntrySource(plugin));
++          const root = lexicalFile(plugin.rootDir);
++          const kind = target === source ? "source-equality" : target === runtime ? "runtime-entry-equality" :
++            root && target.startsWith(root + path.sep) ? "lexical-root-match" : null;
++          if (!kind) continue;
++          if (matches.length === 2 || typeof plugin.id !== "string" || !plugin.id || plugin.id.length > 256) { matchesIncomplete = true; continue; }
++          matches.push({ kind, pluginIdSha256: HASH(plugin.id) });
++        }
++        if (n === null || n === 0 || targetClass === "unavailable" || matchesIncomplete || matches.length !== 1) incomplete = true;
++        sum += n ?? 0;
++        return { count: n, targetClass, matches, matchesIncomplete };
++      });
++      const capturedCount = count(sum);
++      const countsReconciled = total !== null && capturedCount !== null && capturedCount === total;
++      return { basis: "lexical-current-registry-not-canonical-ownership", observedRows: Array.isArray(targets) ? count(targets.length) : null,
++        total, capturedCount, countsReconciled, incomplete: incomplete || !countsReconciled, rows };
++      } catch { return { incomplete: true, diagnosticError: "source-transform-summary-failed" }; }
++    };
 +    const recordProviderDiagnostic = (resolved, loaderBefore) => {
 +      let diagnostic;
 +      try {
@@ -620,6 +751,12 @@ index 0000000000000..35a414dea2ab9
 +          ownerIsAmbientRegistry: Boolean(owner) && owner === ambient,
 +          ownerRegistry: diagRegistry(owner, resolved), ambientRegistry: owner === ambient ? "same-object" : diagRegistry(ambient, resolved),
 +          loaderBefore: stats(loaderBefore), loaderAfter: stats(after), nativeGraphCount: nativeGraphs.length,
++          linkageDiagnostic: { ...linkageDiagnostic, complete: Boolean(linkageDiagnostic?.inputs?.candidateRootEstablished &&
++            ["source", "built"].includes(linkageDiagnostic.inputs.hostModuleURLClass) &&
++            linkageDiagnostic.inputs.pluginSdkResolution !== "other" && linkageDiagnostic.inputs.devSourceRootKind !== "other" &&
++            linkageDiagnostic.publicTarget?.publicEntry && linkageDiagnostic.current && !linkageDiagnostic.checkOverflow &&
++            !linkageDiagnostic.diagnosticError && (!linkageDiagnostic.firstRejection || linkageDiagnostic.firstRejection.targetClass !== "unavailable")) },
++          sourceTransforms: { before: transformTargets(loaderBefore, owner), after: transformTargets(after, owner) },
 +          sdkResolverFailures: sdkResolverFailures.map((entry) => ({ stage: entry.stage, moduleClass: diagPathClass(entry.modulePath), error: diagError(entry.error) })), sdkResolverFailuresTruncated: sdkResolverFailureCount > 4,
 +          minimalGateway: diagEnum(process.env.OPENCLAW_TEST_MINIMAL_GATEWAY, ["0", "1"]),
 +          skipChannels: diagEnum(process.env.OPENCLAW_SKIP_CHANNELS, ["0", "1"]),
@@ -644,7 +781,8 @@ index 0000000000000..35a414dea2ab9
 +        diagnostic.resultIdentityPreserved === true && diagnostic.diagnosticError === undefined &&
 +        diagnostic.checkpointError === undefined && diagnostic.ownerRegistry?.diagnosticsTruncated === false &&
 +        (diagnostic.ambientRegistry === "same-object" || diagnostic.ambientRegistry?.diagnosticsTruncated === false) &&
-+        diagnostic.sdkResolverFailuresTruncated === false;
++        diagnostic.sdkResolverFailuresTruncated === false && diagnostic.linkageDiagnostic?.complete === true &&
++        diagnostic.sourceTransforms?.before?.incomplete === false && diagnostic.sourceTransforms?.after?.incomplete === false;
 +    };
 +    async function boot() {
 +      clearRuntimeConfigSnapshot();
@@ -885,7 +1023,7 @@ index 0000000000000..35a414dea2ab9
 +}
 diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.test.ts b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
 new file mode 100644
-index 0000000000000..752c7a4d96a71
+index 0000000000000000000000000000000000000000..752c7a4d96a71c8436fca93392fa17fca30ddf2d
 --- /dev/null
 +++ b/src/gateway/worker-environments/provider-publication.local-container.live.test.ts
 @@ -0,0 +1,7 @@

@@ -3,20 +3,17 @@
   "provider": "local-container",
   "candidateSha": "5d116aa3f1e0d85f9408d95cce0640926a8d8c60",
   "candidateTree": "6e181a3dd95b720f9bfbac1b7804c6ce23df431b",
-  "overlayTree": "55c9eaa9acd1dd6d40940f3ce4a6975bfead9b82",
+  "overlayTree": "7f71ffc2654cbb03ddc9438867da9502f6803c40",
   "controllerSha": null,
-  "controllerParent": "9385190af898ee667284a2c4533116e37ee50f0f",
+  "controllerParent": "f8d822a1f3486facea30fffe8dbe18ced437a361",
   "inspectedSourceSha": "5d116aa3f1e0d85f9408d95cce0640926a8d8c60",
   "crabboxVersion": "0.66.0",
   "crabboxExecutableSha256": "d74d74da406b55097fd27a3963321fe11d0e2600c27cde9830bb173e59d495a3",
   "crabboxArchiveSha256": "027907f7f2274d0eb15fbeea6583f6f421f2645189e22671ba327f3f961efc9d",
   "crabboxSourceSha": "145cd6eca3c6219806dd7988351183625d917fdd",
-  "blockedUntil": [
-    "Fresh independent P2 of exact diagnostic delta",
-    "Parent execution resume and authorization-only attestation update before publication"
-  ],
+  "blockedUntil": [],
   "overlayFiles": {
-    "src/gateway/worker-environments/provider-publication.local-container.live.mjs": "5cc233a7a1f33ca68e3c0fbdca76652eb0d5ab72e296e85915f462273f0425c3",
+    "src/gateway/worker-environments/provider-publication.local-container.live.mjs": "c11b015bcb7c0cbcf4b62d00f3a8c3409fa4b8e7747bc5751346da7f3e8874f8",
     "src/gateway/worker-environments/provider-publication.local-container.live.test.ts": "f86401d329ddfe612b4d1f4c83d9ddd4a1889f915e72029328b2964df248907b"
   },
   "runtimeGraphReviewed": true,
@@ -74,15 +71,15 @@
   "buildAttempt": 1,
   "buildRecipeSha256": "c5b3d415d97408f2466392ace3707bef0f13cf652b145b7fa37839e6ce59271f",
   "builtDistSha256": "a7f80aaf4dc00d4f8d4a058c5bc73ca5dedc396e56dd7347312adbf61dd91597",
-  "controllerParentTree": "feed2dd2997b5fb30d809a36bc9c9beb2d095327",
+  "controllerParentTree": "1a44c3f78a7e13ca337390dea20650a72a231d6d",
   "integrationFiles": {
     "always-cleanup.sh": "096f6ce5ca64387183a396ffac060d30f4176a2efd155661ff62cd01ab0d2e36",
     "hosted-run.sh": "37333fa58bb9a1a101d712da9ffad96e1d4d486c803a0a76a2cc94fc7edf7e8a",
     "controller.py": "101bc4a14cf43beea623e877d92505c6e3b695da5e829002a37cc480d8998cc2",
     "host.py": "abe458c6911da4c11825c8470e7f09949e00adbed97c127e7007c80a8657ed77",
-    "proof-only-overlay.patch": "a73fbbe6261238f462c872838a2e2eb1bce24921aaca843f29a51bac64b81d62",
+    "proof-only-overlay.patch": "7b1ca5be74c907b89858f56dc0f0a5b88aef8b505b3d63182f9f5a4fc24d81ad",
     "artifact.py": "8b5729cb870afc2e561230a831ae54935e31cd5b91d278e17d37477b08974b72"
   },
   "executionAuthorized": true,
-  "reviewedBy": "Parent Roboclaw: one bounded diagnostic authorized under the existing PR159178 proof task; independent P2 run 0993fe3c-0a90-4ff0-b45d-23bc8c8d2dca, receipt sha256 99d71dcca575dadceaacb4e81010c3023490308a96446c029f9aaa5552d1fe91; no SDK/security rollout or merge acceptance."
+  "reviewedBy": "Parent Roboclaw: one new bounded linkage diagnostic authorized under existing PR159178 proof task after personal exact-byte review and independent P2 d24f0845-5c55-4773-9bf3-f8297d401f4a; receipt sha256 17cb74824766d57297a79c7c3209ffebe053c9279a243d98a2ed478fa6b24c1c. Historical controller index caveat retained; no SDK/security rollout or merge acceptance."
 }
