@@ -142,12 +142,12 @@ jobs:
           case "$SUITE" in
             provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types)
               echo 'same_commit=true' >> "$GITHUB_OUTPUT"
-              echo 'SAME_COMMIT_SOURCE_SHA256=59c61afc45e4901240343f16c24a9594d58946ef3cf7fe3bd2add9c216dad3bb' >> "$GITHUB_ENV"
+              echo 'SAME_COMMIT_SOURCE_SHA256=266f05d8ea589fff2afa533278b45758ae12bb0e91f711a6f5913c189fae1bb1' >> "$GITHUB_ENV"
               mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
-              test "$BASE_SHA" = 0edae198d278686e16426f7ad254d0341bd6e3d3
-              test "$EXPECTED_TREE" = e84e634a10fa84314b04119bd44d3a4a233a2999
+              test "$BASE_SHA" = e433bfda89c486f98dfb03586dacd1e23b6f820b
+              test "$EXPECTED_TREE" = 6e181a3dd95b720f9bfbac1b7804c6ce23df431b
               test "$PATCH_ID" = provider-same-commit
-              test "$PATCH_SHA256" = '7c8a09a759f3719fe60d4cb2f09ca8b859161219e93ee99060d6d5255ec4b08b'
+              test "$PATCH_SHA256" = 'e066f0eb79ebe75dc93f88cfacfe1a0049e04273971c33044a263d879dfbf2b2'
               test "$GITHUB_EVENT_NAME" = workflow_dispatch
               test "$GITHUB_REF" = refs/heads/main
               test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -249,28 +249,30 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = e38d4fbc8af63e7125e2cec80de30a66c7e3d2a0
-            test "$(git rev-parse HEAD^1^{tree})" = f230043c2c1abd2085bcdfb4f417dcdf1675b475
+            test "$(git show -s --format=%P HEAD)" = b1bb6d712a0a25e11f637811dbb64b99c817852d
+            test "$(git rev-parse HEAD^1^{tree})" = 1c5dfd93a176d7275d51c7d305d5fe4e60b51710
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
-          M	.github/proof-inputs/pr135838/publication/artifact.py
-          M	.github/workflows/pr135838-patch-validation.yml
-          PUBLICATION_PATHS
+            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
-            for path in .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/proof-inputs/pr135838/publication/artifact.py .github/workflows/pr135838-patch-validation.yml; do
-              test "$(git ls-tree HEAD "$path" | cut -d " " -f1)" = 100644
-            done
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-api.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-build.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-test-types-a.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-test-types-b.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit-source.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit.payload.json | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/workflows/pr135838-patch-validation.yml | cut -d ' ' -f1)" = 100644
             cp .github/proof-inputs/pr135838/provider-same-commit.payload.json "$RUNNER_TEMP/same-commit-payload.json"
             cp .github/proof-inputs/pr135838/provider-same-commit-source.sh "$RUNNER_TEMP/same-commit-source.sh"
             cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
-              provider-resume-build) recipe_sha='cc72dc5b2f3d0e24acddb77fbeb0d5a1e37584d9a98369bc089a66136e10bd27' ;;
-              provider-resume-api) recipe_sha='7928f74ef3e9792512e26841933b0b5b1abce8bd133a14d839ecdaf1da18a0d1' ;;
-              provider-resume-test-types-a) recipe_sha='bb3c2ac007225db5c21d269b35aac429ba1c3d60b6ac51e3d083d102a7c761b4' ;;
-              provider-resume-test-types-b) recipe_sha='a40a5f9010c89dad1789b7ca692c491e93a5ab92ac3dbf441310cb2ac431a8e3' ;;
-              provider-resume-plugin-test-types) recipe_sha='535dc8e9700e33db7c18e6c1c3a61421d1aa8bcabb9295b6e145d02f7076b1af' ;;
+              provider-resume-build) recipe_sha='c5b3d415d97408f2466392ace3707bef0f13cf652b145b7fa37839e6ce59271f' ;;
+              provider-resume-api) recipe_sha='866ce2e7124854fa821aca084673495272ef84f1f2150560468e4d6f04ecb21b' ;;
+              provider-resume-test-types-a) recipe_sha='7249b9f14306fe900683befd081ae0e73c50b8bdaffaec6f1c0ee529888709e7' ;;
+              provider-resume-test-types-b) recipe_sha='e5098e1ecd687fcef4e4d37a3de2be40801d806cc232d647ab3739cde1770070' ;;
+              provider-resume-plugin-test-types) recipe_sha='31ed7ba0d6d649eac6acf4faf6d9bb796774709c561f18140087f54e789e25eb' ;;
             esac
             test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = "$recipe_sha"
             cp "$RUNNER_TEMP/same-commit-payload.json" "$RUNNER_TEMP/same-commit-source.sh" "$RUNNER_TEMP/validate-candidate.sh" "$evidence/"
@@ -357,7 +359,7 @@ jobs:
           repository: ${{ (inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'openclaw/openclaw' || github.repository }}
           ref: ${{ inputs.base_sha }}
           fetch-depth: ${{ inputs.suite == 'provider-rebase-focused' && 1 || 0 }}
-          filter: ${{ inputs.suite == 'provider-upgrade-harness' && 'blob:none' || '' }}
+          filter: ${{ (inputs.suite == 'provider-upgrade-harness' || steps.input_guard.outputs.same_commit == 'true') && 'blob:none' || '' }}
           persist-credentials: false
       - name: Complete only the exact source ancestry before native Git
         if: inputs.suite == 'provider-rebase-focused'
@@ -405,8 +407,8 @@ jobs:
         id: dependencies
         uses: ./.github/actions/setup-node-env
         with:
-          node-version: ${{ inputs.suite == 'provider-rebase-focused' && '24.x' || inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
-          semantic-checks: ${{ inputs.suite == 'provider-rebase-focused' && 'true' || 'false' }}
+          node-version: ${{ (inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && '24.x' || inputs.suite == 'custody-resume-windows' && '24.21.0' || '24.19.0' }}
+          semantic-checks: ${{ (inputs.suite == 'provider-rebase-focused' || steps.input_guard.outputs.same_commit == 'true') && 'true' || 'false' }}
           install-bun: ${{ inputs.suite == 'custody-resume-windows' && 'false' || 'true' }}
           cache-mode: ${{ (inputs.suite == 'provider-rebase-focused' || inputs.suite == 'provider-format-preparation' || inputs.suite == 'provider-routing-repair' || steps.input_guard.outputs.same_commit == 'true') && 'off' || 'restore' }}
       - name: Verify repaired source after dependency setup
