@@ -1,9 +1,9 @@
 diff --git a/src/gateway/worker-environments/provider-publication.local-container.live.mjs b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
 new file mode 100644
-index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e638f206c4
+index 0000000000000000000000000000000000000000..ea40de357c1db2f83f6d38a765729cf3b747dbfd
 --- /dev/null
 +++ b/src/gateway/worker-environments/provider-publication.local-container.live.mjs
-@@ -0,0 +1,1017 @@
+@@ -0,0 +1,1155 @@
 +import assert from "node:assert/strict";
 +import { createHash, randomUUID, X509Certificate } from "node:crypto";
 +import fs from "node:fs/promises";
@@ -12,6 +12,9 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +import { fileURLToPath, pathToFileURL } from "node:url";
 +import { parse as parseJavaScript } from "acorn";
 +import * as sdkResolverOwner from "../../plugins/plugin-sdk-native-resolver.js";
++import * as loaderStatsOwner from "../../plugins/plugin-module-loader-cache.js";
++import { getPluginCache } from "../../plugins/plugin-cache.js";
++import { getPluginExecutionFrame } from "../../plugins/plugin-instance-invocation.js";
 +import os from "node:os";
 +import net from "node:net";
 +import path from "node:path";
@@ -464,6 +467,114 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +    const code = diagnosticOwn(error, "code");
 +    record.firstRejection.errorCode = ["ERR_ASSERTION", "ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ENOENT", "EACCES", "EPERM"].includes(code) ? code : "other";
 +  });
++  // One source-module seam, not all native/Jiti copies. Original cache stores are untouched.
++  // Stable apply-only proxies preserve reacquisition identity, but differ from cached originals.
++  const producer = { basis: "observed-loader-boundaries-not-late-registry", acquisitions: [], invocations: [], paths: [], acquisitionCount: 0, invocationCount: 0, overflow: false, observerFailed: false, active: true };
++  const producerLoaders = new WeakMap(), producerCaches = new WeakMap();
++  let producerSequence = 0, producerCacheSequence = 0, producerLoaderSequence = 0, producerParent = null;
++  let producerRoot;
++  const producerNote = (read) => {
++    try { return read(); } catch { producer.observerFailed = true; return null; }
++  };
++  const producerStats = () => {
++    const stats = loaderStatsOwner.getPluginModuleLoaderStats();
++    return ["calls", "nativeHits", "nativeMisses", "sourceTransformForced", "sourceTransformFallbacks"].map((key) => {
++      const value = diagnosticOwn(stats, key);
++      if (!Number.isSafeInteger(value) || value < 0) throw new Error("producer-stat-unavailable");
++      return value;
++    });
++  };
++  const producerPath = (value) => {
++    if (value === undefined) return null;
++    if (typeof value !== "string" || value.length > 4096 || !producerRoot) throw new Error("producer-path-unavailable");
++    const filename = lexicalFile(value);
++    if (!filename || (value.startsWith("file:") && new URL(value).href !== pathToFileURL(filename).href)) throw new Error("producer-path-qualified");
++    const actual = realpathSync(filename);
++    const relative = path.relative(producerRoot, actual).split(path.sep).join("/");
++    if (!relative || relative.startsWith("../") || relative === ".." || path.isAbsolute(relative)) return { kind: "external-private" };
++    const pathSha256 = HASH(relative);
++    const found = producer.paths.findIndex((item) => item.pathSha256 === pathSha256);
++    if (found !== -1) return found;
++    if (producer.paths.length === 10) { producer.overflow = true; return null; }
++    const sourcePlugin = relative.startsWith("extensions/");
++    const manifest = sourcePlugin ? diagnosticOwn(expected.producerManifestRoots, HASH(relative.split("/").slice(0, 2).join("/"))) : undefined;
++    producer.paths.push({ pathSha256, kind: sourcePlugin ? "candidate-plugin-source" : relative.startsWith("dist/") ? "candidate-dist" : "candidate-other",
++      physicalArtifactAssociation: manifest ? { basis: "canonical-source-manifest-root-not-execution-owner", pluginIdSha256: manifest[0], manifestSha256: manifest[1] } : { basis: "unknown" } });
++    return producer.paths.length - 1;
++  };
++  const producerOwner = () => {
++    const invocation = diagnosticOwn(getPluginExecutionFrame(), "invocation");
++    if (invocation === undefined) return { kind: "absent" };
++    // Select only these own data properties. Never enumerate/retain a frame, instance or token.
++    const id = diagnosticOwn(diagnosticOwn(invocation, "instance"), "pluginId");
++    if (typeof id !== "string" || !id || id.length > 256) throw new Error("producer-owner-unavailable");
++    return { kind: "present", pluginIdSha256: HASH(id) };
++  };
++  const producerFlag = (value) => value === undefined ? "unset" : typeof value === "boolean" ? value : "unavailable";
++  producerNote(() => { producerRoot = realpathSync(process.cwd()); producer.installedStats = producerStats(); });
++  const acquireLoaderOriginal = loaderStatsOwner.getCachedPluginModuleLoader;
++  let producerSpy;
++  producerNote(() => { producerSpy = vi.spyOn(loaderStatsOwner, "getCachedPluginModuleLoader").mockImplementation(function (...args) {
++    // Owner acquisition and throw take priority over every diagnostic read.
++    if (producer.active) producer.acquisitionCount += 1;
++    let original;
++    try { original = Reflect.apply(acquireLoaderOriginal, this, args); }
++    catch (error) { if (producer.active) producer.observerFailed = true; throw error; }
++    if (!producer.active) return producerLoaders.get(original)?.proxy ?? original;
++    return producerNote(() => {
++      if (producer.acquisitions.length === 6) { producer.overflow = true; return producerLoaders.get(original)?.proxy ?? original; }
++      const options = args[0];
++      const cache = getPluginCache();
++      const loaders = diagnosticOwn(cache, "moduleLoaders");
++      let membership = false, inspected = 0;
++      for (const value of Map.prototype.values.call(loaders)) {
++        if (++inspected > 256) { producer.overflow = true; break; }
++        if (value === original) { membership = true; break; }
++      }
++      let cacheOrdinal = null;
++      if (membership) {
++        if (!producerCaches.has(cache)) producerCaches.set(cache, ++producerCacheSequence);
++        cacheOrdinal = producerCaches.get(cache);
++      }
++      const scope = diagnosticOwn(options, "cacheScopeKey");
++      if (scope !== undefined && (typeof scope !== "string" || scope.length > 256)) throw new Error("producer-scope-unavailable");
++      let loader = producerLoaders.get(original);
++      if (!loader) {
++        loader = { ordinal: ++producerLoaderSequence, cacheOrdinal, acquisitions: [] };
++        loader.proxy = new Proxy(original, { apply(target, receiver, values) {
++          if (!producer.active) return Reflect.apply(target, receiver, values);
++          producer.invocationCount += 1;
++          const parent = producerParent;
++          const event = producerNote(() => {
++            if (producer.invocations.length === 6) { producer.overflow = true; return null; }
++            const item = { seq: ++producerSequence, parent, loader: loader.ordinal, cache: loader.cacheOrdinal, acquisitions: [...loader.acquisitions],
++              target: producerNote(() => producerPath(values[0])), invocationOwner: producerNote(producerOwner), before: producerNote(producerStats), after: null, outcome: "pending" };
++            producer.invocations.push(item); return item;
++          });
++          if (event) producerParent = event.seq;
++          try {
++            const value = Reflect.apply(target, receiver, values);
++            if (event) event.outcome = "returned";
++            return value; // Including Promise identity: no inspection, wrapping or await.
++          } catch (error) {
++            if (event) event.outcome = "threw";
++            throw error; // Exact thrown object; never inspect its value/message/stack.
++          } finally {
++            if (event) event.after = producerNote(producerStats);
++            producerParent = parent;
++          }
++        } });
++        producerLoaders.set(original, loader);
++      }
++      if (loader.cacheOrdinal !== cacheOrdinal || !membership) producer.observerFailed = true;
++      const acquisition = { seq: ++producerSequence, loader: loader.ordinal, cache: cacheOrdinal,
++        importer: producerPath(diagnosticOwn(options, "importerUrl")), module: producerPath(diagnosticOwn(options, "modulePath")),
++        filename: producerPath(diagnosticOwn(options, "loaderFilename")), tryNative: producerFlag(diagnosticOwn(options, "tryNative")),
++        preferBuiltDist: producerFlag(diagnosticOwn(options, "preferBuiltDist")), scopeSha256: scope === undefined ? null : HASH(scope) };
++      producer.acquisitions.push(acquisition); loader.acquisitions.push(acquisition.seq);
++      return loader.proxy;
++    }) ?? producerLoaders.get(original)?.proxy ?? original;
++  }); });
 +  const installOriginal = sdkResolverOwner.installOpenClawPluginSdkNativeResolver;
 +  const resolverSpy = vi.spyOn(sdkResolverOwner, "installOpenClawPluginSdkNativeResolver").mockImplementation((options) => {
 +    let diagnosticStage = "original-sdk-owner";
@@ -528,10 +639,19 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +      phaseLinkage(role + "-read");
 +      return { url, source: readFileSync(fileURLToPath(url), "utf8") };
 +    };
-+    // Public package specifier uses the just-installed genuine host resolver;
-+    // never guess its file path or evaluate the SDK to discover aliases.
-+    phaseLinkage("public-sdk-resolve");
-+    const publicSdkUrl = checkedUrl(Module.createRequire(consumerUrl).resolve("openclaw/plugin-sdk/process-runtime"), "public-sdk-containment");
++    // The source host aliases are not the compiled consumer artifact contract.
++    // Read the exact immutable package declaration, without a bare SDK demand.
++    phaseLinkage("public-sdk-declaration");
++    const packageJsonBytes = readFileSync(path.join(process.cwd(), "package.json"));
++    assert.equal(HASH(packageJsonBytes), expected.packageJsonSha256, "immutable candidate package declaration");
++    const sdkExportKey = "./plugin-sdk/process-runtime";
++    const sdkExport = JSON.parse(packageJsonBytes).exports?.[sdkExportKey];
++    assert.deepEqual(Object.keys(requireRecord(sdkExport, "public SDK export declaration")), ["default"], "one unconditional public SDK artifact");
++    assert.equal(typeof sdkExport.default, "string");
++    assert.match(sdkExport.default, /^\.\/dist\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.js$/, "literal compiled artifact target");
++    const artifactSelection = { basis: "immutable-package-export-default-artifact-not-host-resolution", packageJsonSha256: HASH(packageJsonBytes), exportKey: sdkExportKey, target: sdkExport.default };
++    recordLinkage((record) => { record.artifactSelection = artifactSelection; });
++    const publicSdkUrl = checkedUrl(path.resolve(process.cwd(), sdkExport.default), "public-sdk-containment");
 +    const linkage = deriveNativeCommandBinding(readModule(consumerUrl), readModule(publicSdkUrl),
 +      (specifier, parentUrl) => {
 +        const role = parentUrl === publicSdkUrl ? "public-import" : "consumer-import";
@@ -544,7 +664,7 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +    // Validate the generated identifier/export grammar without executing source.
 +    parseJavaScript(source, { ecmaVersion: "latest", sourceType: "module" });
 +    const url = "data:text/javascript," + encodeURIComponent(source);
-+    nativeGraphs.push({ ...linkage, publicSpecifier: "openclaw/plugin-sdk/process-runtime", parentUrl: consumerUrl, originalUrl: linkage.chunk.url, originalSha256: linkage.chunk.sha256, facadeUrl: url, facadeSha256: HASH(source), originalCallCount: 0, resolvedConsumerEdges: 0, nativeFunctionIdentityVerified: false });
++    nativeGraphs.push({ ...linkage, artifactSelection, publicSpecifier: "openclaw/plugin-sdk/process-runtime", parentUrl: consumerUrl, originalUrl: linkage.chunk.url, originalSha256: linkage.chunk.sha256, facadeUrl: url, facadeSha256: HASH(source), originalCallCount: 0, resolvedConsumerEdges: 0, nativeFunctionIdentityVerified: false });
 +    assert.equal(typeof Module.registerHooks, "function");
 +    nativeHooks = Module.registerHooks({
 +      resolve(specifier, context, nextResolve) {
@@ -701,39 +821,54 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +      }
 +      return result;
 +    });
-+    const transformTargets = (data, registry) => {
++    const producerRoute = (event) => {
++      if (!event.before || !event.after || event.parent !== null || producer.invocations.some((item) => item.parent === event.seq)) return "unresolved";
++      const same = (increments) => event.before.every((value, index) => value + increments[index] === event.after[index]);
++      return same([0, 0, 0, 0, 0]) ? "no-counter-change" : same([1, 1, 0, 0, 0]) ? "native" :
++        same([1, 0, 0, 1, 0]) ? "forced" : same([1, 0, 1, 0, 1]) ? "fallback" : "unresolved";
++    };
++    const transformTargets = (data) => {
 +      try {
-+      const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
-+      const forced = count(data?.sourceTransformForced), fallback = count(data?.sourceTransformFallbacks);
-+      const total = forced !== null && fallback !== null ? count(forced + fallback) : null;
-+      const targets = data?.topSourceTransformTargets;
-+      const plugins = registry?.plugins;
-+      let incomplete = !Array.isArray(targets) || targets.length > 8;
-+      let sum = 0;
-+      const rows = (Array.isArray(targets) ? targets.slice(0, 8) : []).map((entry) => {
-+        const target = lexicalFile(entry.target), targetClass = linkagePathClass(target);
-+        const n = count(entry.count), matches = [];
-+        let matchesIncomplete = !Array.isArray(plugins) || plugins.length > 256;
-+        if (target) for (const plugin of (Array.isArray(plugins) ? plugins.slice(0, 256) : [])) {
-+          const source = lexicalFile(plugin.source), runtime = lexicalFile(getPluginRuntimeEntrySource(plugin));
-+          const root = lexicalFile(plugin.rootDir);
-+          const kind = target === source ? "source-equality" : target === runtime ? "runtime-entry-equality" :
-+            root && target.startsWith(root + path.sep) ? "lexical-root-match" : null;
-+          if (!kind) continue;
-+          if (matches.length === 2 || typeof plugin.id !== "string" || !plugin.id || plugin.id.length > 256) { matchesIncomplete = true; continue; }
-+          matches.push({ kind, pluginIdSha256: HASH(plugin.id) });
-+        }
-+        if (n === null || n === 0 || targetClass === "unavailable" || matchesIncomplete || matches.length !== 1) incomplete = true;
-+        sum += n ?? 0;
-+        return { count: n, targetClass, matches, matchesIncomplete };
-+      });
-+      const capturedCount = count(sum);
-+      const countsReconciled = total !== null && capturedCount !== null && capturedCount === total;
-+      return { basis: "lexical-current-registry-not-canonical-ownership", observedRows: Array.isArray(targets) ? count(targets.length) : null,
-+        total, capturedCount, countsReconciled, incomplete: incomplete || !countsReconciled, rows };
++        const forced = diagnosticOwn(data, "sourceTransformForced"), fallback = diagnosticOwn(data, "sourceTransformFallbacks");
++        const targets = diagnosticOwn(data, "topSourceTransformTargets");
++        if (![forced, fallback].every((n) => Number.isSafeInteger(n) && n >= 0) || !Array.isArray(targets)) throw new Error("producer-targets-unavailable");
++        let incomplete = targets.length > 8;
++        const rows = targets.slice(0, 8).map((entry) => {
++          const target = producerPath(diagnosticOwn(entry, "target")), count = diagnosticOwn(entry, "count");
++          const matches = producer.invocations.filter((event) => event.target === target && Number.isInteger(target) &&
++            ["forced", "fallback"].includes(producerRoute(event)) && event.after[3] <= forced && event.after[4] <= fallback).map((event) => event.seq);
++          const association = Number.isInteger(target) ? producer.paths[target].physicalArtifactAssociation : null;
++          if (!Number.isSafeInteger(count) || count < 1 || matches.length !== count || association?.basis !== "canonical-source-manifest-root-not-execution-owner") incomplete = true;
++          return { count: Number.isSafeInteger(count) && count > 0 ? count : null, target, invocationMatches: matches };
++        });
++        const capturedCount = rows.reduce((sum, row) => sum + (row.count ?? 0), 0);
++        const total = forced + fallback, countsReconciled = Number.isSafeInteger(total) && capturedCount === total;
++        return { basis: "canonical-target-and-observed-invocation-not-registry", total, capturedCount, countsReconciled, incomplete: incomplete || !countsReconciled, rows };
 +      } catch { return { incomplete: true, diagnosticError: "source-transform-summary-failed" }; }
 +    };
++    const producerReport = (after) => {
++      const counters = ["calls", "nativeHits", "nativeMisses", "sourceTransformForced", "sourceTransformFallbacks"];
++      let cursor = producer.installedStats;
++      let complete = Boolean(cursor && !producer.observerFailed && !producer.overflow && producerSpy && producer.acquisitions.length);
++      const invocations = producer.invocations.map((event) => {
++        const route = producerRoute(event);
++        const acquisition = event.acquisitions.length === 1 ? producer.acquisitions.find((item) => item.seq === event.acquisitions[0]) : null;
++        if (!cursor || !event.before || !event.after || !cursor.every((n, i) => n === event.before[i]) ||
++          route === "unresolved" || !event.cache || !Number.isInteger(event.target) || !event.invocationOwner ||
++          !acquisition || !Number.isInteger(acquisition.importer) || !Number.isInteger(acquisition.module) ||
++          acquisition.tryNative === "unavailable" || acquisition.preferBuiltDist === "unavailable") complete = false;
++        cursor = event.after;
++        return { ...event, route, sameAsRequested: acquisition ? event.target === acquisition.module : null };
++      });
++      if (!cursor || !cursor.every((n, i) => n === diagnosticOwn(after, counters[i])) ||
++        producer.invocationCount !== invocations.length || producer.acquisitionCount !== producer.acquisitions.length ||
++        producer.acquisitions.some((item) => !invocations.some((event) => event.acquisitions.includes(item.seq)))) complete = false;
++      return { ...producer, invocations, complete, counters, scope: "this-source-module-install-to-first-lookup",
++        callerBasis: "own-importerUrl-not-stack", identitySubstitution: "stable-apply-proxy-not-cache-original",
++        coverageLimit: "preacquired-and-other-module-copies-unobserved; counted-gaps-incomplete; no-whole-process-claim" };
++    };
 +    const recordProviderDiagnostic = (resolved, loaderBefore) => {
++      producer.active = false;
 +      let diagnostic;
 +      try {
 +        const ambient = getActivePluginRegistry();
@@ -754,9 +889,11 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +          linkageDiagnostic: { ...linkageDiagnostic, complete: Boolean(linkageDiagnostic?.inputs?.candidateRootEstablished &&
 +            ["source", "built"].includes(linkageDiagnostic.inputs.hostModuleURLClass) &&
 +            linkageDiagnostic.inputs.pluginSdkResolution !== "other" && linkageDiagnostic.inputs.devSourceRootKind !== "other" &&
-+            linkageDiagnostic.publicTarget?.publicEntry && linkageDiagnostic.current && !linkageDiagnostic.checkOverflow &&
++            linkageDiagnostic.artifactSelection?.basis === "immutable-package-export-default-artifact-not-host-resolution" &&
++            linkageDiagnostic.publicTarget?.publicEntry === "dist-process-runtime" && linkageDiagnostic.current && !linkageDiagnostic.checkOverflow &&
 +            !linkageDiagnostic.diagnosticError && (!linkageDiagnostic.firstRejection || linkageDiagnostic.firstRejection.targetClass !== "unavailable")) },
-+          sourceTransforms: { before: transformTargets(loaderBefore, owner), after: transformTargets(after, owner) },
++          sourceTransforms: { before: transformTargets(loaderBefore), after: transformTargets(after) },
++          producerDiagnostic: producerReport(after),
 +          sdkResolverFailures: sdkResolverFailures.map((entry) => ({ stage: entry.stage, moduleClass: diagPathClass(entry.modulePath), error: diagError(entry.error) })), sdkResolverFailuresTruncated: sdkResolverFailureCount > 4,
 +          minimalGateway: diagEnum(process.env.OPENCLAW_TEST_MINIMAL_GATEWAY, ["0", "1"]),
 +          skipChannels: diagEnum(process.env.OPENCLAW_SKIP_CHANNELS, ["0", "1"]),
@@ -782,6 +919,7 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +        diagnostic.checkpointError === undefined && diagnostic.ownerRegistry?.diagnosticsTruncated === false &&
 +        (diagnostic.ambientRegistry === "same-object" || diagnostic.ambientRegistry?.diagnosticsTruncated === false) &&
 +        diagnostic.sdkResolverFailuresTruncated === false && diagnostic.linkageDiagnostic?.complete === true &&
++        diagnostic.producerDiagnostic?.complete === true &&
 +        diagnostic.sourceTransforms?.before?.incomplete === false && diagnostic.sourceTransforms?.after?.incomplete === false;
 +    };
 +    async function boot() {
@@ -1010,7 +1148,7 @@ index 0000000000000000000000000000000000000000..9c543ee4cf8282a5b551e25603ac33e6
 +    if (hostsJoined) {
 +      nativeHooks?.deregister(); resolverSpy.mockRestore();
 +      delete globalThis[Symbol.for(bridgeKey)];
-+      factorySpy.mockRestore(); workerResolverSpy?.mockRestore();
++      factorySpy.mockRestore(); workerResolverSpy?.mockRestore(); producerSpy?.mockRestore();
 +    }
 +    const nativeScenarioPassed = sequencePassed && !failed && cleanupErrors.length === 0;
 +    const passed = nativeScenarioPassed && diagnosticComplete;

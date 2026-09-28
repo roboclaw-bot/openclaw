@@ -256,8 +256,8 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = f8d822a1f3486facea30fffe8dbe18ced437a361
-            test "$(git rev-parse HEAD^1^{tree})" = 1a44c3f78a7e13ca337390dea20650a72a231d6d
+            test "$(git show -s --format=%P HEAD)" = 0cb5f8f36a2d58c31bd820f00f87c9c23bde7095
+            test "$(git rev-parse HEAD^1^{tree})" = 17ffcaa921a4758b0b2ec3c0a3db8272a609f8aa
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
           M	.github/proof-inputs/pr135838/publication/binding.json
