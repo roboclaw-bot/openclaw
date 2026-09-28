@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Hosted continuation of the actual retained seven commits; never replay them.
+# Hosted continuation of the actual retained eight commits; never replay them.
 set -euo pipefail
 public_head=fd0b54a58f93b68a49eb07695705cd770ebb91b1
 base=0edae198d278686e16426f7ad254d0341bd6e3d3
-replayed_head=a95aa9917bedf89d80d41f089b508a3a1658c4ae
-replayed_tree=b1c1331382cae5f993b46cc0e1495e9ba60d690d
-tree='4e02b1417735ecfa62c645c427d44108cdf98d62'
+replayed_head=b99494f43807dccc858baef1fc169d2f2c2d33e5
+replayed_tree=4e02b1417735ecfa62c645c427d44108cdf98d62
+tree='dcf5d717b4a29b6b82d67d3acb57bf3f55ab300a'
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -46,7 +46,7 @@ test "$SUITE" = provider-rebase-focused
 test "$BASE_SHA" = "$public_head"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = 'eedd56d1f82ce5620e3703ee28e8a875607e64fe31d9100a48bd66e3c800e549'
+test "$PATCH_SHA256" = '4bb4a47f60de15bde0794c25eaa2a5bc8310861f26c6b082920b966a0623a746'
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -111,7 +111,7 @@ for item in json.loads(Path(sys.argv[1]).read_text())['sourceChecks']:
 PY
 }
 # Compare raw original author (including date/timezone) and message bytes.
-# Each retained commit must be one parent in the exact seven-commit tree chain.
+# Each retained commit must be one parent in the exact eight-commit tree chain.
 assert_retained_history() {
   python3 - "$payload" "$1" <<'PY'
 from pathlib import Path
@@ -120,7 +120,7 @@ m=json.loads(Path(sys.argv[1]).read_text()); head=sys.argv[2]
 assert head==m['replayedHead']
 def git(*a):return subprocess.check_output(['git',*a])
 actual=git('rev-list','--reverse',m['newMain']+'..'+head).decode().splitlines()
-assert len(actual)==len(m['steps'])==7, actual
+assert len(actual)==len(m['steps'])==8, actual
 parent=m['newMain']; result=[]
 for sha,s in zip(actual,m['steps'],strict=True):
     raw=git('cat-file','commit',sha); assert raw==base64.b64decode(s['rawBase64'],validate=True)
@@ -147,7 +147,7 @@ assert_commit() {
   test "$(git show -s --format='%an <%ae>|%cn <%ce>' HEAD)" = 'roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>|roboclaw-bot <309084314+roboclaw-bot@users.noreply.github.com>'
   git diff --quiet HEAD
   assert_retained_history "$(cat "$evidence/rebased-head.txt")" > "$evidence/actual-replay-chain.json"
-  test "$(git rev-list --count "$base..HEAD")" = 8
+  test "$(git rev-list --count "$base..HEAD")" = 9
   test -z "$(git rev-list --merges "$base..HEAD")"
   git cat-file commit HEAD | python3 -c 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read().split(bytes([10,10]),1)[1])' > "$evidence/final-message.txt"
   cmp "$RUNNER_TEMP/commit-message.txt" "$evidence/final-message.txt"
@@ -187,10 +187,10 @@ import base64,hashlib,json,sys
 r=json.loads(Path(sys.argv[1]).read_text())['repair']
 assert set(r)=={'path','mode','sha256','bytes','base64'} and r['path']=='post-rebase-repair.patch' and r['mode']=='100644'
 data=base64.b64decode(r['base64'],validate=True)
-assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='a7cdaedce92caf1359a2326ac0d36179e81a709854cf883e43bbf7cf4aae16da'
+assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']=='d387bcdea1b40efcfacc735ae8ae016e1da51a2595d63df025635844def631c9'
 Path(sys.argv[2]).write_bytes(data)
 PY
-    # Public fd0 carries authoritative B prerequisites, but not private A95.
+    # Public fd0 carries authoritative B prerequisites, but not private b994.
     # Reject graft/replace/shallow semantics before bundle admission or import.
     test -z "$(git for-each-ref refs/replace --format='%(refname)')"
     test ! -s .git/info/grafts
@@ -200,13 +200,18 @@ PY
 from pathlib import Path
 import base64,hashlib,json,sys
 outer=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);r=e/'retained';r.mkdir(exist_ok=False)
-assert outer['schema']==3 and outer['mode']=='retained-seven-history-publication-fence'
-assert outer['status']=='PARENT_REVIEWED_FORMAT_ADOPTED'
-assert outer['finalTree']=='4e02b1417735ecfa62c645c427d44108cdf98d62'
+assert outer['schema']==3 and outer['mode']=='retained-eight-history-owner-repair'
+assert outer['status']=='PARENT_REVIEWED_OWNER_REPAIR_FORMAT_ADOPTED'
+assert outer['finalTree']=='dcf5d717b4a29b6b82d67d3acb57bf3f55ab300a'
 assert outer['formatAdoption']['parentReviewedAndAdopted'] is True
-assert outer['replayedHead']=='a95aa9917bedf89d80d41f089b508a3a1658c4ae'
-assert len(outer['steps'])==7
+assert outer['replayedHead']=='b99494f43807dccc858baef1fc169d2f2c2d33e5'
+assert len(outer['steps'])==8
+assert outer['repairPaths']==['extensions/crabbox/src/crabbox-worker-prepared-image.test.ts', 'extensions/crabbox/src/crabbox-worker-warm-image-allocation.test.ts', 'extensions/crabbox/src/crabbox-worker-warm-image-capture.ts']
+assert outer['ownerRepairAdjudication']['greenPassed'] is True
+assert outer['ownerRepairAdjudication']['canonicalFormatPassed'] is True
+assert outer['formatAdoption']['formattedTree']==outer['finalTree']
 m=outer['parentNative']
+assert m['steps']==outer['steps']
 for x in m['retained']:
     assert set(x)=={'path','mode','bytes','sha256','base64'} and x['mode']=='100644'
     assert Path(x['path']).name==x['path'] and x['path'] not in ('','.','..')
@@ -214,7 +219,7 @@ for x in m['retained']:
     assert len(data)==x['bytes'] and hashlib.sha256(data).hexdigest()==x['sha256']
     target=r/x['path'];assert not target.exists();target.write_bytes(data)
 """Pure artifact/data validation. No Git, source modules, hooks, or subprocesses."""
-import hashlib,json,re
+import base64,hashlib,json,re
 
 REQUIRED=[
  'committed-candidate.bundle','committed-candidate.json','committed-head.txt','rebased-head.txt',
@@ -225,14 +230,11 @@ REQUIRED=[
  'format.command.txt','format.result.json','format.log','format.phase.json',
  'controller-workflow.yml','controller-recipe.sh','rebase-payload.json','controller-identity.txt',
  'run.json','step-outcomes.json','actual-replay-chain.json',
+ 'eight-commit-raw-receipt.json','tests.phase.json','warm-provider-siblings.result.json','warm-provider-siblings.log',
+ 'focused.result.json','retirement-custody.result.json','capture-custody.result.json','post-publication-control.result.json','authority-full.result.json',
+ 'focused.log','retirement-custody.log','capture-custody.log','post-publication-control.log','authority-full.log',
 ]
-MESSAGE=b'''fix(workers): repair warm-image lint and private test boundaries
-
-Preserve native worker admission coverage through the existing private SQLite test facade; make capture skip returns explicit without changing behavior.
-
-Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
-Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
-'''
+MESSAGE=b'fix(workers): fence reusable image publication with live authority\n\nKeep returned checkpoint custody independent while requiring live source authority at reusable publication admission.\n\nCo-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>\nCo-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>\n'
 def verify_retained(m,files):
     assert set(files)==set(REQUIRED)
     def j(p):return json.loads(files[p])
@@ -243,8 +245,8 @@ def verify_retained(m,files):
     assert p['artifactName']=='pr159178-rebase-evidence'
     assert p['runStatus']=='completed' and p['jobStatus']=='completed'
     # Failure after retention is valid custody, never a claim of passing tests.
-    assert p['runConclusion'] in ('success','failure','cancelled','timed_out')
-    assert p['jobConclusion'] in ('success','failure','cancelled','timed_out')
+    assert p['runConclusion']=='failure'
+    assert p['jobConclusion']=='failure'
     for key in ('runId','attempt','jobId','artifactId'):
         assert isinstance(p[key],int) and not isinstance(p[key],bool) and p[key]>0
     assert re.fullmatch('[0-9a-f]{40}',p['controller'])
@@ -267,8 +269,12 @@ def verify_retained(m,files):
         assert digest(path)==expected[key]
     native=j('rebase-payload.json')
     assert native['finalTree']==m['tree'] and native['replayedHead']==m['parent'] and native['newMain']==m['base']
-    assert native['sourceChecks']==m['sourceChecks'] and native['changedPaths']==m['changedPaths']
-    assert native['nativeCustody']==m['settledNativeCustody'] and native['formatAdoption']==m['formatAdoption']
+    assert native['schema']==3 and native['mode']=='retained-seven-history-publication-fence'
+    assert native['status']=='PARENT_REVIEWED_FORMAT_ADOPTED'
+    assert native['steps']==m['history'] and len(native['steps'])==7
+    # Prior seven-parent custody remains exact opaque data: never execute it.
+    assert len(files['rebase-payload.json'])==1457718
+    assert digest('rebase-payload.json')=='eedd56d1f82ce5620e3703ee28e8a875607e64fe31d9100a48bd66e3c800e549'
     run=j('run.json')
     assert run['runId']==str(p['runId']) and run['attempt']==str(p['attempt']) and run['controller']==p['controller']
     outcomes=j('step-outcomes.json')
@@ -287,29 +293,57 @@ def verify_retained(m,files):
     assert len(starts)==1
     start=starts[0]
     assert any(x.get('event')=='child_exit' and x.get('sid')==start['sid'] and x.get('child_id')==start['child_id'] and x.get('code')==0 for x in trace)
-    replay=j('actual-replay-chain.json');assert len(replay)==6
+    replay=j('actual-replay-chain.json');assert len(replay)==7
     for actual,s in zip(replay,m['history'],strict=True):
-        assert actual['actual']==s['commit'] and actual['original']==s['original'] and actual['tree']==s['expectedRebasedTree']
+        assert actual['actual']==s['expectedActual'] and actual['tree']==s['expectedRebasedTree']
+        assert actual['emptyOriginal']==s['emptyOriginal']
         assert actual['authorAndMessagePreserved'] is True
     assert j('format.result.json')['endedAt']<=j('normal-hook-commit.result.json')['startedAt']
     assert j('normal-hook-commit.result.json')['endedAt']<=j('committed-history-bundle.result.json')['startedAt']
     assert j('committed-history-bundle.result.json')['endedAt']<=j('committed-history-verify.result.json')['startedAt']
 
+    assert m['history']==m['steps'][:7]
+    rows=j('eight-commit-raw-receipt.json');assert len(rows)==8
+    parent=m['base'];trees=[]
+    for row,s in zip(rows,m['steps'],strict=True):
+        raw=base64.b64decode(row['rawBase64'],validate=True)
+        assert raw==base64.b64decode(s['rawBase64'],validate=True)
+        assert hashlib.sha1(b'commit '+str(len(raw)).encode()+bytes([0])+raw).hexdigest()==row['commit']==s['expectedActual']
+        assert hashlib.sha256(raw).hexdigest()==row['rawSha256']
+        h,msg=raw.split(bytes([10,10]),1);lines=h.splitlines()
+        assert [x[7:].decode() for x in lines if x.startswith(b'parent ')]==[parent]
+        tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '));trees.append(tree)
+        assert tree==s['expectedRebasedTree']
+        assert next(x for x in lines if x.startswith(b'author '))==base64.b64decode(s['authorBase64'],validate=True)
+        assert msg==base64.b64decode(s['messageBase64'],validate=True)
+        parent=row['commit']
+    assert parent==m['commit'] and trees[-1]==m['tree'] and trees[1]==trees[2]
+    assert outcomes['tests']['outcome']==outcomes['tests']['conclusion']=='failure'
+    assert outcomes['export']['outcome']==outcomes['export']['conclusion']=='skipped'
+    assert m['verifiedCandidateExportExpected'] is False
+    assert j('tests.phase.json')['exitStatus']==1
+    failed=j('warm-provider-siblings.result.json')
+    assert failed['nativeExitStatus']==1 and failed['teeExitStatus']==0
+    for label in ('focused','retirement-custody','capture-custody','post-publication-control','authority-full'):
+        result=j(label+'.result.json')
+        assert result['nativeExitStatus']==0 and result['teeExitStatus']==0
+    assert j('committed-history-verify.result.json')['endedAt']<=j('tests.phase.json')['startedAt']<=failed['startedAt']
+
 
 verify_retained(m,{x:(r/x).read_bytes() for x in REQUIRED})
 assert m['commit']==outer['replayedHead'] and m['tree']==outer['rebasedTree'] and m['base']==outer['newMain']
-assert len((r/'committed-candidate.bundle').read_bytes())==57469
-assert m['bundleSha256']=='d8be63b0d1fe3037902f16d08fca34e4527883441103183c170db636e2c8a9bc'
-assert m['producer']['controller']=='49586e7f99f93ff4ee26d3fd2d6992fb3bb2029a'
-assert m['producer']['runId']==36344284562 and m['producer']['attempt']==1
-assert m['producer']['artifactId']==10940650607
-assert m['producer']['artifactDigest']=='sha256:1a29ccbcf448d9d97ff43b43ae9119325903047b1773df8f4417856ce6ee5549'
+assert len((r/'committed-candidate.bundle').read_bytes())==64619
+assert m['bundleSha256']=='f9fa60fdbc8180abeb3f2f43f18072e5fccb4617cc8077faff150ef2693f38bc'
+assert m['producer']['controller']=='79564b780aaf7d8de89e10897840125be868d40e'
+assert m['producer']['runId']==36359654197 and m['producer']['attempt']==1
+assert m['producer']['artifactId']==10945078487
+assert m['producer']['artifactDigest']=='sha256:ebc5aabd2312f4319c9f8b39b8d133c5d48ce5267a2aa84e52853176faec55fc'
 (e/'parent-producer-custody.json').write_text(json.dumps(m['producer'],indent=2)+chr(10))
 PY
     run_logged retained-bundle-verify git bundle verify "$evidence/retained/committed-candidate.bundle"
     run_logged retained-bundle-import git bundle unbundle "$evidence/retained/committed-candidate.bundle"
     assert_retained_history "$replayed_head" > "$evidence/actual-replay-chain.json"
-    # One union covers B, all seven retained states, and future repair paths.
+    # One union covers B, all eight retained states, and future repair paths.
     # Every retained state must retain the audited base attribute inventory;
     # the repair cannot change attributes.
     python3 - "$payload" "$evidence" "$RUNNER_TEMP/post-rebase-repair.patch" <<'PY'
@@ -362,6 +396,7 @@ for label,args in [('forward',[]),('reverse',['--reverse'])]:
         assert (added.isdigit() and deleted.isdigit()) or (added==deleted==b'-')
         assert path and path.rsplit(b'/',1)[-1]!=b'.gitattributes', 'repair changes attributes'
         repair_paths.add(path)
+assert sorted(p.decode() for p in repair_paths)==m['repairPaths'], 'owner repair scope mismatch'
 paths.update(repair_paths)
 ordered=sorted(paths); assert ordered, 'empty attribute proof'
 union=save('attribute-audit-paths.nul',b''.join(p+bytes([0]) for p in ordered))
@@ -427,7 +462,7 @@ PY
     test "$(git rev-parse HEAD)" = "$(cat "$evidence/rebased-head.txt")"
     git diff --cached --name-only --diff-filter=ACMR -z "$base" > "$evidence/format-paths.nul"
     mapfile -d '' -t files < "$evidence/format-paths.nul"
-    test "${#files[@]}" -eq 54
+    test "${#files[@]}" -eq 56
     python3 - "$payload" "$evidence/format-paths.nul" <<'PY'
 from pathlib import Path
 import json,sys
@@ -448,9 +483,9 @@ PY
     hook_path="$(git config --get core.hooksPath || true)"
     test -z "$hook_path" || test "$hook_path" = git-hooks
     cat > "$RUNNER_TEMP/commit-message.txt" <<'MESSAGE'
-fix(workers): fence reusable image publication with live authority
+fix(workers): keep project teardown within cleanup custody
 
-Keep returned checkpoint custody independent while requiring live source authority at reusable publication admission.
+Require captured logical source authority for project capture admission after cleanup collection; preserve late-image and ambiguous capture custody.
 
 Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>
 Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>
@@ -478,8 +513,8 @@ for commit in subprocess.check_output(['git','rev-list','--reverse',sys.argv[1]+
     assert hashlib.sha1(b'commit '+str(len(raw)).encode()+bytes([0])+raw).hexdigest()==commit
     (e/('raw-'+commit+'.commit')).write_bytes(raw)
     rows.append({'commit':commit,'rawSha256':hashlib.sha256(raw).hexdigest(),'rawBase64':base64.b64encode(raw).decode()})
-assert len(rows)==8
-(e/'eight-commit-raw-receipt.json').write_text(json.dumps(rows,indent=2)+chr(10))
+assert len(rows)==9
+(e/'nine-commit-raw-receipt.json').write_text(json.dumps(rows,indent=2)+chr(10))
 PY
     # Capture C at its producer before any tests/types can fail. It is retained
     # history, not a passing candidate; later lanes must consume this exact C.
@@ -488,7 +523,7 @@ PY
     jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$replayed_head" --arg base "$base" --arg tree "$tree" \
       --arg bundle "$(sha256sum "$evidence/committed-candidate.bundle" | cut -d ' ' -f1)" \
       --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
-      '{commit:$commit,parent:$parent,base:$base,tree:$tree,bundleSha256:$bundle,controller:$controller,runId:$run,attempt:$attempt,normalHookCommit:true,runtimeValidation:"NOT YET ESTABLISHED",scope:"Exact eighth commit retained at producer; not verified-candidate proof"}' \
+      '{commit:$commit,parent:$parent,base:$base,tree:$tree,bundleSha256:$bundle,controller:$controller,runId:$run,attempt:$attempt,normalHookCommit:true,runtimeValidation:"NOT YET ESTABLISHED",scope:"Exact ninth commit retained at producer; not verified-candidate proof"}' \
       > "$evidence/committed-candidate.json"
     ;;
   tests)
@@ -546,10 +581,10 @@ PY
     run_logged bundle-verify git bundle verify "$RUNNER_TEMP/candidate.bundle"
     jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$(cat "$evidence/rebased-head.txt")"       --arg base "$base" --arg publicHead "$public_head" --arg tree "$tree" --arg payload "$PATCH_SHA256"       --arg suite "$SUITE" --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT"       --arg bundle "$(sha256sum "$RUNNER_TEMP/candidate.bundle" | cut -d ' ' -f1)"       --slurpfile replay "$evidence/actual-replay-chain.json"       '{commit:$commit,parent:$parent,base:$base,publicHead:$publicHead,tree:$tree,payloadSha256:$payload,suite:$suite,
         controller:$controller,runId:$run,attempt:$attempt,bundleSha256:$bundle,replay:$replay[0],
-        scope:"retained seven-commit history plus ordinary eighth publication fence and native provider/production-type/boundary proof; full lint and plugin/root test types remain a separate same-commit gate; not build/SDK/updater/native PR CI",
+        scope:"retained eight-commit history plus ordinary ninth owner repair and native provider/production-type/boundary proof; full lint and plugin/root test types remain a separate same-commit gate; not build/SDK/updater/native PR CI",
         declaredValidationScope:{focusedAllocationCases:1,pairedRetirementCases:2,pairedCaptureCases:11,postPublicationControlCases:1,groupedAuthorityFiles:3,pluginSiblingFiles:13,coreSiblingFiles:2},
         observedCounts:"Read native logs; selectors and file counts are not observed passes",
-        hookProof:"Normal eighth repair commit with canonical pre-commit; all seven raw parent commits are unchanged"}' > "$RUNNER_TEMP/candidate.json"
+        hookProof:"Normal ninth repair commit with canonical pre-commit; all eight raw parent commits are unchanged"}' > "$RUNNER_TEMP/candidate.json"
     cp "$RUNNER_TEMP/candidate.json" "$evidence/candidate.json"
     ;;
   *) exit 2 ;;
