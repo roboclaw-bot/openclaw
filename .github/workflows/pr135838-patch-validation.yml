@@ -249,22 +249,17 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'c0aeafdd22fa4928456b23317cff1cea01dc0fc9'
-            test "$(git rev-parse HEAD^1^{tree})" = '1feeedf7470ab69a8d7f552a0f90d48bd5adf532'
+            test "$(git show -s --format=%P HEAD)" = cc1cd5448b7be6552334624a82e866255077eb7c
+            test "$(git rev-parse HEAD^1^{tree})" = 8f3d72933bdd3b95caa058b732795bbddd67c438
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            cat > "$evidence/expected-controller-paths.txt" <<'PATHS'
-          M	.github/proof-inputs/pr135838/provider-resume-api.sh
+            cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
           M	.github/proof-inputs/pr135838/provider-resume-build.sh
-          M	.github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh
-          M	.github/proof-inputs/pr135838/provider-resume-test-types-a.sh
-          M	.github/proof-inputs/pr135838/provider-resume-test-types-b.sh
-          M	.github/proof-inputs/pr135838/provider-same-commit-source.sh
-          M	.github/proof-inputs/pr135838/provider-same-commit.payload.json
+          A	.github/proof-inputs/pr135838/publication/artifact.py
           M	.github/workflows/pr135838-patch-validation.yml
-          PATHS
+          PUBLICATION_PATHS
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
-            for path in .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/workflows/pr135838-patch-validation.yml; do
-              test "$(git ls-tree HEAD "$path" | cut -d ' ' -f1)" = 100644
+            for path in .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/proof-inputs/pr135838/publication/artifact.py .github/workflows/pr135838-patch-validation.yml; do
+              test "$(git ls-tree HEAD "$path" | cut -d " " -f1)" = 100644
             done
             cp .github/proof-inputs/pr135838/provider-same-commit.payload.json "$RUNNER_TEMP/same-commit-payload.json"
             cp .github/proof-inputs/pr135838/provider-same-commit-source.sh "$RUNNER_TEMP/same-commit-source.sh"
@@ -272,7 +267,7 @@ jobs:
             test "$(sha256sum "$RUNNER_TEMP/same-commit-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
-              provider-resume-build) recipe_sha='72f10d0019b068ce893cca81ae1fd63f21960cab1d31bcffb00abb1a9890d6d2' ;;
+              provider-resume-build) recipe_sha='cc72dc5b2f3d0e24acddb77fbeb0d5a1e37584d9a98369bc089a66136e10bd27' ;;
               provider-resume-api) recipe_sha='7928f74ef3e9792512e26841933b0b5b1abce8bd133a14d839ecdaf1da18a0d1' ;;
               provider-resume-test-types-a) recipe_sha='bb3c2ac007225db5c21d269b35aac429ba1c3d60b6ac51e3d083d102a7c761b4' ;;
               provider-resume-test-types-b) recipe_sha='a40a5f9010c89dad1789b7ca692c491e93a5ab92ac3dbf441310cb2ac431a8e3' ;;
@@ -282,6 +277,10 @@ jobs:
             cp "$RUNNER_TEMP/same-commit-payload.json" "$RUNNER_TEMP/same-commit-source.sh" "$RUNNER_TEMP/validate-candidate.sh" "$evidence/"
             cp .github/workflows/pr135838-patch-validation.yml "$evidence/controller-workflow.yml"
             git show -s --format='%H%n%P%n%T' HEAD > "$evidence/controller-identity.txt"
+            if [[ "$SUITE" == provider-resume-build ]]; then
+              cp .github/proof-inputs/pr135838/publication/artifact.py "$RUNNER_TEMP/publication-artifact.py"
+              test "$(sha256sum "$RUNNER_TEMP/publication-artifact.py" | cut -d " " -f1)" = 7c5c33d9272644bbd129a02fd69d852978e5ff25abd2d2eee1514dbc793ad1be
+            fi
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -596,6 +595,7 @@ jobs:
             ${{ runner.temp }}/candidate.json
             ${{ runner.temp }}/candidate-sdk-api.json
             ${{ runner.temp }}/candidate-sdk-api.txt
+            ${{ runner.temp }}/candidate-built-dist.zip
       - name: Preserve native rebase evidence on every outcome
         if: always() && inputs.suite == 'provider-rebase-focused'
         env:
