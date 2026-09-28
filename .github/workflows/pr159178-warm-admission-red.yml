@@ -1,5 +1,5 @@
-name: PR 159178 warm-state publication-fence GREEN proposal capture
-run-name: pr159178 warm-state publication-fence GREEN proposal capture ${{ inputs.controller_sha }}
+name: PR 159178 reserve-expiry teardown RED diagnostic capture
+run-name: pr159178 reserve-expiry teardown RED diagnostic capture ${{ inputs.controller_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -25,11 +25,10 @@ jobs:
       WORKFLOW_SHA: ${{ github.workflow_sha }}
       GIT_NO_LAZY_FETCH: "1"
       BASE_SHA: fd0b54a58f93b68a49eb07695705cd770ebb91b1
-      PRODUCT_BASE_SHA: a95aa9917bedf89d80d41f089b508a3a1658c4ae
-      CANDIDATE_TREE: b1c1331382cae5f993b46cc0e1495e9ba60d690d
-      FIXED_PRODUCTION_TREE: 7acd228cb5655502997c49011342a1c32f2b49ea
-      REPRO_TREE: 671972f8926b4e954e39c37a56189949d21165a5
-      CAPTURE_SHA256: 55fa5eb96b48078a4089c9c30309937115713f687c3c4796da19bf951e8e3fca
+      PRODUCT_SHA: b99494f43807dccc858baef1fc169d2f2c2d33e5
+      PRODUCT_TREE: 4e02b1417735ecfa62c645c427d44108cdf98d62
+      REPRO_TREE: b36cbe34ac7f273a7c03205bedabbf7f561a40d7
+      CAPTURE_SHA256: f1c21ff850100102a4bdc892b7f0bebe215bbb5a92606abc9eb6a387f3989e19
     steps:
       - name: Record run identity and guard execution
         id: guard
@@ -37,15 +36,15 @@ jobs:
           HOST_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-publication-fence-green"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
           mkdir -p "$evidence"
           jq -n --arg controller "$CONTROLLER_SHA" --arg workflow "$WORKFLOW_SHA" \
             --arg host "$HOST_ENVIRONMENT" --arg os "$RUNNER_OS" --arg repository "$GITHUB_REPOSITORY" --arg run "$GITHUB_RUN_ID" \
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg base "$BASE_SHA" \
-            --arg candidate "$CANDIDATE_TREE" --arg fixed "$FIXED_PRODUCTION_TREE" --arg repro "$REPRO_TREE" --arg product "$PRODUCT_BASE_SHA" \
+            --arg productTree "$PRODUCT_TREE" --arg repro "$REPRO_TREE" --arg product "$PRODUCT_SHA" \
             '{repository:$repository,runId:$run,attempt:$attempt,controllerSha:$controller,
-              workflowSha:$workflow,runtimeHead:$base,productionBaseSha:$product,candidateTree:$candidate,fixedProductionDocsTree:$fixed,reproductionTree:$repro,hostEnvironment:$host,runnerOS:$os,
-              classification:"UNCLASSIFIED publication-fence GREEN proposal; fd0 HEAD with fixed A95 production/docs bytes plus unchanged RED fixture, not an actual repaired production commit or green validation"}' \
+              workflowSha:$workflow,runtimeHead:$base,productCommit:$product,productTree:$productTree,reproductionTree:$repro,hostEnvironment:$host,runnerOS:$os,
+              classification:"UNCLASSIFIED teardown diagnostic; fd0 HEAD with genuine b994 product bytes and diagnostic prepared-image test overlay; not b994 execution, a ninth commit, or observed RED"}' \
             > "$evidence/identity.json"
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$CONTROLLER_SHA" = "$GITHUB_SHA"
@@ -66,29 +65,35 @@ jobs:
         id: preserve
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-publication-fence-green"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
           test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
-          test "$(git rev-parse HEAD^)" = 057f22a18142b6368f105570b175cd1213e99a5d
+          test "$(git rev-parse HEAD^)" = 79564b780aaf7d8de89e10897840125be868d40e
           git diff --quiet HEAD
           git diff --name-status HEAD^ HEAD > "$evidence/controller-delta.txt"
-          printf 'M\t%s\nA\t%s\nM\t%s\n' \
+          printf 'M\t%s\n' \
             .github/proof-inputs/pr159178-warm-admission-red/capture.sh \
             .github/proof-inputs/pr159178-warm-admission-red/production-docs.patch.b64 \
+            .github/proof-inputs/pr159178-warm-admission-red/publication-fence-tests.patch.b64 \
             .github/workflows/pr159178-warm-admission-red.yml > "$evidence/expected-controller-delta.txt"
           cmp "$evidence/expected-controller-delta.txt" "$evidence/controller-delta.txt"
           input=.github/proof-inputs/pr159178-warm-admission-red
           cp "$input/capture.sh" "$evidence/capture.sh"
           cp .github/workflows/pr159178-warm-admission-red.yml "$evidence/workflow.yml"
-          base64 --decode "$input/a95-production.patch.b64" > "$evidence/a95-production.patch"
-          base64 --decode "$input/production-docs.patch.b64" > "$evidence/production-docs.patch"
-          base64 --decode "$input/publication-fence-tests.patch.b64" > "$evidence/publication-fence-tests.patch"
+          # Historical a95-production.patch.b64 is unchanged and is NOT decoded/applied.
+          test "$(sha256sum "$input/a95-production.patch.b64" | cut -d ' ' -f1)" = cfdbab83be0c4ff107c96aad7ed193bee8ad08b9aad4183502627cfe614c4a71
+          # Existing transport filename now carries the FULL fd0 -> genuine b994 delta.
+          base64 --decode "$input/production-docs.patch.b64" > "$evidence/fd0-to-b994.patch"
+          base64 --decode "$input/publication-fence-tests.patch.b64" > "$evidence/diagnostic-test.patch"
+          sha256sum "$input/capture.sh" "$input/production-docs.patch.b64" \
+            "$input/publication-fence-tests.patch.b64" .github/workflows/pr159178-warm-admission-red.yml \
+            > "$evidence/controller-files.sha256"
           cd "$evidence"
           printf '%s  %s\n' \
-            ab6489032d4c91fa7a897ba4a159779b39bb9cf1b4170b7976ab19265ea07dab a95-production.patch \
-            159e901ffea24da636e365e89d2d915f4f1091eac30128b8855c214ae8c217f0 production-docs.patch \
-            784c75bdc0d3500794df1608376ac7df4ba42ffad29e8da087a7296117878b52 publication-fence-tests.patch \
+            66dd6d87202f211aab6ea7a5843d67811c0f1583e95ee569eac7e4d578846478 fd0-to-b994.patch \
+            92bb2d2fb11857d6a2056b81b19620d6e41bc2292c2b2881b30c5cbedf11dc58 diagnostic-test.patch \
             "$CAPTURE_SHA256" capture.sh > inputs.sha256
           sha256sum --check inputs.sha256
+          jq -n '{classification:"EXPECTED OBSERVATIONS ONLY; not native output",genuineRed:"The success row must pass retained I1/choice/demand and closed retry assertions, reach destroy, then fail at post-cleanup image/no-extra-effect assertions with a second capture or old-image loss",fixtureFailure:"Any earlier fixture/state mismatch is not a teardown reproduction",otherOutcomes:"Setup, timeout, source-integrity, type, format, and unrelated control failures are classified independently; native GREEN contradicts the prediction and requires investigation",positiveControls:"Full authority file is unmodified; ambiguous capture retains its selector and must not be relabeled teardown RED"}' > expected-observations.json
       - name: Check out public fd0 without persistent credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -96,58 +101,59 @@ jobs:
           ref: fd0b54a58f93b68a49eb07695705cd770ebb91b1
           fetch-depth: 1
           persist-credentials: false
-      - name: Materialize fixed A95 production and docs with unchanged RED fixture
+      - name: Materialize genuine b994 bytes and exact diagnostic test overlay
         id: materialize
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-publication-fence-green"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           git diff --quiet HEAD
-          git apply --index --check "$evidence/a95-production.patch"
-          git apply --index "$evidence/a95-production.patch"
-          test "$(git write-tree)" = "$CANDIDATE_TREE"
+          git apply --index --check "$evidence/fd0-to-b994.patch"
+          git apply --index "$evidence/fd0-to-b994.patch"
+          test "$(git write-tree)" = "$PRODUCT_TREE"
           git diff --quiet
           git diff --cached --check
-          git apply --index --check "$evidence/production-docs.patch"
-          git apply --index "$evidence/production-docs.patch"
-          test "$(git write-tree)" = "$FIXED_PRODUCTION_TREE"
-          capture_file=extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
-          docs_file=docs/gateway/cloud-workers/warm-images.md
-          printf '%s\n' "$docs_file" "$capture_file" > "$evidence/expected-production-docs-paths.txt"
-          git diff --cached --name-only "$CANDIDATE_TREE" > "$evidence/production-docs-paths.txt"
-          cmp "$evidence/expected-production-docs-paths.txt" "$evidence/production-docs-paths.txt"
-          git diff --quiet "$CANDIDATE_TREE" "$FIXED_PRODUCTION_TREE" -- . ":(exclude)$capture_file" ":(exclude)$docs_file"
-          test "$(sha256sum "$capture_file" | cut -d ' ' -f1)" = 1c9fcbfb79922b0d690c7c0b77856b312db05f9a12c35eb43f73392427f9776f
-          git diff --quiet
-          git diff --cached --check
-          git diff --cached --raw "$CANDIDATE_TREE" > "$evidence/production-docs-delta.raw"
-          git diff --cached --numstat "$CANDIDATE_TREE" > "$evidence/production-docs-delta.numstat"
-          git apply --index --check "$evidence/publication-fence-tests.patch"
-          git apply --index "$evidence/publication-fence-tests.patch"
+          git ls-tree -r HEAD > "$evidence/fd0-tree-manifest.txt"
+          git ls-tree -r "$PRODUCT_TREE" > "$evidence/b994-tree-manifest.txt"
+          git diff --cached --raw > "$evidence/materialization-delta.raw"
+          git diff --cached --numstat > "$evidence/materialization-delta.numstat"
+          git apply --index --check "$evidence/diagnostic-test.patch"
+          git apply --index "$evidence/diagnostic-test.patch"
           test "$(git write-tree)" = "$REPRO_TREE"
-          test_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
-          sibling_file=extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts
-          test "$(git diff --cached --name-only "$FIXED_PRODUCTION_TREE")" = "$test_file"
-          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 70ef3d0941c581a3002944433ee13150f257bcd82971b4feb0f62c670edf6bd8
-          # Tree comparison binds ALL non-test bytes and modes, not only the capture owner.
-          git diff --quiet "$FIXED_PRODUCTION_TREE" "$REPRO_TREE" -- . ":(exclude)$test_file"
+          test_file=extensions/crabbox/src/crabbox-worker-prepared-image.test.ts
+          control_file=extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts
+          test "$(git diff --cached --name-only "$PRODUCT_TREE")" = "$test_file"
+          test "$(sha256sum "$test_file" | cut -d ' ' -f1)" = 1f63de2979e855f8205204d2a4a901e3013f8258b56f848e500dc67b3fea9353
+          # Bind ALL non-test bytes and modes, including unmodified authority controls.
+          git diff --quiet "$PRODUCT_TREE" "$REPRO_TREE" -- . ":(exclude)$test_file"
           git diff --quiet
           git diff --cached --check
-          git ls-tree -r "$CANDIDATE_TREE" > "$evidence/a95-tree-manifest.txt"
-          git ls-tree -r "$FIXED_PRODUCTION_TREE" > "$evidence/fixed-production-docs-tree-manifest.txt"
           git ls-tree -r "$REPRO_TREE" > "$evidence/reproduction-tree-manifest.txt"
-          git diff --cached --raw "$FIXED_PRODUCTION_TREE" > "$evidence/test-only-delta.raw"
-          git diff --cached --numstat "$FIXED_PRODUCTION_TREE" > "$evidence/test-only-delta.numstat"
+          git diff --cached --raw "$PRODUCT_TREE" > "$evidence/test-only-delta.raw"
+          git diff --cached --numstat "$PRODUCT_TREE" > "$evidence/test-only-delta.numstat"
           printf '%s\n' "$(git rev-parse HEAD)" > "$evidence/runtime-head.txt"
           printf '%s\n' "$(git write-tree)" > "$evidence/materialized-tree.txt"
-          cp "$test_file" "$sibling_file" "$docs_file" \
-            extensions/crabbox/src/crabbox-worker-warm-image-admission.test-support.ts \
-            extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts \
-            extensions/crabbox/src/crabbox-worker-warm-image-capture.ts \
-            extensions/crabbox/src/crabbox-worker-warm-image-records.ts \
-            extensions/crabbox/src/crabbox-worker-warm-image-checkpoint.ts \
-            test/helpers/sqlite-worker-admission.ts \
-            test/vitest/vitest.extension-database-workers-paths.mjs "$evidence/"
+          # Exact source readbacks; fixtures are synthetic, never environment/config dumps.
+          files=("$test_file" "$control_file"
+            extensions/crabbox/src/crabbox-worker-warm-image.test-support.ts
+            extensions/crabbox/src/crabbox-state.test-support.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test-support.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-admission.test-support.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-capture.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-records.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-checkpoint.ts
+            extensions/crabbox/src/crabbox-worker-warm-image-store.ts
+            extensions/crabbox/src/crabbox-worker-warm-image.ts
+            extensions/crabbox/src/crabbox-worker-provider.ts
+            test/helpers/sqlite-worker-admission.ts
+            test/vitest/vitest.extension-database-workers-paths.mjs
+            scripts/lib/vitest-resource-reporter.mts
+            package.json pnpm-lock.yaml pnpm-workspace.yaml
+            .github/actions/setup-node-env/action.yml
+            .github/actions/setup-node-env/install-dependencies.sh)
+          sha256sum "${files[@]}" > "$evidence/source-files.sha256"
+          mkdir -p "$evidence/source"
+          cp --parents "${files[@]}" "$evidence/source/"
       - name: Install declared dependencies with canonical setup action
         id: setup
         uses: ./.github/actions/setup-node-env
@@ -159,11 +165,11 @@ jobs:
           cache-mode: "off"
       # No commit: this reproduces reviewed staged bytes on the real public fd0 HEAD.
       # This does not waive the later actual production commit with normal hooks.
-      - name: Capture both full native authority and sibling files without filters
+      - name: Capture full prepared-image and authority files without filters
         id: custody
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-publication-fence-green/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe"
       - name: Capture canonical plugin test types after settled native runtime
@@ -171,39 +177,44 @@ jobs:
         if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-publication-fence-green/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" types
-      - name: Check formatting of exactly three changed files without writes
+      - name: Check exactly the changed diagnostic test without formatting writes
         id: format
         if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
         run: |
           set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-publication-fence-green/capture.sh"
+          recipe="$RUNNER_TEMP/pr159178-expiry-teardown-red/capture.sh"
           test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
           bash "$recipe" format
-      - name: List source docs without mutation after settled native runtime
-        id: docs
-        if: ${{ always() && !cancelled() && steps.setup.outcome == 'success' && steps.materialize.outcome == 'success' && steps.custody.outputs.settled == 'true' }}
-        run: |
-          set -euo pipefail
-          recipe="$RUNNER_TEMP/pr159178-publication-fence-green/capture.sh"
-          test "$(sha256sum "$recipe" | cut -d ' ' -f1)" = "$CAPTURE_SHA256"
-          bash "$recipe" docs
       - name: Record native workflow step outcomes
         if: ${{ always() }}
         env:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr159178-publication-fence-green"
+          evidence="$RUNNER_TEMP/pr159178-expiry-teardown-red"
           mkdir -p "$evidence"
           printf '%s\n' "$STEP_OUTCOMES" > "$evidence/step-outcomes.json"
-          printf '%s\n' 'Unclassified GREEN proposal capture. Predicted 44 passing cases is not observed GREEN. Inspect full native logs, warnings, current return values, timing, all phase statuses and source integrity. Native labels may be ellipsized; expanded fixture labels are not literal log output. Format/docs/type failures retain runtime evidence but block total-green claims. CLI doubles are not cloud proof.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Always upload publication-fence evidence, including failures
+          if [[ -f "$evidence/materialized-tree.txt" ]]; then
+            git rev-parse HEAD > "$evidence/final-runtime-head.txt"
+            git write-tree > "$evidence/final-index-tree.txt"
+            git ls-files --stage > "$evidence/final-index-manifest.txt"
+            status=0
+            { test "$(git rev-parse HEAD)" = "$BASE_SHA" &&
+              test "$(git write-tree)" = "$REPRO_TREE" && git diff --quiet &&
+              sha256sum --check "$evidence/source-files.sha256"; } \
+              > "$evidence/final-source-check.log" 2>&1 || status=$?
+            printf '%s\n' "$status" > "$evidence/final-source-check.status"
+            test "$status" = 0
+          fi
+          printf '%s\n' 'Unclassified expiry-teardown diagnostic. Genuine RED requires reaching destroy after correct retained-state and closed-retry assertions, then failing post-cleanup/no-extra-effects. Earlier mismatch is fixture failure. Inspect raw native logs, resource/time records, exact fixture, all phase statuses and source integrity. No expected count or exit is claimed. Native failure remains job failure. CLI doubles are not cloud proof.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Always upload teardown diagnostic evidence, including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr159178-publication-fence-green-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: pr159178-expiry-teardown-red-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          include-hidden-files: true
           if-no-files-found: error
-          path: ${{ runner.temp }}/pr159178-publication-fence-green/
+          path: ${{ runner.temp }}/pr159178-expiry-teardown-red/
