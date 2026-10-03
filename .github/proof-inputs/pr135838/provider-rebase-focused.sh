@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Fixed hosted proof only. Never substitute tree composition for native history.
 set -euo pipefail
-old=c9921022529005400c41de6580dfabc99b7948dc
-common=0edae198d278686e16426f7ad254d0341bd6e3d3
-base=e433bfda89c486f98dfb03586dacd1e23b6f820b
-replayed_tree=6e181a3dd95b720f9bfbac1b7804c6ce23df431b
-tree=6e181a3dd95b720f9bfbac1b7804c6ce23df431b
+old=5d116aa3f1e0d85f9408d95cce0640926a8d8c60
+common=e433bfda89c486f98dfb03586dacd1e23b6f820b
+base=aa298d3a515ca85dc0970aacda0403d67ec2a097
+replayed_tree=115611651770426c15f52149c21109bbe195f9f5
+tree=115611651770426c15f52149c21109bbe195f9f5
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -46,7 +46,7 @@ test "$SUITE" = provider-rebase-focused
 test "$BASE_SHA" = "$old"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = 95cdf836dba0443825c54c568fc93ee8b1f197fcf825bc3bfdb98c8f3733df6e
+test "$PATCH_SHA256" = f33f2d4d74286fb653626708ff3dba8b9a70fc97af84fa395b2366502cdb3420
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -252,8 +252,51 @@ PY
     test "$(git rev-parse --is-shallow-repository)" = false
     git ls-files --others --directory -z > "$evidence/untracked-before-rebase.nul"
     test ! -s "$evidence/untracked-before-rebase.nul"
-    # Any native conflict not found by the inert preview fails closed.
-    run_logged native-rebase env GIT_TRACE2_EVENT="$evidence/native-rebase.trace2.jsonl" git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com rebase --merge --reapply-cherry-picks --empty=keep --onto "$base" "$common" "$old"
+    # Native Git alone owns commits, authors, messages, empty commits and sequencer state.
+    status=0
+    run_logged native-rebase env GIT_TRACE2_EVENT="$evidence/native-rebase.trace2.jsonl" git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com rebase --merge --reapply-cherry-picks --empty=keep --onto "$base" "$common" "$old" || status=$?
+    mapfile -t conflict_steps < <(jq -r '.steps[] | select(.conflicts | length > 0) | .number' "$payload")
+    for step in "${conflict_steps[@]}"; do
+      test "$status" -eq 1
+      test "$last_native" -eq 1
+      test "$last_tee" -eq 0
+      snapshot "conflict-$step"
+      test "$(cat .git/rebase-merge/orig-head)" = "$old"
+      test "$(cat .git/rebase-merge/onto)" = "$base"
+      test ! -e .git/MERGE_HEAD
+      python3 - "$payload" "$step" "$evidence" <<'PY'
+from pathlib import Path
+import base64,hashlib,json,subprocess,sys
+m=json.loads(Path(sys.argv[1]).read_text()); n=int(sys.argv[2]); e=Path(sys.argv[3]); s=m['steps'][n-1]
+def git(*a):return subprocess.check_output(['git',*a]).decode().strip()
+assert s['number']==n and git('rev-parse','REBASE_HEAD')==s['original']
+assert git('rev-parse','HEAD^{tree}')==s['inputTree']
+assert git('diff','--name-only','--diff-filter=U').splitlines()==s['conflicts']
+rs=[r for r in m['resolutions'] if r['step']==n]
+assert sorted(r['path'] for r in rs if 'stages' in r)==s['conflicts']
+for r in rs:
+    p=Path(r['path']); assert not p.is_absolute() and '..' not in p.parts
+    assert p.is_file() and not p.is_symlink() and all(not a.is_symlink() for a in p.parents)
+    assert r['original']==s['original'] and r['mode']=='100644'
+    if 'stages' in r:
+        assert [git('rev-parse',':'+str(i)+':'+r['path']) for i in [1,2,3]]==r['stages']
+    else:
+        assert git('rev-parse',':'+r['path'])==r['beforeOid']
+    data=base64.b64decode(r['base64'],validate=True)
+    assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']
+    p.write_bytes(data);p.chmod(0o644)
+subprocess.run(['git','add','--',*[r['path'] for r in rs]],check=True)
+assert not git('ls-files','--unmerged')
+assert git('write-tree')==s['expectedRebasedTree']
+subprocess.run(['git','diff','--quiet'],check=True)
+(e/('resolution-'+str(n)+'.json')).write_text(json.dumps({'step':n,'original':s['original'],'tree':s['expectedRebasedTree'],'paths':[r['path'] for r in rs]},indent=2)+chr(10))
+PY
+      status=0
+      run_logged "native-continue-$step" env GIT_EDITOR=: GIT_TRACE2_EVENT="$evidence/native-continue-$step.trace2.jsonl" git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com rebase --continue || status=$?
+    done
+    test "$status" -eq 0
+    test "$last_native" -eq 0
+    test "$last_tee" -eq 0
     assert_no_operation
     test "$(git rev-parse HEAD^{tree})" = "$replayed_tree"
     git diff --quiet HEAD
@@ -292,17 +335,237 @@ PY
     ;;
   tests)
     assert_commit
+    # Reproduce the new-main retry composition defect on this exact candidate with
+    # Product RED removes only two dispatch assertions; the separately hashed owner diagnostic overlay is restored with them.
+    retry_red() (
+      restore_retry_source() {
+        git restore --source=HEAD --worktree -- extensions/crabbox/src/crabbox-worker-provision-commands.ts scripts/lib/failed-trailer.mts scripts/lib/vitest-report-capture.mts scripts/lib/vitest-worker-run.mts scripts/test-projects-run.mts
+      }
+      trap restore_retry_source EXIT
+      test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = c42136cfa676848e3525192b3020ec07c8b93a087dfa116991507d126cece43b
+      test "${OPENCLAW_VITEST_WORKER_CACHE:-}" != 1
+      python3 - "$payload" "$evidence" "$RUNNER_TEMP/outer-observation.json" <<'PY'
+from pathlib import Path
+import json,hashlib,base64,sys,subprocess
+m=json.loads(Path(sys.argv[1]).read_text());r=m['retryRegression'];p=Path(r['path']);e=Path(sys.argv[2])
+assert hashlib.sha256(p.read_bytes()).hexdigest()==r['candidateSha256']
+data=base64.b64decode(r['redBase64'],validate=True)
+assert hashlib.sha256(data).hexdigest()==r['redSha256']
+p.write_bytes(data)
+overlay=json.loads(Path(sys.argv[3]).read_text())
+assert overlay['candidateTree']==m['finalTree']
+paths=['scripts/lib/failed-trailer.mts','scripts/lib/vitest-report-capture.mts','scripts/lib/vitest-worker-run.mts','scripts/test-projects-run.mts']
+assert [entry['path'] for entry in overlay['files']]==paths
+for entry in overlay['files']:
+    target=Path(entry['path'])
+    assert target.is_file() and not target.is_symlink() and all(not p.is_symlink() for p in target.parents)
+    original=subprocess.check_output(['git','show','HEAD:'+entry['path']])
+    assert target.read_bytes()==original and hashlib.sha256(original).hexdigest()==entry['beforeSha256']
+    data=base64.b64decode(entry['base64'],validate=True)
+    assert len(data)==entry['bytes'] and hashlib.sha256(data).hexdigest()==entry['afterSha256']
+    target.write_bytes(data)
+assert subprocess.check_output(['git','diff','--name-only']).decode().splitlines()==sorted([r['path'],*paths])
+(e/'retry-red.patch').write_bytes(subprocess.check_output(['git','diff','--binary','--full-index']))
+PY
+      status=0
+      test ! -e "$evidence/coordinator-red.json"
+      test ! -e "$evidence/coordinator-red.json.capture.json"
+      mkdir "$evidence/outer-invocation"
+      run_logged coordinator-red env PR159178_RED_OUTCOME_DIRECTORY="$evidence/outer-invocation" pnpm test extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts --maxWorkers=1 --testNamePattern 'closes .* backoff without resubmission when invocation authority expires' --reporter=json --reporter="$GITHUB_WORKSPACE/scripts/lib/vitest-report-capture.mts" --outputFile.json="$evidence/coordinator-red.json" || status=$?
+      test "$status" -eq 1
+      test "$last_native" -eq 1
+      test "$last_tee" -eq 0
+      python3 - "$evidence/coordinator-red.json" "$evidence/coordinator-red.json.capture.json" "$GITHUB_WORKSPACE" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
+SUITE = 'Crabbox worker coordinator retries'
+PROJECT = 'extension-database-workers'
+CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
+# Vitest 5.0.1 generateFileHash(FILE, PROJECT, no typecheck/merge label).
+TASK_ID = '1706718556'
+SELECTED = [
+    'closes inspect backoff without resubmission when invocation authority expires',
+    'closes run backoff without resubmission when invocation authority expires',
+]
+SKIPPED = [
+    "retries node enrollment setup only before script output ''",
+    "retries node enrollment setup only before script output 'CRABBOX_PHASE:openclaw-bootstrap-start'",
+    "retries node runtime preparation only before script output ''",
+    'submits profile setup until recovers',
+    'submits profile setup until exhausted',
+    'submits profile setup until script error',
+    'cancels backoff without resubmitting setup or stopping the lease',
+    'recovers during initial inspection',
+    'recovers during readiness inspection',
+    'recovers during lifecycle inspection',
+    'does not retry warmup coordinator timeouts',
+    'recovers heartbeat before warning',
+]
+
+def require(condition, code):
+    if not condition:
+        raise ValueError(code)
+
+def validate_red(report, capture, root):
+    # This is an admission check of native owner facts, never reconstruction of
+    # completion from exit 1 or another later GREEN run.
+    require(type(report) is dict and type(capture) is dict, 'native-report-shape')
+    require(capture.get('ended') == {
+        'reason': 'failed', 'unhandledErrors': 0, 'failedModules': 1, 'suiteErrors': 0,
+    }, 'native-completion')
+    require(capture.get('processTimedOut') is False, 'native-timeout')
+    require(capture.get('ignoreUnhandledErrors') is False, 'native-errors-ignored')
+    require(capture.get('passWithNoTests') is False, 'native-empty-admission')
+    require(type(capture.get('pid')) is int and capture['pid'] > 0, 'native-process-identity')
+    require(capture.get('root') == root, 'native-root')
+    project = {
+        'name': PROJECT, 'namePrefix': '', 'root': root,
+        'config': root + '/' + CONFIG, 'pool': 'openclaw-forks',
+    }
+    require(capture.get('projects') == [project], 'native-project')
+    require(capture.get('modules') == [{
+        **project, 'file': root + '/' + FILE, 'taskId': TASK_ID,
+    }], 'native-module')
+    expected_counts = {
+        'numFailedTests': 2, 'numPassedTests': 0, 'numPendingTests': 12,
+        'numTodoTests': 0, 'numTotalTests': 14,
+        'numFailedTestSuites': 2, 'numPassedTestSuites': 0,
+        'numPendingTestSuites': 0, 'numTotalTestSuites': 2,
+    }
+    require(all(type(report.get(k)) is int and report[k] == v
+                for k, v in expected_counts.items()), 'native-counts')
+    require(report.get('success') is False, 'native-unexpected-success')
+    files = report.get('testResults')
+    require(type(files) is list and len(files) == 1, 'native-file-count')
+    file = files[0]
+    require(type(file) is dict and file.get('name') == root + '/' + FILE,
+            'native-file')
+    require(file.get('status') == 'failed' and file.get('message') == '',
+            'native-file-error')
+    cases = file.get('assertionResults')
+    require(type(cases) is list and len(cases) == 14 and
+            all(type(case) is dict for case in cases), 'native-case-count')
+    require(sorted(case.get('title', '') for case in cases) == sorted(SELECTED + SKIPPED),
+            'native-case-inventory')
+    for case in cases:
+        title = case['title']
+        require(case.get('ancestorTitles') == [SUITE] and
+                case.get('fullName') == SUITE + ' ' + title, 'native-case-identity')
+        if title in SKIPPED:
+            require(case.get('status') == 'skipped' and case.get('failureMessages') == [],
+                    'native-skipped-error')
+            continue
+        require(case.get('status') == 'failed', 'native-selected-status')
+        errors = case.get('failureMessages')
+        require(type(errors) is list and len(errors) == 1 and type(errors[0]) is str,
+                'native-selected-error-count')
+        lines = errors[0].splitlines()
+        require(bool(lines) and re.fullmatch(
+            r'AssertionError: expected .+ to have a length of 1 but got 3', lines[0]
+        ) is not None, 'native-selected-assertion')
+        # Native JSON carries Error.stack, not formatted diffs/log output. Reject
+        # additional non-frame diagnostics smuggled into the one assertion entry.
+        require(all(re.fullmatch(r'\s+at .+', line) is not None for line in lines[1:]),
+                'native-selected-extra-error')
+    return {'admitted': True, 'selectedFailures': 2, 'skipped': 12, 'total': 14,
+            'file': FILE, 'project': PROJECT, 'taskId': TASK_ID}
+
+if __name__ == '__main__':
+    result = validate_red(json.loads(Path(sys.argv[1]).read_text()),
+                          json.loads(Path(sys.argv[2]).read_text()), sys.argv[3])
+    print(json.dumps(result, sort_keys=True))
+PY
+      python3 - "$evidence/outer-invocation" "$GITHUB_WORKSPACE" "$evidence/coordinator-red.json.capture.json" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
+CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
+
+def require(condition, code):
+    if not condition:
+        raise ValueError(code)
+
+def validate_outer(outer, root):
+    require(type(outer) is dict and outer.get('schema') == 'pr159178.outer-invocation.v1', 'outer-schema')
+    require(outer.get('phase') == 'exited' and outer.get('initialized') is True, 'outer-terminal')
+    require(outer.get('cwd') == root and outer.get('entry') == root + '/scripts/test-projects.mts', 'outer-identity')
+    require(type(outer.get('pid')) is int and outer['pid'] > 0, 'outer-pid')
+    require(type(outer.get('invocation')) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', outer['invocation']), 'outer-invocation')
+    for key in ['observationFailed','overflow','errorHandlersSeen','unsafeUnhandledMode','lateExitListener']:
+        require(outer.get(key) is False, 'outer-' + key)
+    require(type(outer.get('drains')) is int and outer['drains'] > 0, 'outer-natural-drain')
+    require(outer.get('terminal') == {'code':1,'captureCallback':False}, 'outer-exit')
+    for key in ['wrapperEntered','wrapperReturned','runnerEntered','runnerReturned','disposalStarted','disposalSettled','summaryReturned','signalsDetached']:
+        require(type(outer.get(key)) is int and outer[key] == 1, 'outer-' + key)
+    for key in ['wrapperErrors','runnerErrors','disposalErrors','fatalEvents']:
+        require(type(outer.get(key)) is int and outer[key] == 0, 'outer-' + key)
+    require(outer.get('wrapperTool') == 'test' and outer.get('workersPresent') is True, 'outer-owner')
+    require(outer.get('plan') == {'count':1,'configs':[CONFIG],'targets':[FILE],'targetCount':1,'reports':False}, 'outer-plan')
+    require(outer.get('preparation') == {'code':0}, 'outer-preparation')
+    require(outer.get('commands') == [{'code':1,'exitedNormally':True,'noOutputTimedOut':False,'signal':None,'groupJoined':True}], 'outer-command')
+    require(outer.get('finalization') == {'reportFailure':False,'signal':None,'hadSummary':True,'hadReports':False}, 'outer-finalization')
+    workers = outer.get('workers')
+    require(type(workers) is list and len(workers) == 1 and type(workers[0]) is dict, 'outer-worker-count')
+    worker = workers[0]
+    require(worker.get('id') == 0 and worker.get('parent') is False, 'outer-worker-identity')
+    require(worker.get('borrows') == 1 and worker.get('disposalCalls') == 1, 'outer-worker-lifetime')
+    require(type(worker.get('requests')) is int and 0 <= worker['requests'] <= worker['borrows'], 'outer-worker-requests')
+    require(worker.get('requests') == worker.get('sends') == worker.get('sendCallbacks'), 'outer-worker-ipc-pending')
+    for key in ['admissionErrors','sendErrors','disposalErrors']:
+        require(type(worker.get(key)) is int and worker[key] == 0, 'outer-worker-' + key)
+    require(worker.get('disposed') == {'id':0,'borrowerCount':1,'settledCount':1,'rejected':0,'compilerJoined':True,'resourcesReleased':True,'channelError':False}, 'outer-worker-settlement')
+    return {'outerCompletedTestFailure':True,'pid':outer['pid'],'invocation':outer['invocation']}
+
+def validate_native_close(capture):
+    facts = capture.get('nativeInvocation')
+    require(type(facts) is dict and facts.get('phase') == 'exited', 'native-close-terminal')
+    for key in ['observationFailed','forcedExit','lateExitListener','lateErrorHandler']:
+        require(facts.get(key) is False, 'native-close-' + key)
+    for key in ['closeRejected','exitRejected','checkedUnhandled','finalUnhandled','fatalEvents','errorHandlersAtExit']:
+        require(type(facts.get(key)) is int and facts[key] == 0, 'native-close-' + key)
+    for prefix in ['close','exit']:
+        calls = facts.get(prefix + 'Calls')
+        require(type(calls) is int and calls >= 1 and facts.get(prefix + 'Settled') == calls,
+                'native-close-' + prefix + '-settlement')
+    require(type(facts.get('drains')) is int and facts['drains'] > 0 and facts.get('exitCode') == 1,
+            'native-close-natural-exit')
+    return True
+
+if __name__ == '__main__':
+    directory = Path(sys.argv[1])
+    entries = list(directory.iterdir())
+    require(len(entries) == 1 and entries[0].is_file() and not entries[0].is_symlink(), 'outer-record-count')
+    require(entries[0].stat().st_size <= 16 * 1024, 'outer-record-bound')
+    outer = json.loads(entries[0].read_text())
+    result = validate_outer(outer, sys.argv[2])
+    validate_native_close(json.loads(Path(sys.argv[3]).read_text()))
+    require(entries[0].name == result['invocation'] + '.json', 'outer-record-identity')
+    print(json.dumps(result, sort_keys=True))
+PY
+    )
+    retry_red
+    assert_commit
     run_logged provider-authority pnpm test \
       extensions/crabbox/src/crabbox-worker-allocation-authority.test.ts \
+      extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts \
+      extensions/crabbox/src/crabbox-worker-node-enrollment-diagnostics.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts \
       extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts \
       extensions/crabbox/src/crabbox-worker-project.test.ts \
+      extensions/crabbox/src/crabbox-worker-warm-image.test.ts \
       extensions/crabbox/src/crabbox-worker-node-enrollment.test.ts \
       src/gateway/worker-environments/provider-invocation.test.ts \
       src/gateway/worker-environments/provider-owner-revocation.test.ts \
       src/gateway/worker-environments/provider-allocation-cleanup.test.ts \
-      --maxWorkers=1 --reporter=verbose
+      --maxWorkers=1 --reporter=verbose --reporter=json --outputFile="$evidence/provider-tests.json"
     assert_commit
     run_logged extensions-types pnpm tsgo:extensions
     assert_commit

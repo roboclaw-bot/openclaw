@@ -125,7 +125,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: 'c6611dd24af0dffeae3bd63bb46bde95009b9791a907e6da71a57b56f0e1e2c5'
+      REBASE_RECIPE_SHA256: 'aeeb44ce21f1c976882a3155156f731356ade17a0e5c0ba20e89718587a97e9f'
       FORMAT_RECIPE_SHA256: 5fb2a89715ef6043874bd0cc037fcf4a705638f119a4c0d7b6f0e2ccd324ae6c
       FORMAT_PATCH_DATA_SHA256: d4a76a40ce57fefd9e4edd3f37824a025e675acc07fb901d6ab3fb292c4df446
       SAME_COMMIT_SOURCE_SHA256: '17e6e7a52e2a7c8072af6ec6e439438acb3d76ca056b54c8ac390cccd3a6db77'
@@ -165,10 +165,10 @@ jobs:
           esac
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             mkdir -p "$RUNNER_TEMP/pr159178-rebase"
-            test "$BASE_SHA" = c9921022529005400c41de6580dfabc99b7948dc
+            test "$BASE_SHA" = 5d116aa3f1e0d85f9408d95cce0640926a8d8c60
             test "$PATCH_ID" = provider-rebase-current
-            test "$EXPECTED_TREE" = '6e181a3dd95b720f9bfbac1b7804c6ce23df431b'
-            test "$PATCH_SHA256" = '95cdf836dba0443825c54c568fc93ee8b1f197fcf825bc3bfdb98c8f3733df6e'
+            test "$EXPECTED_TREE" = '115611651770426c15f52149c21109bbe195f9f5'
+            test "$PATCH_SHA256" = 'f33f2d4d74286fb653626708ff3dba8b9a70fc97af84fa395b2366502cdb3420'
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -295,14 +295,20 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'e46448a0c732785b2ddbdbf560d2c868d6f9f130'
-            test "$(git rev-parse HEAD^1^{tree})" = 'bcdbcc6cc18976deba74808819d31128130b19af'
+            test "$(git show -s --format=%P HEAD)" = '885635325a75b45ea166f54b654673ec05c7ea0d'
+            test "$(git rev-parse HEAD^1^{tree})" = '021ebddc7672d7665eaa9a1a6f6b66bff94adebc'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh > "$evidence/expected-controller-paths.txt"
+            printf 'A\t%s\n' .github/proof-inputs/pr135838/provider-rebase-outer-observation.json >> "$evidence/expected-controller-paths.txt"
+            printf 'M\t%s\n' .github/workflows/pr135838-patch-validation.yml >> "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-current.payload.json | cut -d ' ' -f1)" = 100644
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-focused.sh | cut -d ' ' -f1)" = 100644
             cp .github/proof-inputs/pr135838/provider-rebase-current.payload.json "$RUNNER_TEMP/rebase-payload.json"
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-outer-observation.json | cut -c 1-6)" = 100644
+            cp .github/proof-inputs/pr135838/provider-rebase-outer-observation.json "$RUNNER_TEMP/outer-observation.json"
+            test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = c42136cfa676848e3525192b3020ec07c8b93a087dfa116991507d126cece43b
+            cp "$RUNNER_TEMP/outer-observation.json" "$evidence/"
             cp .github/proof-inputs/pr135838/provider-rebase-focused.sh "$RUNNER_TEMP/validate-candidate.sh"
             test "$(sha256sum "$RUNNER_TEMP/rebase-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
             test "$(sha256sum "$RUNNER_TEMP/validate-candidate.sh" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
