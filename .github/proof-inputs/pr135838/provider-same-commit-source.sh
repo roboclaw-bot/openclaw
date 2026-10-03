@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Controller-owned source admission shared by the five existing pre-push suites.
+# Existing same-commit admission, bound here only for the reviewed canonical build.
 # C is imported once per isolated job from the producer's identical bundle bytes.
 set -euo pipefail
-base=e433bfda89c486f98dfb03586dacd1e23b6f820b
-replayed_head=43d74a393a72e7da12456d66079ee291acc2f114
-tree='6e181a3dd95b720f9bfbac1b7804c6ce23df431b'
-candidate='5d116aa3f1e0d85f9408d95cce0640926a8d8c60'
+base=aa298d3a515ca85dc0970aacda0403d67ec2a097
+replayed_head=19d331d185ac1337204a9a80aff913ee1a358572
+tree='5cd77ceafea320d20b9f43cdd62b0ab712b74115'
+candidate='57cd0bcdb90a9a2eea6396cad3f3e2e3bfb2225c'
 payload="$RUNNER_TEMP/same-commit-payload.json"
 evidence="$RUNNER_TEMP/pr159178-same-commit"
 phase="${1:-source}"
@@ -41,11 +41,11 @@ finish() {
 }
 trap finish EXIT
 
-case "$SUITE" in provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-process) ;; *) exit 2 ;; esac
+test "$SUITE" = provider-resume-build
 test "$BASE_SHA" = "$base"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-same-commit
-test "$PATCH_SHA256" = 'e066f0eb79ebe75dc93f88cfacfe1a0049e04273971c33044a263d879dfbf2b2'
+test "$PATCH_SHA256" = 'd6c07ebbcba2cabc3c0a847c07de1c088eca6da667dcf393935a07ac0bd652d1'
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -136,42 +136,329 @@ from pathlib import Path
 import base64,hashlib,json,sys
 m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);r=e/'retained';r.mkdir(exist_ok=False)
 assert m['schema']==1 and m['status']=='PARENT_REVIEWED_SAME_COMMIT'
-assert m['commit']=='5d116aa3f1e0d85f9408d95cce0640926a8d8c60' and m['tree']=='6e181a3dd95b720f9bfbac1b7804c6ce23df431b'
+assert m['commit']=='57cd0bcdb90a9a2eea6396cad3f3e2e3bfb2225c' and m['tree']=='5cd77ceafea320d20b9f43cdd62b0ab712b74115'
 for x in m['retained']:
     assert set(x)=={'path','mode','bytes','sha256','base64'} and x['mode']=='100644'
     assert Path(x['path']).name==x['path'] and x['path'] not in ('','.','..')
     b=base64.b64decode(x['base64'],validate=True)
     assert len(b)==x['bytes'] and hashlib.sha256(b).hexdigest()==x['sha256']
     target=r/x['path'];assert not target.exists();target.write_bytes(b)
-# Exact genuine rebase producer custody. Native schema is retained, never translated.
-producer=m['producer']; receipt=json.loads((r/'candidate.json').read_bytes())
-assert receipt['commit']==m['commit'] and receipt['tree']==m['tree'] and receipt['base']==m['base']
-assert receipt['parent']==m['parent'] and receipt['bundleSha256']==m['bundleSha256']
-assert receipt['controller']==producer['controller'] and receipt['runId']==str(producer['runId']) and receipt['attempt']==str(producer['attempt'])
+# Exact successful producer custody. Consume original receipts; never normalize exit1 to0.
+def kept(name):
+    return r/name.replace('/', '__')
+def read_json(name):
+    return json.loads(kept(name).read_bytes())
+def hash_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+producer=m['producer']; receipt=read_json('candidate.json'); native=read_json('history.json')
+assert producer['repository']=='roboclaw-bot/openclaw' and producer['workflow']=='.github/workflows/pr135838-patch-validation.yml'
+assert producer['runId']==37139953970 and producer['attempt']==1 and producer['jobId']==111252133152
+assert producer['controller']=='20735bd9cfdf530abe0c1d65947fa8cb702b029a'
 assert producer['runConclusion']==producer['jobConclusion']=='success'
-assert hashlib.sha256((r/'candidate.bundle').read_bytes()).hexdigest()==m['bundleSha256']
-native=json.loads((r/'history.json').read_bytes());assert native==receipt['replay'] and len(native)==len(m['history'])==10
+assert receipt['commit']==m['commit'] and receipt['tree']==m['tree'] and receipt['base']==m['base']
+assert receipt['parent']==m['parent'] and receipt['oldHead']=='5d116aa3f1e0d85f9408d95cce0640926a8d8c60'
+assert receipt['bundleSha256']==m['bundleSha256'] and receipt['payloadSha256']=='b85061574031cfe7acdc241a61708b30f76a1abeba5b1f4d7a2013d2fe5c1104'
+assert receipt['controller']==producer['controller'] and receipt['runId']==str(producer['runId']) and receipt['attempt']=='1' and receipt['suite']=='provider-rebase-focused'
+assert hash_bytes(kept('candidate.bundle').read_bytes())==m['bundleSha256']
+assert kept('candidate.bundle').stat().st_size==65551
+header=kept('candidate.bundle').read_bytes().split(bytes([10,10]),1)[0].decode().splitlines()
+assert len(header)==3 and header[0]=='# v2 git bundle' and header[1].split(' ',1)[0]=='-'+m['base'] and header[2]==m['commit']+' HEAD'
+# Exact reviewed API receipts are included, not a lone successful artifact name.
+run_api=read_json('producer-attempt.json');jobs_api=read_json('producer-jobs.json')
+assert run_api['id']==producer['runId'] and run_api['run_attempt']==1 and run_api['head_sha']==producer['controller'] and run_api['status']=='completed' and run_api['conclusion']=='success'
+assert run_api['event']=='workflow_dispatch' and run_api['head_branch']=='main' and run_api['path']==producer['workflow']
+assert run_api['actor']['login']=='roboclaw-bot' and run_api['actor']['id']==309084314
+job=next(j for j in jobs_api['jobs'] if j['id']==producer['jobId'])
+assert job['run_id']==producer['runId'] and job['head_sha']==producer['controller'] and job['run_attempt']==1 and job['conclusion']=='success' and job['status']=='completed'
+for slot,name,artifact_id,digest in [
+    ('artifact','producer-evidence-metadata.json',11280347436,'sha256:e09b50c4a3c925ceaf7558acc1a5fa427eea86f3c8bfa701b8996bbc01cdf08d'),
+    ('verifiedArtifact','producer-verified-metadata.json',11280497334,'sha256:0ef73eea8a95229df11377295214961975170aa71ed67a4012561be4ad20daba'),
+]:
+    artifact=read_json(name);assert artifact==producer[slot] and artifact['id']==artifact_id and artifact['digest']==digest
+    assert artifact['workflow_run']['id']==producer['runId'] and artifact['workflow_run']['head_sha']==producer['controller'] and not artifact['expired']
+member_manifest={x['path']:x for x in read_json('producer-evidence-members.json')}
+verified_manifest={x['path']:x for x in read_json('producer-verified-members.json')}
+assert len(member_manifest)==429 and len(verified_manifest)==2
+for original in m['evidencePaths']:
+    source=member_manifest[original];data=kept(original).read_bytes()
+    assert len(data)==source['bytes'] and hash_bytes(data)==source['sha256'],original
+for original in ('candidate.bundle','candidate.json'):
+    source=verified_manifest[original];data=kept(original).read_bytes()
+    assert len(data)==source['bytes'] and hash_bytes(data)==source['sha256'],original
+replay=read_json('rebase-payload.json');assert hash_bytes(kept('rebase-payload.json').read_bytes())==receipt['payloadSha256']
+assert replay['newMain']==m['base'] and replay['finalTree']==m['tree'] and replay['oldHead']==receipt['oldHead']
+assert replay['sourceChecks']==m['sourceChecks'] and replay['changedPaths']==m['changedPaths']
+assert len(native)==len(m['history'])==len(replay['steps'])==10 and native==receipt['replay']
 previous=m['base']; trees=[]
-for h,row in zip(m['history'],native,strict=True):
-    assert row['actual']==h['commit'] and row['parent']==previous and row['tree']==h['expectedRebasedTree']
-    raw=(r/('raw-'+h['commit']+'.commit')).read_bytes()
-    assert raw==base64.b64decode(h['rawBase64'],validate=True) and hashlib.sha256(raw).hexdigest()==h['rawSha256']
+for h,row,original in zip(m['history'],native,replay['steps'],strict=True):
+    assert row['actual']==h['commit'] and row['parent']==previous and row['tree']==h['expectedRebasedTree']==original['expectedRebasedTree']
+    raw=kept('raw-'+h['commit']+'.commit').read_bytes()
+    assert raw==base64.b64decode(h['rawBase64'],validate=True) and hash_bytes(raw)==h['rawSha256']
     assert hashlib.sha1(b'commit '+str(len(raw)).encode()+bytes([0])+raw).hexdigest()==h['commit']
     headers,message=raw.split(bytes([10,10]),1);lines=headers.splitlines()
     assert [x[7:].decode() for x in lines if x.startswith(b'parent ')]==[previous]
-    tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '));assert tree==h['expectedRebasedTree'];trees.append(tree)
-    assert row['authorAndMessagePreserved'] is True
+    tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '));assert tree==row['tree'];trees.append(tree)
+    assert next(x for x in lines if x.startswith(b'author '))==base64.b64decode(original['authorBase64'],validate=True)
+    assert message==base64.b64decode(original['messageBase64'],validate=True) and row['original']==original['original'] and row['authorAndMessagePreserved'] is True
+    for trailer in (b'Co-authored-by: sallyom <11166065+sallyom@users.noreply.github.com>',b'Co-authored-by: vincentkoc <25068+vincentkoc@users.noreply.github.com>'):
+        assert message.count(trailer)==1
     previous=h['commit']
-assert previous==m['commit'] and trees[-1]==m['tree'] and trees[1]==trees[2]
-run=json.loads((r/'run.json').read_bytes());assert run['runId']==str(producer['runId']) and run['attempt']==str(producer['attempt']) and run['controller']==producer['controller'] and run['status']=='success'
-steps=json.loads((r/'step-outcomes.json').read_bytes())
-for phase in ('materialize','dependencies','format','commit','tests','export'):assert steps[phase]['outcome']=='success'
-for phase in ('materialize','before-setup','after-setup','format','commit','tests','export'):assert json.loads((r/(phase+'.phase.json')).read_bytes())['exitStatus']==0
-for label in ('native-rebase','normal-hooks','format','provider-authority','extensions-types','core-types','plugin-test-types','bundle-create','bundle-verify'):
-    result=json.loads((r/(label+'.result.json')).read_bytes());assert result['nativeExitStatus']==result['teeExitStatus']==0
-assert b'rebase --merge --reapply-cherry-picks --empty=keep --onto' in (r/'native-rebase.command.txt').read_bytes()
-assert (r/'native-rebase.trace2.jsonl').stat().st_size>0
-(e/'producer-custody.json').write_text(json.dumps(producer,indent=2)+chr(10))
+assert previous==m['commit'] and trees[-1]==m['tree'] and trees[1]==trees[2] and replay['steps'][2]['emptyOriginal'] is True
+run=read_json('run.json');assert run=={'runId':str(producer['runId']),'attempt':'1','controller':producer['controller'],'status':'success'}
+steps=read_json('step-outcomes.json')
+for phase in ('materialize','dependencies','format','commit','tests','export'):assert steps[phase]['outcome']==steps[phase]['conclusion']=='success'
+for phase in ('materialize','before-setup','after-setup','format','commit','tests','export'):assert read_json(phase+'.phase.json')['exitStatus']==0
+
+def result(label,code):
+    value=read_json(label+'.result.json')
+    assert set(value)=={'command','startedAt','endedAt','nativeExitStatus','teeExitStatus'} and value['command']==label
+    assert type(value['nativeExitStatus']) is int and value['nativeExitStatus']==code and value['teeExitStatus']==0
+    return value
+
+import shlex
+prefix=['git','-c','core.hooksPath=git-hooks','-c','user.name=roboclaw-bot','-c','user.email=309084314+roboclaw-bot@users.noreply.github.com']
+stops=[s['number'] for s in replay['steps'] if s['conflicts']];assert stops==[1,4,6,7,8]
+sequence=[('native-rebase',1,1)]+[('native-continue-'+str(n),1,stops[i+1]) for i,n in enumerate(stops[:-1])]+[('native-continue-8',0,None)]
+for label,code,next_step in sequence:
+    result(label,code)
+    command=shlex.split(kept(label+'.command.txt').read_text())
+    expected=prefix+(['rebase','--merge','--reapply-cherry-picks','--empty=keep','--onto',m['base'],replay['oldBase'],replay['oldHead']] if label=='native-rebase' else ['rebase','--continue'])
+    assert command==['env',*(['GIT_EDITOR=:'] if label!='native-rebase' else []),'GIT_TRACE2_EVENT='+producer['evidenceRoot']+'/'+label+'.trace2.jsonl',*expected]
+    trace=[json.loads(line) for line in kept(label+'.trace2.jsonl').read_text().splitlines()]
+    roots=[x for x in trace if x.get('event')=='start' and '/' not in x['sid']];assert len(roots)==1 and roots[0]['argv']==expected
+    exits=[x for x in trace if x.get('event')=='exit' and x['sid']==roots[0]['sid']];assert len(exits)==1 and exits[0]['code']==code
+    if next_step is None:continue
+    step=replay['steps'][next_step-1];directory='conflict-'+str(next_step)+'/'
+    assert kept(directory+'HEAD.txt').read_text().strip()==(m['base'] if next_step==1 else native[next_step-2]['actual'])
+    assert kept(directory+'REBASE_HEAD').read_text().strip()==step['original']
+    assert kept(directory+'rebase-merge/stopped-sha').read_text().strip()==step['original']
+    assert kept(directory+'rebase-merge/onto').read_text().strip()==m['base']
+    assert kept(directory+'rebase-merge/orig-head').read_text().strip()==replay['oldHead']
+    rows=[x for x in replay['resolutions'] if x['step']==next_step]
+    assert sorted(x['path'] for x in rows if 'stages' in x)==step['conflicts']
+    wanted=''.join('100644 '+oid+' '+str(stage)+chr(9)+row['path']+chr(10) for row in rows if 'stages' in row for stage,oid in enumerate(row['stages'],1))
+    assert kept(directory+'unmerged-stages.txt').read_text()==wanted
+    resolution=read_json('resolution-'+str(next_step)+'.json')
+    assert resolution=={'step':next_step,'original':step['original'],'tree':step['expectedRebasedTree'],'paths':[x['path'] for x in rows]}
+for label in ('normal-hooks','format','provider-authority','extensions-types','core-types','plugin-test-types','bundle-create','bundle-verify'):result(label,0)
+result('coordinator-red',1)
+assert kept('normal-hooks.command.txt').read_text().strip()=='git -c core.hooksPath=git-hooks hook run pre-commit'
+assert len(m['changedPaths'])==58 and shlex.split(kept('format.command.txt').read_text())==['pnpm','format:check',*m['changedPaths']]
+assert shlex.split(kept('provider-authority.command.txt').read_text())==['pnpm','test',*m['positiveTargets'],'--maxWorkers=1','--reporter=verbose','--reporter=json','--outputFile='+producer['evidenceRoot']+'/provider-tests.json']
+for label,command in [('extensions-types','pnpm tsgo:extensions'),('core-types','pnpm tsgo:core'),('plugin-test-types','pnpm tsgo:extensions:test')]:assert kept(label+'.command.txt').read_text().strip()==command
+# The reviewed producer program owns restoration and its assert_commit before GREEN.
+assert hash_bytes(kept('controller-recipe.sh').read_bytes())=='0e0337057eaa6ff2891bd3b39cbb283b15df15dbf92446cfc6f861cd75642269'
+assert hash_bytes(kept('controller-workflow.yml').read_bytes())=='6b321d87917993878b88acd0da7a9c26982585648021a1a41c2a59d4e2493a7f'
+assert kept('controller-identity.txt').read_text().splitlines()==[producer['controller'],'aab0af6c37202eee2d015f4c021d0660ed5821de','00b9ca4426edcc8112046487873244c59f7408cf']
+checks=''.join(x['sha256']+'  '+x['path']+chr(10) for x in m['sourceChecks'])
+for phase in ('materialize-exit','before-setup-exit','after-setup-exit','format-exit','commit-exit','tests-exit','export-exit','always'):
+    assert kept(phase+'/HEAD.txt').read_text().strip()==m['commit']
+    for name in ('tracked-status.txt','tracked-diff.patch','expected-tree-diff.patch','unmerged-stages.txt'):assert kept(phase+'/'+name).read_bytes()==b''
+    assert kept(phase+'/source-checks.exit.txt').read_bytes()==b'0'+bytes([10])
+    assert kept(phase+'/source-checks.sha256').read_text()==checks
+# These exact reviewed RED/outer validators are copied below without behavioral edits.
+
+from pathlib import Path
+import json
+import re
+import sys
+
+FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
+SUITE = 'Crabbox worker coordinator retries'
+PROJECT = 'extension-database-workers'
+CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
+# Vitest 5.0.1 generateFileHash(FILE, PROJECT, no typecheck/merge label).
+TASK_ID = '1706718556'
+SELECTED = [
+    'closes inspect backoff without resubmission when invocation authority expires',
+    'closes run backoff without resubmission when invocation authority expires',
+]
+SKIPPED = [
+    "retries node enrollment setup only before script output ''",
+    "retries node enrollment setup only before script output 'CRABBOX_PHASE:openclaw-bootstrap-start'",
+    "retries node runtime preparation only before script output ''",
+    'submits profile setup until recovers',
+    'submits profile setup until exhausted',
+    'submits profile setup until script error',
+    'cancels backoff without resubmitting setup or stopping the lease',
+    'recovers during initial inspection',
+    'recovers during readiness inspection',
+    'recovers during lifecycle inspection',
+    'does not retry warmup coordinator timeouts',
+    'recovers heartbeat before warning',
+]
+
+def require(condition, code):
+    if not condition:
+        raise ValueError(code)
+
+def validate_red(report, capture, root):
+    # This is an admission check of native owner facts, never reconstruction of
+    # completion from exit 1 or another later GREEN run.
+    require(type(report) is dict and type(capture) is dict, 'native-report-shape')
+    require(capture.get('ended') == {
+        'reason': 'failed', 'unhandledErrors': 0, 'failedModules': 1, 'suiteErrors': 0,
+    }, 'native-completion')
+    require(capture.get('processTimedOut') is False, 'native-timeout')
+    require(capture.get('ignoreUnhandledErrors') is False, 'native-errors-ignored')
+    require(capture.get('passWithNoTests') is False, 'native-empty-admission')
+    require(type(capture.get('pid')) is int and capture['pid'] > 0, 'native-process-identity')
+    require(capture.get('root') == root, 'native-root')
+    project = {
+        'name': PROJECT, 'namePrefix': '', 'root': root,
+        'config': root + '/' + CONFIG, 'pool': 'openclaw-forks',
+    }
+    require(capture.get('projects') == [project], 'native-project')
+    require(capture.get('modules') == [{
+        **project, 'file': root + '/' + FILE, 'taskId': TASK_ID,
+    }], 'native-module')
+    expected_counts = {
+        'numFailedTests': 2, 'numPassedTests': 0, 'numPendingTests': 12,
+        'numTodoTests': 0, 'numTotalTests': 14,
+        'numFailedTestSuites': 2, 'numPassedTestSuites': 0,
+        'numPendingTestSuites': 0, 'numTotalTestSuites': 2,
+    }
+    require(all(type(report.get(k)) is int and report[k] == v
+                for k, v in expected_counts.items()), 'native-counts')
+    require(report.get('success') is False, 'native-unexpected-success')
+    files = report.get('testResults')
+    require(type(files) is list and len(files) == 1, 'native-file-count')
+    file = files[0]
+    require(type(file) is dict and file.get('name') == root + '/' + FILE,
+            'native-file')
+    require(file.get('status') == 'failed' and file.get('message') == '',
+            'native-file-error')
+    cases = file.get('assertionResults')
+    require(type(cases) is list and len(cases) == 14 and
+            all(type(case) is dict for case in cases), 'native-case-count')
+    require(sorted(case.get('title', '') for case in cases) == sorted(SELECTED + SKIPPED),
+            'native-case-inventory')
+    for case in cases:
+        title = case['title']
+        require(case.get('ancestorTitles') == [SUITE] and
+                case.get('fullName') == SUITE + ' ' + title, 'native-case-identity')
+        if title in SKIPPED:
+            require(case.get('status') == 'skipped' and case.get('failureMessages') == [],
+                    'native-skipped-error')
+            continue
+        require(case.get('status') == 'failed', 'native-selected-status')
+        errors = case.get('failureMessages')
+        require(type(errors) is list and len(errors) == 1 and type(errors[0]) is str,
+                'native-selected-error-count')
+        lines = errors[0].splitlines()
+        require(bool(lines) and re.fullmatch(
+            r'AssertionError: expected .+ to have a length of 1 but got 3', lines[0]
+        ) is not None, 'native-selected-assertion')
+        # Native JSON carries Error.stack, not formatted diffs/log output. Reject
+        # additional non-frame diagnostics smuggled into the one assertion entry.
+        require(all(re.fullmatch(r'\s+at .+', line) is not None for line in lines[1:]),
+                'native-selected-extra-error')
+    return {'admitted': True, 'selectedFailures': 2, 'skipped': 12, 'total': 14,
+            'file': FILE, 'project': PROJECT, 'taskId': TASK_ID}
+
+
+from pathlib import Path
+import json
+import re
+import sys
+
+FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
+CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
+
+def require(condition, code):
+    if not condition:
+        raise ValueError(code)
+
+def validate_outer(outer, root):
+    require(type(outer) is dict and outer.get('schema') == 'pr159178.outer-invocation.v1', 'outer-schema')
+    require(outer.get('phase') == 'exited' and outer.get('initialized') is True, 'outer-terminal')
+    require(outer.get('cwd') == root and outer.get('entry') == root + '/scripts/test-projects.mts', 'outer-identity')
+    require(type(outer.get('pid')) is int and outer['pid'] > 0, 'outer-pid')
+    require(type(outer.get('invocation')) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', outer['invocation']), 'outer-invocation')
+    for key in ['observationFailed','overflow','errorHandlersSeen','unsafeUnhandledMode','lateExitListener']:
+        require(outer.get(key) is False, 'outer-' + key)
+    require(type(outer.get('drains')) is int and outer['drains'] > 0, 'outer-natural-drain')
+    require(outer.get('terminal') == {'code':1,'captureCallback':False}, 'outer-exit')
+    for key in ['wrapperEntered','wrapperReturned','runnerEntered','runnerReturned','disposalStarted','disposalSettled','summaryReturned','signalsDetached']:
+        require(type(outer.get(key)) is int and outer[key] == 1, 'outer-' + key)
+    for key in ['wrapperErrors','runnerErrors','disposalErrors','fatalEvents']:
+        require(type(outer.get(key)) is int and outer[key] == 0, 'outer-' + key)
+    require(outer.get('wrapperTool') == 'test' and outer.get('workersPresent') is True, 'outer-owner')
+    require(outer.get('plan') == {'count':1,'configs':[CONFIG],'targets':[FILE],'targetCount':1,'reports':False}, 'outer-plan')
+    require(outer.get('preparation') == {'code':0}, 'outer-preparation')
+    require(outer.get('commands') == [{'code':1,'exitedNormally':True,'noOutputTimedOut':False,'signal':None,'groupJoined':True}], 'outer-command')
+    require(outer.get('finalization') == {'reportFailure':False,'signal':None,'hadSummary':True,'hadReports':False}, 'outer-finalization')
+    workers = outer.get('workers')
+    require(type(workers) is list and len(workers) == 1 and type(workers[0]) is dict, 'outer-worker-count')
+    worker = workers[0]
+    require(worker.get('id') == 0 and worker.get('parent') is False, 'outer-worker-identity')
+    require(worker.get('borrows') == 1 and worker.get('disposalCalls') == 1, 'outer-worker-lifetime')
+    require(type(worker.get('requests')) is int and 0 <= worker['requests'] <= worker['borrows'], 'outer-worker-requests')
+    require(worker.get('requests') == worker.get('sends') == worker.get('sendCallbacks'), 'outer-worker-ipc-pending')
+    for key in ['admissionErrors','sendErrors','disposalErrors']:
+        require(type(worker.get(key)) is int and worker[key] == 0, 'outer-worker-' + key)
+    require(worker.get('disposed') == {'id':0,'borrowerCount':1,'settledCount':1,'rejected':0,'compilerJoined':True,'resourcesReleased':True,'channelError':False}, 'outer-worker-settlement')
+    return {'outerCompletedTestFailure':True,'pid':outer['pid'],'invocation':outer['invocation']}
+
+def validate_native_close(capture):
+    facts = capture.get('nativeInvocation')
+    require(type(facts) is dict and facts.get('phase') == 'exited', 'native-close-terminal')
+    for key in ['observationFailed','forcedExit','lateExitListener','lateErrorHandler']:
+        require(facts.get(key) is False, 'native-close-' + key)
+    for key in ['closeRejected','exitRejected','checkedUnhandled','finalUnhandled','fatalEvents','errorHandlersAtExit']:
+        require(type(facts.get(key)) is int and facts[key] == 0, 'native-close-' + key)
+    for prefix in ['close','exit']:
+        calls = facts.get(prefix + 'Calls')
+        require(type(calls) is int and calls >= 1 and facts.get(prefix + 'Settled') == calls,
+                'native-close-' + prefix + '-settlement')
+    require(type(facts.get('drains')) is int and facts['drains'] > 0 and facts.get('exitCode') == 1,
+            'native-close-natural-exit')
+    return True
+
+
+capture=read_json('coordinator-red.json.capture.json')
+validate_red(read_json('coordinator-red.json'),capture,producer['workspace'])
+outer_paths=[p for p in member_manifest if p.startswith('outer-invocation/')]
+assert outer_paths==[m['outerRecord']] and kept(m['outerRecord']).stat().st_size<=16*1024
+outer=read_json(m['outerRecord']);validated=validate_outer(outer,producer['workspace']);validate_native_close(capture)
+assert m['outerRecord']=='outer-invocation/'+validated['invocation']+'.json'
+assert hash_bytes(kept('outer-observation.json').read_bytes())=='2534b94134b44f4063aa9d11490abd7f406325c9e42197d05fe73596bd6f8931'
+assert [line.split(' b/',1)[1] for line in kept('retry-red.patch').read_text().splitlines() if line.startswith('diff --git ')]==sorted([replay['retryRegression']['path'],*[x['path'] for x in read_json('outer-observation.json')['files']]])
+report=read_json('provider-tests.json');index=read_json(m['positiveReports']+'/index.json')
+assert report['success'] is True and report['numPassedTests']==report['numTotalTests']==265
+assert report['numFailedTests']==report['numPendingTests']==report['numTodoTests']==0
+assert index['complete'] is True and index['error']=='' and len(index['entries'])==3
+normal={'code':0,'exitedNormally':True,'noOutputTimedOut':False,'signal':None,'groupJoined':True}
+assert index['merge']==normal and index['requested']==index['aggregate']==producer['evidenceRoot']+'/provider-tests.json'
+expected_configs=['test/vitest/vitest.gateway-database-workers.config.ts','test/vitest/vitest.extension-database-workers.config.ts','test/vitest/vitest.extensions.config.ts']
+all_cases=[];all_files=[]
+for number,entry in enumerate(index['entries'],1):
+    assert entry['invocation']==number and entry['config']==expected_configs[number-1]
+    assert entry['state']=='finished' and entry['acceptedAttempt']==1 and len(entry['attempts'])==1 and entry['attempts'][0]['outcome']==normal
+    rel=m['positiveReports']+'/'+str(number)+'/1/report.json'
+    assert entry['attempts'][0]['json']==producer['evidenceRoot']+'/'+rel
+    part=read_json(rel);facts=read_json(rel+'.capture.json')
+    assert part['success'] is True and part['numFailedTests']==part['numPendingTests']==part['numTodoTests']==0
+    assert part['numPassedTests']==part['numTotalTests']==[24,239,2][number-1]
+    assert facts['ended']=={'reason':'passed','unhandledErrors':0,'failedModules':0,'suiteErrors':0}
+    assert facts['root']==producer['workspace'] and facts['projects']==m['positiveProjects'][number-1]
+    assert facts['processTimedOut'] is False and facts['ignoreUnhandledErrors'] is False and facts['passWithNoTests'] is False
+    assert 'nativeInvocation' not in facts
+    names=[f['name'].removeprefix(producer['workspace']+'/') for f in part['testResults']]
+    assert sorted(names)==sorted(entry['includePatterns']) and len(facts['modules'])==len(names)
+    assert sorted(x['file'] for x in facts['modules'])==sorted(f['name'] for f in part['testResults'])
+    all_files+=names
+    for file in part['testResults']:
+        assert file['status']=='passed' and file['message']==''
+        for case in file['assertionResults']:
+            assert case['status']=='passed' and case['failureMessages']==[]
+            all_cases.append((file['name'],case['fullName'],case['status']))
+assert len(all_files)==len(set(all_files))==12 and sorted(all_files)==sorted(m['positiveTargets'])
+aggregate_cases=[(file['name'],case['fullName'],case['status']) for file in report['testResults'] for case in file['assertionResults']]
+assert len(report['testResults'])==12 and len(aggregate_cases)==265 and sorted(aggregate_cases)==sorted(all_cases)
+recovery=[name for _,name,_ in all_cases if 'capture recovery precedence preserves the original ' in name]
+assert sorted(recovery)==sorted(m['recoveryCases']) and len(recovery)==4
+(e/'producer-custody.json').write_text(json.dumps({'producer':producer,'nativeStops':stops,'historyCount':10,'fullGreenFiles':12,'fullGreenPassed':265,'lateRecoveryCases':recovery,'controlledRed':True,'outerCompletion':True,'restoration':True,'allTypesPassed':True},indent=2)+chr(10))
 
 PY
     # The only prerequisite is B, already checked out with complete history.

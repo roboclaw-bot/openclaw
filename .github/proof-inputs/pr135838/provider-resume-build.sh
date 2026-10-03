@@ -1,7 +1,7 @@
 set -euo pipefail
 source "$RUNNER_TEMP/same-commit-source.sh" source
 C_PRODUCT="$candidate"
-test "$(git rev-parse HEAD^)" = 43d74a393a72e7da12456d66079ee291acc2f114
+test "$(git rev-parse HEAD^)" = 19d331d185ac1337204a9a80aff913ee1a358572
 assert_candidate
 run_logged build pnpm build
 assert_candidate

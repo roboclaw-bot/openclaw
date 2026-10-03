@@ -128,7 +128,7 @@ jobs:
       REBASE_RECIPE_SHA256: '0e0337057eaa6ff2891bd3b39cbb283b15df15dbf92446cfc6f861cd75642269'
       FORMAT_RECIPE_SHA256: 5fb2a89715ef6043874bd0cc037fcf4a705638f119a4c0d7b6f0e2ccd324ae6c
       FORMAT_PATCH_DATA_SHA256: d4a76a40ce57fefd9e4edd3f37824a025e675acc07fb901d6ab3fb292c4df446
-      SAME_COMMIT_SOURCE_SHA256: '17e6e7a52e2a7c8072af6ec6e439438acb3d76ca056b54c8ac390cccd3a6db77'
+      SAME_COMMIT_SOURCE_SHA256: '1211b813c0bd8ae6a47d0ad2b7df73a6c87f4519e2bbf98f93e82570dc2ac8d7'
       REBASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Validate immutable inputs
@@ -148,13 +148,16 @@ jobs:
           case "$SUITE" in provider-format-preparation|provider-rebase-focused|provider-routing-repair|provider-type-inventory|provider-upgrade-harness|provider-upgrade-harness-red|attachment-main-refresh|provider-sdk-repair|custody-resume-red|custody-resume-focused|custody-resume-full|custody-resume-types|custody-resume-build|custody-resume-windows|transport-main-refresh|transport-fixture-repair|attachment-resume-red|attachment-resume-full|attachment-resume-types|attachment-resume-build|provider-resume-red|provider-resume-focused|provider-resume-full|provider-resume-types|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-api|provider-resume-build|provider-resume-process|transport-resume-red|transport-resume-full|transport-resume-types|transport-resume-build|provider-resume-smoke|input-delivery-red|input-delivery-full|input-delivery-types|input-delivery-build|input-refresh-red|input-refresh-full|input-refresh-types|input-refresh-test-types|input-refresh-build|input-full|provider-full|transport-full|input-authority-red|input-authority-full|credential-authority-red|custody-authority|execution-authority|desktop-authority-red|desktop-authority-full|identity-sdk|identity-api|identity-types|native-fixture-red|native-gateway-16|native-gateway-30|settlement-red|settlement-full|settlement-types|settlement-native-9|settlement-native-25|settlement-native-31|settlement-native-35|provider-process-authority|checkpoint-red|checkpoint-full|checkpoint-types|checkpoint-integration|checkpoint-sql-red|checkpoint-sql-full|checkpoint-sql-types|checkpoint-sql-build|checkpoint-sql-test-types|checkpoint-git-fixture|checkpoint-wrapper) ;; *) exit 2 ;; esac
           case "$SUITE" in
             provider-resume-build|provider-resume-api|provider-resume-test-types-a|provider-resume-test-types-b|provider-resume-plugin-test-types|provider-resume-process)
+              if [[ "$SUITE" != provider-resume-build ]]; then
+                echo "This refreshed same-commit binding admits only provider-resume-build; other gates require their own reviewed source/controller binding." >&2
+                exit 2
+              fi
               echo 'same_commit=true' >> "$GITHUB_OUTPUT"
-              echo 'SAME_COMMIT_SOURCE_SHA256=2b1d9aa8ad9bfc3d3a15cbd2a7ff417d01626d23043bee6ab6292d084106a801' >> "$GITHUB_ENV"
               mkdir -p "$RUNNER_TEMP/pr159178-same-commit"
-              test "$BASE_SHA" = e433bfda89c486f98dfb03586dacd1e23b6f820b
-              test "$EXPECTED_TREE" = 6e181a3dd95b720f9bfbac1b7804c6ce23df431b
+              test "$BASE_SHA" = aa298d3a515ca85dc0970aacda0403d67ec2a097
+              test "$EXPECTED_TREE" = 5cd77ceafea320d20b9f43cdd62b0ab712b74115
               test "$PATCH_ID" = provider-same-commit
-              test "$PATCH_SHA256" = 'e066f0eb79ebe75dc93f88cfacfe1a0049e04273971c33044a263d879dfbf2b2'
+              test "$PATCH_SHA256" = 'd6c07ebbcba2cabc3c0a847c07de1c088eca6da667dcf393935a07ac0bd652d1'
               test "$GITHUB_EVENT_NAME" = workflow_dispatch
               test "$GITHUB_REF" = refs/heads/main
               test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -256,18 +259,16 @@ jobs:
           if [[ "${{ steps.input_guard.outputs.same_commit }}" == true ]]; then
             evidence="$RUNNER_TEMP/pr159178-same-commit"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 0cb5f8f36a2d58c31bd820f00f87c9c23bde7095
-            test "$(git rev-parse HEAD^1^{tree})" = 17ffcaa921a4758b0b2ec3c0a3db8272a609f8aa
+            test "$(git show -s --format=%P HEAD)" = 20735bd9cfdf530abe0c1d65947fa8cb702b029a
+            test "$(git rev-parse HEAD^1^{tree})" = 00b9ca4426edcc8112046487873244c59f7408cf
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
-            cat > "$evidence/expected-controller-paths.txt" <<'PUBLICATION_PATHS'
-          M	.github/proof-inputs/pr135838/publication/binding.json
-          M	.github/proof-inputs/pr135838/publication/proof-only-overlay.patch
-          M	.github/workflows/pr135838-patch-validation.yml
-          PUBLICATION_PATHS
+            printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/workflows/pr135838-patch-validation.yml > "$evidence/expected-controller-paths.txt"
             cmp "$evidence/expected-controller-paths.txt" "$evidence/controller-paths.txt"
-            for path in .github/proof-inputs/pr135838/provider-resume-api.sh .github/proof-inputs/pr135838/provider-resume-build.sh .github/proof-inputs/pr135838/provider-resume-plugin-test-types.sh .github/proof-inputs/pr135838/provider-resume-process.sh .github/proof-inputs/pr135838/provider-resume-test-types-a.sh .github/proof-inputs/pr135838/provider-resume-test-types-b.sh .github/proof-inputs/pr135838/provider-same-commit-source.sh .github/proof-inputs/pr135838/provider-same-commit.payload.json .github/proof-inputs/pr135838/publication/always-cleanup.sh .github/proof-inputs/pr135838/publication/artifact.py .github/proof-inputs/pr135838/publication/binding.json .github/proof-inputs/pr135838/publication/controller.py .github/proof-inputs/pr135838/publication/host.py .github/proof-inputs/pr135838/publication/hosted-run.sh .github/proof-inputs/pr135838/publication/proof-only-overlay.patch .github/workflows/pr135838-patch-validation.yml; do
-              test "$(git ls-tree HEAD "$path" | cut -d " " -f1)" = 100644
-            done
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-resume-build.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit-source.sh | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-same-commit.payload.json | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/workflows/pr135838-patch-validation.yml | cut -d ' ' -f1)" = 100644
+            test "$(git ls-tree HEAD .github/proof-inputs/pr135838/publication/artifact.py | cut -d ' ' -f1)" = 100644
             cp .github/proof-inputs/pr135838/provider-same-commit.payload.json "$RUNNER_TEMP/same-commit-payload.json"
             cp .github/proof-inputs/pr135838/provider-same-commit-source.sh "$RUNNER_TEMP/same-commit-source.sh"
             cp ".github/proof-inputs/pr135838/$SUITE.sh" "$RUNNER_TEMP/validate-candidate.sh"
@@ -275,7 +276,7 @@ jobs:
             test "$(sha256sum "$RUNNER_TEMP/same-commit-source.sh" | cut -d ' ' -f1)" = "$SAME_COMMIT_SOURCE_SHA256"
             case "$SUITE" in
               provider-resume-process) recipe_sha='e29beb6d517997e4336fefd19dcc48ea7611309f4c10e85dc3a6014385bf6f46' ;;
-              provider-resume-build) recipe_sha='c5b3d415d97408f2466392ace3707bef0f13cf652b145b7fa37839e6ce59271f' ;;
+              provider-resume-build) recipe_sha='2a41e4533bdcc5040d07a514dd247c18136ed80b541223c2420febb03e41fd88' ;;
               provider-resume-api) recipe_sha='866ce2e7124854fa821aca084673495272ef84f1f2150560468e4d6f04ecb21b' ;;
               provider-resume-test-types-a) recipe_sha='7249b9f14306fe900683befd081ae0e73c50b8bdaffaec6f1c0ee529888709e7' ;;
               provider-resume-test-types-b) recipe_sha='e5098e1ecd687fcef4e4d37a3de2be40801d806cc232d647ab3739cde1770070' ;;
