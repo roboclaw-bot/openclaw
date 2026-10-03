@@ -125,7 +125,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: '3c7d7a1ca52b2a5252ea660797fd465fd8f694fffa1a09166fb0b7b2473526a3'
+      REBASE_RECIPE_SHA256: '0e0337057eaa6ff2891bd3b39cbb283b15df15dbf92446cfc6f861cd75642269'
       FORMAT_RECIPE_SHA256: 5fb2a89715ef6043874bd0cc037fcf4a705638f119a4c0d7b6f0e2ccd324ae6c
       FORMAT_PATCH_DATA_SHA256: d4a76a40ce57fefd9e4edd3f37824a025e675acc07fb901d6ab3fb292c4df446
       SAME_COMMIT_SOURCE_SHA256: '17e6e7a52e2a7c8072af6ec6e439438acb3d76ca056b54c8ac390cccd3a6db77'
@@ -167,8 +167,8 @@ jobs:
             mkdir -p "$RUNNER_TEMP/pr159178-rebase"
             test "$BASE_SHA" = 5d116aa3f1e0d85f9408d95cce0640926a8d8c60
             test "$PATCH_ID" = provider-rebase-current
-            test "$EXPECTED_TREE" = '00b1fbaea2261d743ebb461177ffa6693441d19c'
-            test "$PATCH_SHA256" = '2a8fe1f1c151725ddf6d8b57825cf2f660dcc8874500d3d5a8f8926c4f925c8b'
+            test "$EXPECTED_TREE" = '5cd77ceafea320d20b9f43cdd62b0ab712b74115'
+            test "$PATCH_SHA256" = 'b85061574031cfe7acdc241a61708b30f76a1abeba5b1f4d7a2013d2fe5c1104'
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -295,8 +295,8 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'f491d9f030fea74f7a5c1f928451071738c9762b'
-            test "$(git rev-parse HEAD^1^{tree})" = '6133d45cdb912d212a81b0d84a8c976f36e841a4'
+            test "$(git show -s --format=%P HEAD)" = 'aab0af6c37202eee2d015f4c021d0660ed5821de'
+            test "$(git rev-parse HEAD^1^{tree})" = 'f272d3acad46797a5e34198e902464942f3ab79d'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh > "$evidence/expected-controller-paths.txt"
             printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-outer-observation.json >> "$evidence/expected-controller-paths.txt"
@@ -307,7 +307,7 @@ jobs:
             cp .github/proof-inputs/pr135838/provider-rebase-current.payload.json "$RUNNER_TEMP/rebase-payload.json"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-outer-observation.json | cut -c 1-6)" = 100644
             cp .github/proof-inputs/pr135838/provider-rebase-outer-observation.json "$RUNNER_TEMP/outer-observation.json"
-            test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = d2c192bbb69aba9d4e4e1a8a5a535a14ab5bf47fde124cc82e474d9d6f88ad64
+            test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = 2534b94134b44f4063aa9d11490abd7f406325c9e42197d05fe73596bd6f8931
             cp "$RUNNER_TEMP/outer-observation.json" "$evidence/"
             cp .github/proof-inputs/pr135838/provider-rebase-focused.sh "$RUNNER_TEMP/validate-candidate.sh"
             test "$(sha256sum "$RUNNER_TEMP/rebase-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"

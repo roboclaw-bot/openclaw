@@ -4,8 +4,8 @@ set -euo pipefail
 old=5d116aa3f1e0d85f9408d95cce0640926a8d8c60
 common=e433bfda89c486f98dfb03586dacd1e23b6f820b
 base=aa298d3a515ca85dc0970aacda0403d67ec2a097
-replayed_tree=00b1fbaea2261d743ebb461177ffa6693441d19c
-tree=00b1fbaea2261d743ebb461177ffa6693441d19c
+replayed_tree=5cd77ceafea320d20b9f43cdd62b0ab712b74115
+tree=5cd77ceafea320d20b9f43cdd62b0ab712b74115
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -46,7 +46,7 @@ test "$SUITE" = provider-rebase-focused
 test "$BASE_SHA" = "$old"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = 2a8fe1f1c151725ddf6d8b57825cf2f660dcc8874500d3d5a8f8926c4f925c8b
+test "$PATCH_SHA256" = b85061574031cfe7acdc241a61708b30f76a1abeba5b1f4d7a2013d2fe5c1104
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -342,7 +342,7 @@ PY
         git restore --source=HEAD --worktree -- extensions/crabbox/src/crabbox-worker-provision-commands.ts scripts/lib/failed-trailer.mts scripts/lib/vitest-report-capture.mts scripts/lib/vitest-worker-run.mts scripts/test-projects-run.mts
       }
       trap restore_retry_source EXIT
-      test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = d2c192bbb69aba9d4e4e1a8a5a535a14ab5bf47fde124cc82e474d9d6f88ad64
+      test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = 2534b94134b44f4063aa9d11490abd7f406325c9e42197d05fe73596bd6f8931
       test "${OPENCLAW_VITEST_WORKER_CACHE:-}" != 1
       python3 - "$payload" "$evidence" "$RUNNER_TEMP/outer-observation.json" <<'PY'
 from pathlib import Path
