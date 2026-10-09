@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Fixed hosted proof only. Never substitute tree composition for native history.
+# Held P proof: one native attributed commit after canonical format/hook admission.
 set -euo pipefail
-old=5d116aa3f1e0d85f9408d95cce0640926a8d8c60
-common=e433bfda89c486f98dfb03586dacd1e23b6f820b
-base=aa298d3a515ca85dc0970aacda0403d67ec2a097
-replayed_tree=5cd77ceafea320d20b9f43cdd62b0ab712b74115
-tree=5cd77ceafea320d20b9f43cdd62b0ab712b74115
+old=3e90389813229bd33c169fb07b883b567847224e
+common=3e90389813229bd33c169fb07b883b567847224e
+base=3e90389813229bd33c169fb07b883b567847224e
+replayed_tree=0626fcb2effa131169278b3c9be959baf407fded
+tree=0626fcb2effa131169278b3c9be959baf407fded
 payload="$RUNNER_TEMP/rebase-payload.json"
 evidence="$RUNNER_TEMP/pr159178-rebase"
 phase="${1:-tests}"
@@ -46,7 +46,7 @@ test "$SUITE" = provider-rebase-focused
 test "$BASE_SHA" = "$old"
 test "$EXPECTED_TREE" = "$tree"
 test "$PATCH_ID" = provider-rebase-current
-test "$PATCH_SHA256" = b85061574031cfe7acdc241a61708b30f76a1abeba5b1f4d7a2013d2fe5c1104
+test "$PATCH_SHA256" = 6cc4f8b755252fc55015bc459caef362a02047577bc3e08607733a7019d7badf
 test "$(sha256sum "$payload" | cut -d ' ' -f1)" = "$PATCH_SHA256"
 test "$(sha256sum "$0" | cut -d ' ' -f1)" = "$REBASE_RECIPE_SHA256"
 test "$GITHUB_REPOSITORY" = roboclaw-bot/openclaw
@@ -100,40 +100,176 @@ for item in json.loads(Path(sys.argv[1]).read_text())['sourceChecks']:
     assert hashlib.sha256(p.read_bytes()).hexdigest()==item['sha256'], item['path']
 PY
 }
-# Compare raw original author (including date/timezone) and message bytes.
-# Each actual commit must be one parent in the exact ten-commit tree chain.
-assert_replay() {
-  python3 - "$payload" "$1" <<'PY'
-from pathlib import Path
-import json,subprocess,base64,sys,os
-m=json.loads(Path(sys.argv[1]).read_text()); head=sys.argv[2]
-def git(*a):return subprocess.check_output(['git',*a])
-actual=git('rev-list','--reverse',m['newMain']+'..'+head).decode().splitlines()
-assert len(actual)==len(m['steps'])==10, actual
-parent=m['newMain']; result=[]
-for sha,s in zip(actual,m['steps'],strict=True):
-    raw=git('cat-file','commit',sha); Path(os.environ['RUNNER_TEMP'],'pr159178-rebase','raw-'+sha+'.commit').write_bytes(raw); headers,msg=raw.split(bytes([10,10]),1)
-    lines=headers.splitlines()
-    parents=[x[7:].decode() for x in lines if x.startswith(b'parent ')]
-    actual_tree=next(x[5:].decode() for x in lines if x.startswith(b'tree '))
-    assert parents==[parent], (sha,parents,parent)
-    assert actual_tree==s['expectedRebasedTree'], (sha,actual_tree)
-    assert next(x for x in lines if x.startswith(b'author '))==base64.b64decode(s['authorBase64'])
-    assert msg==base64.b64decode(s['messageBase64']), sha
-    result.append({'original':s['original'],'actual':sha,'parent':parent,'tree':actual_tree,'emptyOriginal':s['emptyOriginal'],'authorAndMessagePreserved':True})
-    parent=sha
-assert result[1]['tree']==result[2]['tree']
-print(json.dumps(result,indent=2))
-PY
-}
 assert_commit() {
   assert_candidate
   test "$(git rev-parse HEAD)" = "$(cat "$evidence/rebased-head.txt")"
   test "$(git rev-parse HEAD^{tree})" = "$tree"
+  test "$(git show -s --format=%P HEAD)" = "$base"
   git diff --quiet HEAD
-  assert_replay HEAD > "$evidence/history.json"
-  test "$(git rev-list --count "$base..HEAD")" = 10
-  test -z "$(git rev-list --merges "$base..HEAD")"
+  python3 - "$payload" "$evidence" <<'PY'
+from pathlib import Path
+import base64,json,subprocess,sys
+m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);raw=subprocess.check_output(['git','cat-file','commit','HEAD']);h,msg=raw.split(b'\n\n',1)
+assert msg==base64.b64decode(m['commitMessageBase64'])
+a=next(x.decode() for x in h.splitlines() if x.startswith(b'author '));assert a.startswith('author '+m['commitAuthor']+' ')
+assert subprocess.check_output(['git','rev-list','--count',m['base']+'..HEAD']).strip()==b'1'
+(e/'P-native.commit').write_bytes(raw)
+PY
+}
+validate_store_report() {
+  python3 - "$1" "$2" "$GITHUB_WORKSPACE" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+FILE = 'extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts'
+PROJECT = 'extension-database-workers'
+CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
+TASK_ID = '-1701623718'
+STORE_SUITE = 'Crabbox asynchronous warm-image mutations'
+LOGICAL_SUITE = 'Crabbox snapshot mutation final write authority'
+SINGLES = [
+    'preserves and projects a native-capture refusal through allocation updates',
+    'rejects malformed native-capture refusal markers before reading or updating state',
+    'rechecks retirement and preserves sibling allocations after a comparison conflict',
+    'discards a capacity rejection when the compared row gained room',
+    'does not replay a mutation whose completion is unavailable',
+    'returns the committed checkpoint projection after its row is replaced',
+]
+EXISTING = [*SINGLES,
+    *['rejects an accepted allocation whose owner is '+value+' before publication'
+      for value in ['removed', 'replaced', 'conflicting']],
+    *['refuses replay dispatch when its durable owner is '+value+' before comparison'
+      for value in ['profile removed', 'allocation removed', 'allocation changed']],
+]
+MAIN = [*EXISTING,
+    *['drains an admitted '+action+' write before provider disposal settles'
+      for action in ['pin', 'rollback']],
+]
+BEFORE = ['refuses and drains a '+action+' held before comparison dispatch when disposed'
+          for action in ['pin', 'rollback']]
+AFTER = ['preserves and drains a '+action+' granted before provider disposal'
+         for action in ['pin', 'rollback']]
+SELECTED = {
+    'refuses and drains a '+action+' disposed at native '+boundary+' admission': boundary
+    for action in ['pin', 'rollback'] for boundary in ['transaction', 'commit']
+}
+LOGICAL = [action+' honors invocation closure at '+boundary+' with a live physical signal'
+           for action in ['pin', 'rollback']
+           for boundary in ['transaction', 'commit', 'after commit grant']]
+P_STORE = [*EXISTING, *BEFORE, *AFTER, *SELECTED]
+
+
+def require(condition, code):
+    if not condition:
+        raise ValueError(code)
+
+
+def native_assertion(error, root, site, kind):
+    # JSON reports native Error.stack || Error.message, not console diff output.
+    require(type(error) is str and 0 < len(error) <= 32768, 'native-error-string')
+    lines = error.splitlines()
+    require(bool(lines), 'native-error-empty')
+    header = lines[0]
+    frames = lines[1:]
+    if kind == 'fulfilled':
+        # Chai may summarize the projection. The summary's status/value keys
+        # distinguish the source's fulfilled alternative from status/error.
+        actual = r"(?:\{ status: 'fulfilled', [^\r\n]+ \}|\{ Object \(status, value\) \})"
+        expected = r"(?:\{ status: 'rejected', [^\r\n]+ \}|\{ Object \(status, error\) \})"
+        require(re.fullmatch('AssertionError: expected '+actual+' to match object '+expected,
+                             header) is not None, 'native-soft-outcome-shape')
+        # toMatchObject drops the fulfilled value projection: one value key
+        # plus the 23 own keys of the unchanged projectCrabboxWarmImage result.
+        require(bool(frames) and frames[0] == '(24 matching properties omitted from actual)',
+                'native-soft-subset-omission')
+        frames = frames[1:]
+    elif kind == 'stages':
+        require(header == "AssertionError: expected [ 'transaction', 'commit' ] to deeply equal [ 'transaction' ]",
+                'native-transaction-stage-shape')
+    else:
+        require(kind == 'decisions', 'native-error-kind')
+        # Chai's array/object display can omit granted entirely. Its native
+        # array-equality message plus the exact unchanged line530 callsite is
+        # the contract; rendered expected/received console diffs are not read.
+        require(re.fullmatch(r'AssertionError: expected \[ [^\r\n]+ \] to deeply equal \[ [^\r\n]+ \]',
+                             header) is not None, 'native-commit-decision-shape')
+    require(bool(frames) and all(re.fullmatch(r'\s+at .+', line) for line in frames),
+            'native-extra-diagnostic-or-missing-stack')
+    # Pin the original assertion identity, not an arbitrary AssertionError or
+    # a matching token in a setup/cleanup error. Other stack frames may be
+    # dependency internals; the sole frame in this exact test file must match.
+    owner = re.compile(r'(?:file://)?'+re.escape(root+'/'+FILE)+r':([1-9][0-9]*):([1-9][0-9]*)(?:\)|$)')
+    sites = [int(match[1]) for line in frames for match in owner.finditer(line)]
+    require(sites == [site], 'native-assertion-source-site')
+
+
+def validate_store_report(report, capture, kind, root):
+    require(kind in ['main', 'green', 'red'], 'native-mode')
+    require(type(report) is dict and type(capture) is dict, 'native-report-shape')
+    red = kind == 'red'
+    inventory = ([(STORE_SUITE, title) for title in MAIN] if kind == 'main' else
+                 [(STORE_SUITE, title) for title in P_STORE]+
+                 [(LOGICAL_SUITE, title) for title in LOGICAL])
+    total = 14 if kind == 'main' else 26
+    require(len(inventory) == len(set(inventory)) == total, 'controller-inventory')
+    project = dict(name=PROJECT, namePrefix='', root=root, config=root+'/'+CONFIG, pool='openclaw-forks')
+    require(type(capture.get('pid')) is int and capture['pid'] > 0, 'native-pid')
+    require(capture.get('root') == root, 'native-root')
+    require(capture.get('projects') == [project], 'native-project')
+    require(capture.get('modules') == [{**project, 'file':root+'/'+FILE, 'taskId':TASK_ID}], 'native-module')
+    for key in ['processTimedOut', 'ignoreUnhandledErrors', 'passWithNoTests']:
+        require(capture.get(key) is False, 'native-'+key)
+    require(capture.get('ended') == dict(reason='failed' if red else 'passed',
+            unhandledErrors=0, failedModules=1 if red else 0, suiteErrors=0), 'native-completion')
+    suites = 2 if kind == 'main' else 3
+    counts = dict(numTotalTests=total, numTodoTests=0, numFailedTests=4 if red else 0,
+                  numPendingTests=22 if red else 0, numPassedTests=0 if red else total,
+                  numTotalTestSuites=suites, numFailedTestSuites=2 if red else 0,
+                  numPassedTestSuites=1 if red else suites, numPendingTestSuites=0)
+    require(all(type(report.get(k)) is int and report[k] == v for k,v in counts.items()), 'native-counts')
+    require(report.get('success') is (not red), 'native-success')
+    files = report.get('testResults')
+    require(type(files) is list and len(files) == 1 and type(files[0]) is dict, 'native-file-count')
+    file = files[0]
+    require(file.get('name') == root+'/'+FILE and file.get('message') == '' and
+            file.get('status') == ('failed' if red else 'passed'), 'native-file-identity-or-error')
+    cases = file.get('assertionResults')
+    require(type(cases) is list and len(cases) == total and all(type(c) is dict for c in cases), 'native-case-count')
+    actual = []
+    for case in cases:
+        ancestors = case.get('ancestorTitles')
+        title = case.get('title')
+        require(type(ancestors) is list and len(ancestors) == 1 and type(ancestors[0]) is str and
+                type(title) is str, 'native-case-identity-shape')
+        require(case.get('fullName') == ancestors[0]+' '+title, 'native-case-full-name')
+        actual.append((ancestors[0], title))
+    require(sorted(actual) == sorted(inventory), 'native-complete-case-inventory')
+    for case in cases:
+        title = case['title']
+        if red and title in SELECTED:
+            require(case['ancestorTitles'] == [STORE_SUITE] and case.get('status') == 'failed', 'native-selected-status')
+            errors = case.get('failureMessages')
+            require(type(errors) is list and len(errors) == 2, 'native-selected-error-count')
+            native_assertion(errors[0], root, 519, 'fulfilled')
+            boundary = SELECTED[title]
+            native_assertion(errors[1], root, 527 if boundary == 'transaction' else 530,
+                             'stages' if boundary == 'transaction' else 'decisions')
+        else:
+            require(case.get('status') == ('skipped' if red else 'passed') and
+                    case.get('failureMessages') == [], 'native-unselected-error-or-status')
+    if not red:
+        require('nativeInvocation' not in capture, 'native-green-overlay-not-restored')
+    return {'kind':kind, 'tests':total, 'failed':counts['numFailedTests'],
+            'taskId':TASK_ID, 'nativeOwnerCompletion':True}
+
+
+if __name__ == '__main__':
+    name,kind,root = sys.argv[1:]
+    print(json.dumps(validate_store_report(json.loads(Path(name).read_text()),
+                     json.loads(Path(name+'.capture.json').read_text()), kind, root)))
+PY
 }
 
 case "$phase" in
@@ -252,240 +388,95 @@ PY
     test "$(git rev-parse --is-shallow-repository)" = false
     git ls-files --others --directory -z > "$evidence/untracked-before-rebase.nul"
     test ! -s "$evidence/untracked-before-rebase.nul"
-    # Native Git alone owns commits, authors, messages, empty commits and sequencer state.
-    status=0
-    run_logged native-rebase env GIT_TRACE2_EVENT="$evidence/native-rebase.trace2.jsonl" git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com rebase --merge --reapply-cherry-picks --empty=keep --onto "$base" "$common" "$old" || status=$?
-    mapfile -t conflict_steps < <(jq -r '.steps[] | select(.conflicts | length > 0) | .number' "$payload")
-    for step in "${conflict_steps[@]}"; do
-      test "$status" -eq 1
-      test "$last_native" -eq 1
-      test "$last_tee" -eq 0
-      snapshot "conflict-$step"
-      test "$(cat .git/rebase-merge/orig-head)" = "$old"
-      test "$(cat .git/rebase-merge/onto)" = "$base"
-      test ! -e .git/MERGE_HEAD
-      python3 - "$payload" "$step" "$evidence" <<'PY'
+
+    python3 - "$payload" "$evidence" <<'PY'
 from pathlib import Path
-import base64,hashlib,json,subprocess,sys
-m=json.loads(Path(sys.argv[1]).read_text()); n=int(sys.argv[2]); e=Path(sys.argv[3]); s=m['steps'][n-1]
-def git(*a):return subprocess.check_output(['git',*a]).decode().strip()
-assert s['number']==n and git('rev-parse','REBASE_HEAD')==s['original']
-assert git('rev-parse','HEAD^{tree}')==s['inputTree']
-assert git('diff','--name-only','--diff-filter=U').splitlines()==s['conflicts']
-rs=[r for r in m['resolutions'] if r['step']==n]
-assert sorted(r['path'] for r in rs if 'stages' in r)==s['conflicts']
-for r in rs:
-    p=Path(r['path']); assert not p.is_absolute() and '..' not in p.parts
-    assert p.is_file() and not p.is_symlink() and all(not a.is_symlink() for a in p.parents)
-    assert r['original']==s['original'] and r['mode']=='100644'
-    if 'stages' in r:
-        assert [git('rev-parse',':'+str(i)+':'+r['path']) for i in [1,2,3]]==r['stages']
-    else:
-        assert git('rev-parse',':'+r['path'])==r['beforeOid']
-    data=base64.b64decode(r['base64'],validate=True)
-    assert len(data)==r['bytes'] and hashlib.sha256(data).hexdigest()==r['sha256']
-    p.write_bytes(data);p.chmod(0o644)
-subprocess.run(['git','add','--',*[r['path'] for r in rs]],check=True)
-assert not git('ls-files','--unmerged')
-assert git('write-tree')==s['expectedRebasedTree']
-subprocess.run(['git','diff','--quiet'],check=True)
-(e/('resolution-'+str(n)+'.json')).write_text(json.dumps({'step':n,'original':s['original'],'tree':s['expectedRebasedTree'],'paths':[r['path'] for r in rs]},indent=2)+chr(10))
+import json,base64,hashlib,sys,subprocess
+m=json.loads(Path(sys.argv[1]).read_text());e=Path(sys.argv[2]);data=base64.b64decode(m['patchBase64'],validate=True)
+assert hashlib.sha256(data).hexdigest()==m['patchSha256'];(e/'P.patch').write_bytes(data)
+subprocess.run(['git','apply','--index','--check',str(e/'P.patch')],check=True)
+subprocess.run(['git','apply','--index',str(e/'P.patch')],check=True)
+assert subprocess.check_output(['git','diff','--cached','--name-only']).decode().splitlines()==m['changedPaths']
 PY
-      status=0
-      run_logged "native-continue-$step" env GIT_EDITOR=: GIT_TRACE2_EVENT="$evidence/native-continue-$step.trace2.jsonl" git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com rebase --continue || status=$?
-    done
-    test "$status" -eq 0
-    test "$last_native" -eq 0
-    test "$last_tee" -eq 0
-    assert_no_operation
-    test "$(git rev-parse HEAD^{tree})" = "$replayed_tree"
-    git diff --quiet HEAD
-    assert_replay HEAD > "$evidence/actual-replay-chain.json"
-    git rev-parse HEAD > "$evidence/rebased-head.txt"
-    cp "$evidence/actual-replay-chain.json" "$evidence/history.json"
-    run_logged replay-history-bundle git bundle create "$evidence/replayed-history.bundle" "$base..HEAD"
-    run_logged replay-history-verify git bundle verify "$evidence/replayed-history.bundle"
-    assert_commit
-    git diff --check "$base" HEAD
+    assert_candidate
+    git diff --cached --check
     ;;
   before-setup|after-setup)
-    assert_commit
+    assert_candidate
+    test "$(git rev-parse HEAD)" = "$base"
     if [[ "$phase" == after-setup ]]; then
       node --version > "$evidence/node-version.txt"
       pnpm --version > "$evidence/pnpm-version.txt"
-      expected_pnpm="$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).packageManager.split("@")[1].split("+")[0]')"
-      test "$(pnpm --version)" = "$expected_pnpm"
+      test "$(pnpm --version)" = 12.7.0
     fi
     ;;
   format)
     assert_candidate
-    test "$(git rev-parse HEAD)" = "$(cat "$evidence/rebased-head.txt")"
-    git diff --cached --name-only --diff-filter=ACMR -z "$base" > "$evidence/format-paths.nul"
-    mapfile -d '' -t files < "$evidence/format-paths.nul"
-    test "${#files[@]}" -gt 0
+    mapfile -t files < <(jq -r '.changedPaths[]' "$payload")
     run_logged format pnpm format:check "${files[@]}"
     assert_candidate
     ;;
   commit)
-    # Pure rebase: no repair commit. Preserve ten authors/messages and empty C3.
+    assert_candidate
+    python3 - "$payload" "$evidence/commit-message.txt" <<'PY'
+from pathlib import Path
+import base64,json,sys
+Path(sys.argv[2]).write_bytes(base64.b64decode(json.loads(Path(sys.argv[1]).read_text())['commitMessageBase64']))
+PY
+    run_logged native-P-commit git -c core.hooksPath=git-hooks -c user.name=roboclaw-bot -c user.email=309084314+roboclaw-bot@users.noreply.github.com commit --file "$evidence/commit-message.txt"
+    git rev-parse HEAD > "$evidence/rebased-head.txt"
     assert_commit
-    test -x git-hooks/pre-commit
     run_logged normal-hooks git -c core.hooksPath=git-hooks hook run pre-commit
     assert_commit
     ;;
   tests)
     assert_commit
-    # Reproduce the new-main retry composition defect on this exact candidate with
-    # Product RED removes only two dispatch assertions; the separately hashed owner diagnostic overlay is restored with them.
-    retry_red() (
-      restore_retry_source() {
-        git restore --source=HEAD --worktree -- extensions/crabbox/src/crabbox-worker-provision-commands.ts scripts/lib/failed-trailer.mts scripts/lib/vitest-report-capture.mts scripts/lib/vitest-worker-run.mts scripts/test-projects-run.mts
+    store=extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts
+    (
+      restore_P() { git checkout --detach "$(cat "$evidence/rebased-head.txt")"; }
+      trap restore_P EXIT
+      git checkout --detach "$base"
+      test "$(git rev-parse HEAD)" = "$base"
+      git diff --quiet HEAD
+      run_logged main-store pnpm test "$store" --maxWorkers=1 --reporter=json --reporter="$GITHUB_WORKSPACE/scripts/lib/vitest-report-capture.mts" --outputFile.json="$evidence/main-store.json"
+      validate_store_report "$evidence/main-store.json" main
+      git diff --quiet HEAD
+    )
+    assert_commit
+    (
+      restore_RED() {
+        git restore --source=HEAD --worktree -- extensions/crabbox/src/crabbox-worker-warm-image-store.ts extensions/crabbox/src/crabbox-worker-warm-image.ts scripts/lib/failed-trailer.mts scripts/lib/vitest-report-capture.mts scripts/lib/vitest-worker-run.mts scripts/test-projects-run.mts
       }
-      trap restore_retry_source EXIT
-      test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = 2534b94134b44f4063aa9d11490abd7f406325c9e42197d05fe73596bd6f8931
+      trap restore_RED EXIT
+      git restore --source="$base" --worktree -- extensions/crabbox/src/crabbox-worker-warm-image-store.ts extensions/crabbox/src/crabbox-worker-warm-image.ts
+      test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = b87d0575feb7212e0486b7a0e20a6c04c38e5a675b039eeede1293f4c07e3755
       test "${OPENCLAW_VITEST_WORKER_CACHE:-}" != 1
-      python3 - "$payload" "$evidence" "$RUNNER_TEMP/outer-observation.json" <<'PY'
+      python3 - "$RUNNER_TEMP/outer-observation.json" "$tree" "$evidence" <<'PY'
 from pathlib import Path
-import json,hashlib,base64,sys,subprocess
-m=json.loads(Path(sys.argv[1]).read_text());r=m['retryRegression'];p=Path(r['path']);e=Path(sys.argv[2])
-assert hashlib.sha256(p.read_bytes()).hexdigest()==r['candidateSha256']
-data=base64.b64decode(r['redBase64'],validate=True)
-assert hashlib.sha256(data).hexdigest()==r['redSha256']
-p.write_bytes(data)
-overlay=json.loads(Path(sys.argv[3]).read_text())
-assert overlay['candidateTree']==m['finalTree']
-paths=['scripts/lib/failed-trailer.mts','scripts/lib/vitest-report-capture.mts','scripts/lib/vitest-worker-run.mts','scripts/test-projects-run.mts']
-assert [entry['path'] for entry in overlay['files']]==paths
-for entry in overlay['files']:
-    target=Path(entry['path'])
-    assert target.is_file() and not target.is_symlink() and all(not p.is_symlink() for p in target.parents)
-    original=subprocess.check_output(['git','show','HEAD:'+entry['path']])
-    assert target.read_bytes()==original and hashlib.sha256(original).hexdigest()==entry['beforeSha256']
-    data=base64.b64decode(entry['base64'],validate=True)
-    assert len(data)==entry['bytes'] and hashlib.sha256(data).hexdigest()==entry['afterSha256']
-    target.write_bytes(data)
-assert subprocess.check_output(['git','diff','--name-only']).decode().splitlines()==sorted([r['path'],*paths])
-(e/'retry-red.patch').write_bytes(subprocess.check_output(['git','diff','--binary','--full-index']))
+import json,base64,hashlib,sys,subprocess
+m=json.loads(Path(sys.argv[1]).read_text());assert m['candidateTree']==sys.argv[2]
+for f in m['files']:
+    p=Path(f['path']);assert p.is_file() and not p.is_symlink() and all(not a.is_symlink() for a in p.parents)
+    assert hashlib.sha256(p.read_bytes()).hexdigest()==f['beforeSha256'];data=base64.b64decode(f['base64'],validate=True)
+    assert len(data)==f['bytes'] and hashlib.sha256(data).hexdigest()==f['afterSha256'];p.write_bytes(data)
+paths=['extensions/crabbox/src/crabbox-worker-warm-image-store.ts','extensions/crabbox/src/crabbox-worker-warm-image.ts',*[f['path'] for f in m['files']]]
+assert subprocess.check_output(['git','diff','--name-only']).decode().splitlines()==sorted(paths)
+(Path(sys.argv[3])/'P-red.patch').write_bytes(subprocess.check_output(['git','diff','--binary','--full-index']))
 PY
-      status=0
-      test ! -e "$evidence/coordinator-red.json"
-      test ! -e "$evidence/coordinator-red.json.capture.json"
       mkdir "$evidence/outer-invocation"
-      run_logged coordinator-red env PR159178_RED_OUTCOME_DIRECTORY="$evidence/outer-invocation" pnpm test extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts --maxWorkers=1 --testNamePattern 'closes .* backoff without resubmission when invocation authority expires' --reporter=json --reporter="$GITHUB_WORKSPACE/scripts/lib/vitest-report-capture.mts" --outputFile.json="$evidence/coordinator-red.json" || status=$?
+      status=0
+      run_logged P-red env PR159178_RED_OUTCOME_DIRECTORY="$evidence/outer-invocation" pnpm test "$store" --maxWorkers=1 --testNamePattern 'disposed at native' --reporter=json --reporter="$GITHUB_WORKSPACE/scripts/lib/vitest-report-capture.mts" --outputFile.json="$evidence/P-red.json" || status=$?
       test "$status" -eq 1
       test "$last_native" -eq 1
       test "$last_tee" -eq 0
-      python3 - "$evidence/coordinator-red.json" "$evidence/coordinator-red.json.capture.json" "$GITHUB_WORKSPACE" <<'PY'
+      validate_store_report "$evidence/P-red.json" red
+      python3 - "$evidence/outer-invocation" "$GITHUB_WORKSPACE" "$evidence/P-red.json.capture.json" <<'PY'
 from pathlib import Path
 import json
 import re
 import sys
 
-FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
-SUITE = 'Crabbox worker coordinator retries'
-PROJECT = 'extension-database-workers'
-CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
-# Vitest 5.0.1 generateFileHash(FILE, PROJECT, no typecheck/merge label).
-TASK_ID = '1706718556'
-SELECTED = [
-    'closes inspect backoff without resubmission when invocation authority expires',
-    'closes run backoff without resubmission when invocation authority expires',
-]
-SKIPPED = [
-    "retries node enrollment setup only before script output ''",
-    "retries node enrollment setup only before script output 'CRABBOX_PHASE:openclaw-bootstrap-start'",
-    "retries node runtime preparation only before script output ''",
-    'submits profile setup until recovers',
-    'submits profile setup until exhausted',
-    'submits profile setup until script error',
-    'cancels backoff without resubmitting setup or stopping the lease',
-    'recovers during initial inspection',
-    'recovers during readiness inspection',
-    'recovers during lifecycle inspection',
-    'does not retry warmup coordinator timeouts',
-    'recovers heartbeat before warning',
-]
-
-def require(condition, code):
-    if not condition:
-        raise ValueError(code)
-
-def validate_red(report, capture, root):
-    # This is an admission check of native owner facts, never reconstruction of
-    # completion from exit 1 or another later GREEN run.
-    require(type(report) is dict and type(capture) is dict, 'native-report-shape')
-    require(capture.get('ended') == {
-        'reason': 'failed', 'unhandledErrors': 0, 'failedModules': 1, 'suiteErrors': 0,
-    }, 'native-completion')
-    require(capture.get('processTimedOut') is False, 'native-timeout')
-    require(capture.get('ignoreUnhandledErrors') is False, 'native-errors-ignored')
-    require(capture.get('passWithNoTests') is False, 'native-empty-admission')
-    require(type(capture.get('pid')) is int and capture['pid'] > 0, 'native-process-identity')
-    require(capture.get('root') == root, 'native-root')
-    project = {
-        'name': PROJECT, 'namePrefix': '', 'root': root,
-        'config': root + '/' + CONFIG, 'pool': 'openclaw-forks',
-    }
-    require(capture.get('projects') == [project], 'native-project')
-    require(capture.get('modules') == [{
-        **project, 'file': root + '/' + FILE, 'taskId': TASK_ID,
-    }], 'native-module')
-    expected_counts = {
-        'numFailedTests': 2, 'numPassedTests': 0, 'numPendingTests': 12,
-        'numTodoTests': 0, 'numTotalTests': 14,
-        'numFailedTestSuites': 2, 'numPassedTestSuites': 0,
-        'numPendingTestSuites': 0, 'numTotalTestSuites': 2,
-    }
-    require(all(type(report.get(k)) is int and report[k] == v
-                for k, v in expected_counts.items()), 'native-counts')
-    require(report.get('success') is False, 'native-unexpected-success')
-    files = report.get('testResults')
-    require(type(files) is list and len(files) == 1, 'native-file-count')
-    file = files[0]
-    require(type(file) is dict and file.get('name') == root + '/' + FILE,
-            'native-file')
-    require(file.get('status') == 'failed' and file.get('message') == '',
-            'native-file-error')
-    cases = file.get('assertionResults')
-    require(type(cases) is list and len(cases) == 14 and
-            all(type(case) is dict for case in cases), 'native-case-count')
-    require(sorted(case.get('title', '') for case in cases) == sorted(SELECTED + SKIPPED),
-            'native-case-inventory')
-    for case in cases:
-        title = case['title']
-        require(case.get('ancestorTitles') == [SUITE] and
-                case.get('fullName') == SUITE + ' ' + title, 'native-case-identity')
-        if title in SKIPPED:
-            require(case.get('status') == 'skipped' and case.get('failureMessages') == [],
-                    'native-skipped-error')
-            continue
-        require(case.get('status') == 'failed', 'native-selected-status')
-        errors = case.get('failureMessages')
-        require(type(errors) is list and len(errors) == 1 and type(errors[0]) is str,
-                'native-selected-error-count')
-        lines = errors[0].splitlines()
-        require(bool(lines) and re.fullmatch(
-            r'AssertionError: expected .+ to have a length of 1 but got 3', lines[0]
-        ) is not None, 'native-selected-assertion')
-        # Native JSON carries Error.stack, not formatted diffs/log output. Reject
-        # additional non-frame diagnostics smuggled into the one assertion entry.
-        require(all(re.fullmatch(r'\s+at .+', line) is not None for line in lines[1:]),
-                'native-selected-extra-error')
-    return {'admitted': True, 'selectedFailures': 2, 'skipped': 12, 'total': 14,
-            'file': FILE, 'project': PROJECT, 'taskId': TASK_ID}
-
-if __name__ == '__main__':
-    result = validate_red(json.loads(Path(sys.argv[1]).read_text()),
-                          json.loads(Path(sys.argv[2]).read_text()), sys.argv[3])
-    print(json.dumps(result, sort_keys=True))
-PY
-      python3 - "$evidence/outer-invocation" "$GITHUB_WORKSPACE" "$evidence/coordinator-red.json.capture.json" <<'PY'
-from pathlib import Path
-import json
-import re
-import sys
-
-FILE = 'extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts'
+FILE = 'extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts'
 CONFIG = 'test/vitest/vitest.extension-database-workers.config.ts'
 
 def require(condition, code):
@@ -550,22 +541,12 @@ if __name__ == '__main__':
     print(json.dumps(result, sort_keys=True))
 PY
     )
-    retry_red
     assert_commit
-    run_logged provider-authority pnpm test \
-      extensions/crabbox/src/crabbox-worker-allocation-authority.test.ts \
-      extensions/crabbox/src/crabbox-worker-coordinator-retry.test.ts \
-      extensions/crabbox/src/crabbox-worker-node-enrollment-diagnostics.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image-authority.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image-sibling-admission.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image-store.test.ts \
-      extensions/crabbox/src/crabbox-worker-project.test.ts \
-      extensions/crabbox/src/crabbox-worker-warm-image.test.ts \
-      extensions/crabbox/src/crabbox-worker-node-enrollment.test.ts \
-      src/gateway/worker-environments/provider-invocation.test.ts \
-      src/gateway/worker-environments/provider-owner-revocation.test.ts \
-      src/gateway/worker-environments/provider-allocation-cleanup.test.ts \
-      --maxWorkers=1 --reporter=verbose --reporter=json --outputFile="$evidence/provider-tests.json"
+    run_logged P-store pnpm test "$store" --maxWorkers=1 --reporter=json --reporter="$GITHUB_WORKSPACE/scripts/lib/vitest-report-capture.mts" --outputFile.json="$evidence/P-store.json"
+    validate_store_report "$evidence/P-store.json" green
+    assert_commit
+    mapfile -t targets < <(jq -r '.positiveTargets[1:][]' "$payload")
+    run_logged snapshot-siblings pnpm test "${targets[@]}" --maxWorkers=1 --reporter=verbose --reporter=json --outputFile="$evidence/snapshot-siblings.json"
     assert_commit
     run_logged extensions-types pnpm tsgo:extensions
     assert_commit
@@ -573,17 +554,14 @@ PY
     assert_commit
     run_logged plugin-test-types pnpm tsgo:extensions:test
     assert_commit
+    run_logged changed-check pnpm check:changed --base "$base" --head HEAD --timed
+    assert_commit
     ;;
   export)
     assert_commit
     run_logged bundle-create git bundle create "$RUNNER_TEMP/candidate.bundle" "$base..HEAD"
     run_logged bundle-verify git bundle verify "$RUNNER_TEMP/candidate.bundle"
-    jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$(git rev-parse HEAD^)" \
-      --arg base "$base" --arg old "$old" --arg tree "$tree" --arg payload "$PATCH_SHA256" \
-      --arg suite "$SUITE" --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
-      --arg bundle "$(sha256sum "$RUNNER_TEMP/candidate.bundle" | cut -d ' ' -f1)" \
-      --slurpfile replay "$evidence/history.json" \
-      '{commit:$commit,parent:$parent,base:$base,oldHead:$old,tree:$tree,payloadSha256:$payload,suite:$suite,controller:$controller,runId:$run,attempt:$attempt,bundleSha256:$bundle,replay:$replay[0],scope:"Native ten-commit rebase, canonical format/hook, selected provider and overlap regressions, core/plugin production types and plugin test types; native process/build and PR CI separate",hookProof:"Native rebase with canonical hooks configured; clean-result canonical pre-commit invoked separately; no per-replayed-commit pre-commit claim"}' > "$RUNNER_TEMP/candidate.json"
+    jq -n --arg commit "$(git rev-parse HEAD)" --arg base "$base" --arg tree "$tree" --arg payload "$PATCH_SHA256" --arg controller "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg bundle "$(sha256sum "$RUNNER_TEMP/candidate.bundle" | cut -d ' ' -f1)" '{commit:$commit,parent:$base,base:$base,tree:$tree,payloadSha256:$payload,suite:"provider-rebase-focused",mode:"pin-rollback-first-native-commit",controller:$controller,runId:$run,attempt:$attempt,bundleSha256:$bundle,scope:"Exact M store suite, controlled P native refusal RED/outer/restoration, full P store and snapshot siblings, canonical hooks/format/production and plugin test types/changed-check; full build and R separately admitted"}' > "$RUNNER_TEMP/candidate.json"
     cp "$RUNNER_TEMP/candidate.json" "$evidence/candidate.json"
     ;;
   *) exit 2 ;;

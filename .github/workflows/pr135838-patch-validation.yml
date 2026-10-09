@@ -125,7 +125,7 @@ jobs:
       PATCH_ID: ${{ inputs.patch_id }}
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       SUITE: ${{ inputs.suite }}
-      REBASE_RECIPE_SHA256: '0e0337057eaa6ff2891bd3b39cbb283b15df15dbf92446cfc6f861cd75642269'
+      REBASE_RECIPE_SHA256: '46c70eef3a83fb68f20e9647b8f3c936fd94f83b3c6335a15e612b7549fc8cb8'
       FORMAT_RECIPE_SHA256: 5fb2a89715ef6043874bd0cc037fcf4a705638f119a4c0d7b6f0e2ccd324ae6c
       FORMAT_PATCH_DATA_SHA256: d4a76a40ce57fefd9e4edd3f37824a025e675acc07fb901d6ab3fb292c4df446
       SAME_COMMIT_SOURCE_SHA256: '1211b813c0bd8ae6a47d0ad2b7df73a6c87f4519e2bbf98f93e82570dc2ac8d7'
@@ -168,10 +168,10 @@ jobs:
           esac
           if [[ "$SUITE" == provider-rebase-focused ]]; then
             mkdir -p "$RUNNER_TEMP/pr159178-rebase"
-            test "$BASE_SHA" = 5d116aa3f1e0d85f9408d95cce0640926a8d8c60
+            test "$BASE_SHA" = 3e90389813229bd33c169fb07b883b567847224e
             test "$PATCH_ID" = provider-rebase-current
-            test "$EXPECTED_TREE" = '5cd77ceafea320d20b9f43cdd62b0ab712b74115'
-            test "$PATCH_SHA256" = 'b85061574031cfe7acdc241a61708b30f76a1abeba5b1f4d7a2013d2fe5c1104'
+            test "$EXPECTED_TREE" = '0626fcb2effa131169278b3c9be959baf407fded'
+            test "$PATCH_SHA256" = '6cc4f8b755252fc55015bc459caef362a02047577bc3e08607733a7019d7badf'
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REF" = refs/heads/main
             test "$GITHUB_SHA" = "$REBASE_WORKFLOW_SHA"
@@ -296,8 +296,8 @@ jobs:
           elif [[ "$SUITE" == provider-rebase-focused ]]; then
             evidence="$RUNNER_TEMP/pr159178-rebase"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-            test "$(git show -s --format=%P HEAD)" = 'aab0af6c37202eee2d015f4c021d0660ed5821de'
-            test "$(git rev-parse HEAD^1^{tree})" = 'f272d3acad46797a5e34198e902464942f3ab79d'
+            test "$(git show -s --format=%P HEAD)" = '71b827de4349a0ae14fafb2277251466edfea919'
+            test "$(git rev-parse HEAD^1^{tree})" = '600d0cd07ad041e772cc43abbbbe52c13451b8cf'
             git diff --name-status HEAD^ HEAD > "$evidence/controller-paths.txt"
             printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-current.payload.json .github/proof-inputs/pr135838/provider-rebase-focused.sh > "$evidence/expected-controller-paths.txt"
             printf 'M\t%s\n' .github/proof-inputs/pr135838/provider-rebase-outer-observation.json >> "$evidence/expected-controller-paths.txt"
@@ -308,7 +308,7 @@ jobs:
             cp .github/proof-inputs/pr135838/provider-rebase-current.payload.json "$RUNNER_TEMP/rebase-payload.json"
             test "$(git ls-tree HEAD .github/proof-inputs/pr135838/provider-rebase-outer-observation.json | cut -c 1-6)" = 100644
             cp .github/proof-inputs/pr135838/provider-rebase-outer-observation.json "$RUNNER_TEMP/outer-observation.json"
-            test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = 2534b94134b44f4063aa9d11490abd7f406325c9e42197d05fe73596bd6f8931
+            test "$(sha256sum "$RUNNER_TEMP/outer-observation.json" | cut -c 1-64)" = b87d0575feb7212e0486b7a0e20a6c04c38e5a675b039eeede1293f4c07e3755
             cp "$RUNNER_TEMP/outer-observation.json" "$evidence/"
             cp .github/proof-inputs/pr135838/provider-rebase-focused.sh "$RUNNER_TEMP/validate-candidate.sh"
             test "$(sha256sum "$RUNNER_TEMP/rebase-payload.json" | cut -d ' ' -f1)" = "$PATCH_SHA256"
@@ -591,7 +591,7 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
           git diff --quiet HEAD
           git log -1 --format="%H%n%T%n%B"
-      - name: Verify canonical hooks after native ten-commit rebase
+      - name: Verify canonical hooks after native P commit
         id: commit
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" commit
@@ -642,7 +642,7 @@ jobs:
           jq -n --arg commit "$(git rev-parse HEAD)" --arg parent "$BASE_SHA" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA256" --arg suite "$SUITE" --arg sdkReportSha "$sdk_report_sha" '{commit:$commit,parent:$parent,tree:$tree,patchSha256:$patch,suite:$suite,compatibilityReview:(if ($suite == "identity-sdk" or $suite == "identity-api" or $suite == "provider-sdk-repair") then {status:"required",reportSha256:$sdkReportSha} else null end)}' > "$RUNNER_TEMP/candidate.json"
           cat "$RUNNER_TEMP/candidate.json"
           fi
-      - name: Export actual rebased ten-commit history after native proof
+      - name: Export actual P commit after native proof
         id: export
         if: inputs.suite == 'provider-rebase-focused'
         run: bash "$RUNNER_TEMP/validate-candidate.sh" export
