@@ -56,6 +56,7 @@ export type UserProfileGitHubAttribution = Map<
   | EnterpriseGitHubIdentity
   | (GitCoauthorIdentity & {
       accountId?: number;
+      githubLogin?: string;
     })
   | null
 >;

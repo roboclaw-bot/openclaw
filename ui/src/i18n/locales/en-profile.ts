@@ -79,6 +79,7 @@ const enProfile = {
       gitCoauthorDescription:
         "Adds your organization-provided details or GitHub address to shared-session commits. Organization details require explicitly enabling this option. Your selected email address is visible in commit history. Turning it off affects future commits only.",
       gitCoauthorSource: "Credit source",
+      gitCoauthorChanged: "Credit details changed. Review them and enable credit again.",
       gitCoauthorOrganization: "From your organization",
       gitCoauthorGithub: "GitHub sign-in account",
       gitCoauthorGithubHost: "GitHub identity for the publishing host",

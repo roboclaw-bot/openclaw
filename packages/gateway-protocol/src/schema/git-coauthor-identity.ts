@@ -28,3 +28,35 @@ export function normalizeGitCoauthorIdentity(value: unknown): GitCoauthorIdentit
   }
   return { name, email: email.toLowerCase() };
 }
+
+export type GitCoauthorOrganizationIdentity = GitCoauthorIdentity & { policy: string };
+
+/** Bind imported metadata to the proxy mapping that admitted it, not merely its presence. */
+export function gitCoauthorOrganizationPolicy(
+  userHeader: string | undefined,
+  mapping: { nameHeader: string; emailHeader: string; emailVerifiedHeader?: string },
+): string {
+  return JSON.stringify(
+    [userHeader, mapping.nameHeader, mapping.emailHeader, mapping.emailVerifiedHeader].map(
+      (header) => header?.toLowerCase() ?? null,
+    ),
+  );
+}
+
+export function normalizeGitCoauthorOrganizationIdentity(
+  value: unknown,
+): GitCoauthorOrganizationIdentity | undefined {
+  const identity = normalizeGitCoauthorIdentity(value);
+  if (
+    !identity ||
+    typeof value !== "object" ||
+    value === null ||
+    !("policy" in value) ||
+    typeof value.policy !== "string" ||
+    !value.policy ||
+    value.policy.length > 2_048
+  ) {
+    return undefined;
+  }
+  return { ...identity, policy: value.policy };
+}

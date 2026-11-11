@@ -15,7 +15,11 @@ import { mockRpc } from "./profile-rpc.test-support.ts";
 
 const organizationKey = "git.coauthor.organization";
 const consentKey = "git.coauthor.enabled";
-const organization = { name: "Ada Organization", email: "ada@organization.example" };
+const organization = {
+  name: "Ada Organization",
+  email: "ada@organization.example",
+  policy: "test-policy",
+};
 
 function mount(
   entries: Record<string, unknown>,
@@ -149,6 +153,101 @@ it("shows organization credit as read-only and requires explicit consent", async
   await waitForSolid(() => expect(toggle.checked).toBe(true));
   expect(request).toHaveBeenCalledWith("users.prefs.set", {
     entries: { [consentKey]: true },
+    expectedEntries: { [organizationKey]: organization },
   });
   expect(page.textContent).toContain("visible in commit history");
+});
+
+it.each([null, organization])("rejects consent from a stale credit view (%j)", async (observed) => {
+  const entries: Record<string, unknown> = {
+    [consentKey]: false,
+    ...(observed ? { [organizationKey]: observed } : {}),
+  };
+  const refreshed = { ...organization, email: "updated@organization.example" };
+  let attempts = 0;
+  const { page, request } = mount(
+    entries,
+    { ...modelAccountProfile, gitCoauthorAvailable: true },
+    {
+      "users.prefs.set": (params) => {
+        expect(params).toEqual({
+          entries: { [consentKey]: true },
+          expectedEntries: { [organizationKey]: attempts++ === 0 ? observed : refreshed },
+        });
+        if (attempts === 1) {
+          return { status: "conflict" };
+        }
+        entries[consentKey] = true;
+        return { status: "ok" };
+      },
+    },
+  );
+  const toggle = () =>
+    page.querySelector<HTMLInputElement>('#settings-profile-attribution [role="switch"]')!;
+  await waitForSolid(() => expect(toggle()).toMatchObject({ checked: false, disabled: false }));
+  entries[organizationKey] = refreshed;
+  toggle().click();
+  await waitForSolid(() => expect(page.textContent).toContain(refreshed.email));
+  expect(page.textContent).toContain("Credit details changed");
+  expect(entries[consentKey]).toBe(false);
+  await waitForSolid(() => expect(toggle()).toMatchObject({ checked: false, disabled: false }));
+  toggle().click();
+  await waitForSolid(() => expect(entries[consentKey]).toBe(true));
+  expect(request.mock.calls.filter(([method]) => method === "users.prefs.set")).toHaveLength(2);
+});
+
+it("refreshes cached proxy details after profile publication", async () => {
+  const entries: Record<string, unknown> = { [organizationKey]: organization, [consentKey]: true };
+  const { page, emitEvent } = mount(entries);
+  await waitForSolid(() => expect(page.textContent).toContain(organization.email));
+  const refreshed = { ...organization, email: "refreshed@organization.example" };
+  entries[organizationKey] = refreshed;
+  entries[consentKey] = false;
+  emitEvent({ event: "sessions.changed", payload: { reason: "profile-identity" } });
+  await waitForSolid(() => expect(page.textContent).toContain(refreshed.email));
+  expect(page.textContent).not.toContain(organization.email);
+  expect(
+    page.querySelector<HTMLInputElement>('#settings-profile-attribution [role="switch"]'),
+  ).toMatchObject({ checked: false, disabled: false });
+});
+
+it("does not label an unavailable publishing-host account as a credit source", async () => {
+  const { page } = mount(
+    {},
+    {
+      ...modelAccountProfile,
+      gitCoauthorAvailable: false,
+      githubIdentity: {
+        login: "octocat",
+        profileUrl: "https://github.com/octocat",
+        avatarUrl: "https://avatars.githubusercontent.com/u/583231",
+      },
+    },
+  );
+  await waitForSolid(() => expect(page.textContent).toContain("Not configured"));
+  expect(page.textContent).not.toContain("GitHub sign-in account");
+});
+
+it("reconciles proxy publication received while a preference save is pending", async () => {
+  const saved = Promise.withResolvers<{ status: "ok" }>();
+  const entries: Record<string, unknown> = { [organizationKey]: organization, [consentKey]: true };
+  const { page, request, emitEvent } = mount(entries, undefined, {
+    "users.prefs.set": () => saved.promise,
+  });
+  await waitForSolid(() => expect(page.textContent).toContain(organization.email));
+  page
+    .querySelectorAll<HTMLInputElement>('#settings-profile-attribution [role="switch"]')[1]!
+    .click();
+  await waitForSolid(() =>
+    expect(request.mock.calls.filter(([method]) => method === "users.prefs.set")).toHaveLength(1),
+  );
+  const refreshed = { ...organization, email: "changed-during-save@organization.example" };
+  entries[organizationKey] = refreshed;
+  entries[consentKey] = false;
+  emitEvent({ event: "sessions.changed", payload: { reason: "profile-identity" } });
+  saved.resolve({ status: "ok" });
+  await waitForSolid(() => expect(page.textContent).toContain(refreshed.email));
+  expect(
+    page.querySelector<HTMLInputElement>('#settings-profile-attribution [role="switch"]'),
+  ).toMatchObject({ checked: false, disabled: false });
 });

@@ -70,7 +70,8 @@ export function ProfileAttribution(props: {
               description={
                 props.getView().gitCoauthorOrganization
                   ? t("profilePage.identity.gitCoauthorOrganization")
-                  : props.getView().ownProfile?.githubIdentity
+                  : props.getView().ownProfile?.gitCoauthorAvailable &&
+                      props.getView().ownProfile?.githubIdentity
                     ? t("profilePage.identity.gitCoauthorGithub")
                     : props.getView().ownProfile?.gitCoauthorAvailable
                       ? t("profilePage.identity.gitCoauthorGithubHost")
