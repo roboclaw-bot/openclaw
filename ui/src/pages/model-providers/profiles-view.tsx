@@ -403,7 +403,18 @@ export function ProviderProfiles(
           profileStatus(entry().profile, card().catalogStatus === "auth-rejected", true),
       };
     },
-    { keyed: (entry) => entry.profile.profileId },
+    // A new inventory may relabel an existing slot. Retire its reading, not its neighbors';
+    // names are invalidation hints, never authority for a credit or a recovered request.
+    {
+      keyed: ({ profile }) =>
+        JSON.stringify([
+          profile.profileId,
+          profile.type,
+          profile.source,
+          profile.email,
+          profile.displayName,
+        ]),
+    },
   );
   const reads = createMemo(
     () => new Map(readings().map((read) => [read.account().profileId, read])),

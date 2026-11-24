@@ -267,6 +267,11 @@ describe("codex plugin", () => {
     expect(registerGatewayMethod).toHaveBeenCalledWith("codex.accountUsage", expect.any(Function), {
       scope: "operator.admin",
     });
+    expect(registerGatewayMethod).toHaveBeenCalledWith(
+      "codex.consumeResetCredit",
+      expect.any(Function),
+      { scope: "operator.admin" },
+    );
     expect(registerSessionCatalog).toHaveBeenCalledTimes(Number(enabled));
     expect(registerProvider).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({

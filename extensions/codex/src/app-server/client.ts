@@ -88,6 +88,8 @@ type RequestOptions = {
   catalogRows?: number;
   attemptWaiterFinished?: CodexRequestWaiterFinished;
   onIngressRejected?: () => void;
+  /** After admission and frame validation, immediately before writing this request to stdin. */
+  onRequestWrite?: () => void;
 };
 
 export { CodexAppServerRpcError } from "./rpc-error.js";
@@ -384,6 +386,7 @@ export class CodexAppServerClient {
         // Codex emits -32001 only when ingress rejects a request before enqueue,
         // so retrying mutating methods cannot duplicate server-side work.
         if (
+          method === "account/rateLimitResetCredit/consume" || // Only another explicit confirmation can retry a reset.
           !isCodexAppServerOverloadError(error) ||
           retry >= CODEX_APP_SERVER_OVERLOAD_MAX_RETRIES
         ) {
@@ -479,7 +482,10 @@ export class CodexAppServerClient {
         this.writeMessage(
           message,
           (error) => attempt.failLocal(error),
-          () => attempt.markWritten(),
+          () => {
+            attempt.markWritten();
+            options.onRequestWrite?.();
+          },
         );
       },
     );

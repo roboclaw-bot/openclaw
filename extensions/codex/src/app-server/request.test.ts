@@ -184,6 +184,53 @@ describe("requestCodexAppServerJson sandbox guard", () => {
     }
   });
 
+  it("writes only the confirmed, sessionless account reset on an isolated client under node routing", async () => {
+    const method = "account/rateLimitResetCredit/consume";
+    const requestParams = { creditId: "fixture-credit", idempotencyKey: "fixture-request" };
+    const onRequestWrite = vi.fn();
+    const selection = {
+      method,
+      requestParams,
+      config: nodePolicy.config,
+      isolated: true,
+      onRequestWrite,
+    };
+    const harness = createClientHarness({
+      onWrite(line, send) {
+        expect(onRequestWrite).toHaveBeenCalledOnce();
+        const frame = JSON.parse(line) as { id: number };
+        send({ id: frame.id, result: { outcome: "reset" } });
+      },
+    });
+    shared.isolated.mockResolvedValue(harness.client);
+    try {
+      for (const options of [
+        selection,
+        { ...selection, confirmedAccountReset: true, isolated: false },
+        { ...selection, confirmedAccountReset: true, sessionKey: nodePolicy.sessionKey },
+      ] as const) {
+        await expect(requestCodexAppServerJson(options)).rejects.toThrow("Models settings");
+      }
+      expect(shared.isolated).not.toHaveBeenCalled();
+      expect(shared.acquire).not.toHaveBeenCalled();
+      const oversized = createClientHarness({ maxFrameBytes: 8 });
+      shared.isolated.mockResolvedValueOnce(oversized.client);
+      await expect(
+        requestCodexAppServerJson({ ...selection, confirmedAccountReset: true }),
+      ).rejects.toThrow("frame limit");
+      expect(oversized.writes).toEqual([]);
+      expect(onRequestWrite).not.toHaveBeenCalled();
+      await expect(
+        requestCodexAppServerJson({ ...selection, confirmedAccountReset: true }),
+      ).resolves.toEqual({ outcome: "reset" });
+      expect(harness.writes.map((line) => JSON.parse(line))).toEqual([
+        expect.objectContaining({ method, params: requestParams }),
+      ]);
+    } finally {
+      harness.client.close();
+    }
+  });
+
   it.each([
     ["client-request", -32601, "rpc-method-unavailable"],
     ["client-request", -32603, "rpc-error"],

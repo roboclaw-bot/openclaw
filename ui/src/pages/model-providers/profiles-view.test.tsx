@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
@@ -21,6 +22,7 @@ import {
   type ProviderProfilesViewProps,
 } from "./profiles-view.tsx";
 import { ProviderRow } from "./provider-row.tsx";
+import { resetRegistryFor, type ResetCreditBalance } from "./reset-credit-operation.ts";
 import { card as viewCard, props, text } from "./view.test-support.tsx";
 
 it("keeps visible sign-out success quiet and preserves warnings", () => {
@@ -531,7 +533,14 @@ it("moves a key across collapsed subscriptions and keeps credit and recovery det
     ),
     {
       ...props(),
-      accountUsage: { client, agentId: "main", revision: 0 },
+      accountUsage: {
+        client,
+        agentId: "main",
+        revision: 0,
+        generation: 0,
+        cacheAvailable: false,
+        canConsume: () => false,
+      },
       canSignInAgain: () => true,
       onSignInAgain,
       onRequestLogout,
@@ -570,6 +579,59 @@ it("moves a key across collapsed subscriptions and keeps credit and recovery det
   );
   expectContent(row, ["Pro"], ["0 credits", "Sign-in expired", "Partial reading"]);
   expect(rowFor(container, healthy.profileId)).toBeNull();
+});
+
+it("keeps a reported reset count passive without a verified member, offer, journal or capability", async () => {
+  const valid = {
+    availableCount: 2,
+    creditId: "credit",
+    accountBinding: "binding",
+    accountLabel: "Studio",
+    workspaceId: "workspace",
+    memberId: "member",
+  };
+  const balances: Record<string, ResetCreditBalance> = {
+    usable: valid,
+    incomplete: { ...valid, memberId: undefined },
+    countOnly: { ...valid, creditId: undefined },
+    journalUnavailable: { ...valid, journalUnavailable: true },
+    readOnly: { ...valid, readOnly: true },
+    zero: { ...valid, availableCount: 0 },
+    pending: {
+      ...valid,
+      availableCount: 0,
+      creditId: undefined,
+      pending: { creditId: "last", idempotencyKey: "11944201-c32b-407b-a140-967fc4bccbef" },
+    },
+  };
+  const ids = Object.keys(balances);
+  const client = createTestGatewayClient((_method, params) => ({
+    providers: [],
+    resetCredits: balances[String(asOptionalRecord(params)?.profileId)],
+  }));
+  const providerCard = orderedCard({ openai: ids });
+  const accountUsage = {
+    client,
+    agentId: "main",
+    revision: 0,
+    generation: 0,
+    cacheAvailable: false,
+    canConsume: () => true,
+    registry: resetRegistryFor({}, "ws://test.invalid", "operator"),
+  };
+  const { container, update } = mount(providerCard, { ...props(), accountUsage });
+  const resetCells = () => [
+    ...container.querySelectorAll(
+      '[role="group"][aria-label="Reset credits"] .model-providers__credit',
+    ),
+  ];
+  await waitForSolid(() => expect(resetCells()).toHaveLength(ids.length));
+  const reviewable = () => ids.filter((_, i) => resetCells()[i]?.querySelector("button"));
+  expect(reviewable()).toEqual(["usable", "pending"]);
+  expect(resetCells().at(-1)?.textContent).toContain("Review pending reset");
+  update(providerCard, { ...props(), accountUsage: { ...accountUsage, canConsume: () => false } });
+  expect(reviewable()).toEqual([]);
+  expect(resetCells()[0]?.textContent).toContain("2");
 });
 
 it("disables account recovery while busy or read-only and hides unavailable sign-in", () => {

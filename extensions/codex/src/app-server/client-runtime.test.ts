@@ -213,11 +213,14 @@ it("installs shared handlers once per physical client", async () => {
   );
 });
 
-it("rejects ChatGPT refresh on a prepared API-key client", async () => {
+it.each([
+  ["prepared-api-key", "ChatGPT token refresh is unavailable for prepared Codex API-key auth."],
+  ["pinned-member", "Refresh Models to confirm the current Codex subscription member."],
+] as const)("rejects ChatGPT refresh on a %s client", async (authMode, message) => {
   const { client, send, writes } = createHarness();
   ensureCodexAppServerClientRuntime(client, {
     agentDir: "/tmp/agent",
-    authMode: "prepared-api-key",
+    authMode,
   });
 
   send({
@@ -231,7 +234,7 @@ it("rejects ChatGPT refresh on a prepared API-key client", async () => {
   expect(JSON.parse(writes.at(-1) ?? "{}")).toMatchObject({
     id: "refresh-api-key",
     error: {
-      message: "ChatGPT token refresh is unavailable for prepared Codex API-key auth.",
+      message,
     },
   });
 });

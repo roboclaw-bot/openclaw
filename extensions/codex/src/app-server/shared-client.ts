@@ -22,6 +22,7 @@ import {
   formatCodexAuthProfileUnavailableMessage,
 } from "./auth-profile-recovery.js";
 import {
+  codexClientAuthMode,
   resolveCodexAppServerAuthProfileIdForAgent,
   resolveCodexAppServerAuthProfileStore,
 } from "./auth-profile.js";
@@ -533,10 +534,7 @@ async function acquireSharedCodexAppServerClient(
       agentDir,
       authProfileId: usesNativeAuth ? undefined : authProfileId,
       ...(authProfileStore ? { authProfileStore } : {}),
-      authMode:
-        preparedAuth?.kind === "api-key" || isCodexResponsesOAuth(preparedAuth)
-          ? "prepared-api-key"
-          : "profile",
+      authMode: codexClientAuthMode(preparedAuth),
       config: options?.config,
     });
     if (leased) {
@@ -894,10 +892,7 @@ async function startInitializedCodexAppServerClientOnce(
         {
           agentDir: params.agentDir,
           authProfileId: params.authProfileId ?? undefined,
-          authMode:
-            params.preparedAuth?.kind === "api-key" || isCodexResponsesOAuth(params.preparedAuth)
-              ? "prepared-api-key"
-              : "profile",
+          authMode: codexClientAuthMode(params.preparedAuth),
           ...(params.authProfileStore ? { authProfileStore: params.authProfileStore } : {}),
           config: params.config,
           onAuthRefreshFailure: () => retireSharedCodexAppServerClientIfCurrent(client),

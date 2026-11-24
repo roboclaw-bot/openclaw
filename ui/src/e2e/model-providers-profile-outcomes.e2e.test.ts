@@ -1,6 +1,8 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
 import { buildAuthHealthSummary } from "../../../src/agents/auth-health.js";
+import type { ResetCreditBalance } from "../pages/model-providers/reset-credit-operation.ts";
 import {
   defaultControlUiFeatureMethods,
   installMockGateway,
@@ -52,7 +54,11 @@ const subscriptions = [
   { name: "backup", used: 72, plan: "Pro" },
 ];
 
-async function openAccounts(page: Page, withUsage: boolean) {
+async function openAccounts(
+  page: Page,
+  withUsage: boolean,
+  resetBalances?: Record<string, ResetCreditBalance>,
+) {
   const accounts = (withUsage ? subscriptions : subscriptions.slice(0, 2)).map(({ name }) => ({
     profileId: `openai:${name}`,
     email: `${name}@example.com`,
@@ -72,6 +78,7 @@ async function openAccounts(page: Page, withUsage: boolean) {
       ...defaultControlUiFeatureMethods,
       "models.authOrderSet",
       ...(withUsage ? ["codex.accountUsage"] : []),
+      ...(resetBalances ? ["codex.prepareResetCredit", "codex.consumeResetCredit"] : []),
     ],
     models: [{ id: "gpt-5.5", name: "GPT-5.5", provider: "openai", available: true }],
     methodResponses: {
@@ -81,7 +88,7 @@ async function openAccounts(page: Page, withUsage: boolean) {
       "codex.accountUsage": {
         cases: subscriptions.map(({ name, used, credits, plan }) => ({
           match: { profileId: `openai:${name}` },
-          response: usage(used, credits, plan),
+          response: { ...usage(used, credits, plan), resetCredits: resetBalances?.[name] },
         })),
       },
     },
@@ -191,7 +198,7 @@ suite.define(() => {
       await work.click();
       expect(
         await card.getByRole("status").filter({ hasText: "work+team@example.com" }).textContent(),
-      ).toContain("100% left");
+      ).toMatch(/100% left · Resets /);
       await work.click();
       await gateway.deferNext("models.authOrderSet");
       const src = await layoutBox(work);
@@ -275,13 +282,96 @@ suite.define(() => {
       const credits = card.getByRole("group", { name: "Credits" });
       expect(
         await credits.locator(".model-providers__credit > span:nth-child(2)").allTextContents(),
-      ).toEqual(["0", "0", "12.75", "—"]);
+      ).toEqual(["0", "0", "13", "—"]);
+      expect(await card.getByRole("group", { name: "Reset credits", exact: true }).count()).toBe(0);
       expect(await card.locator("[data-profile-id]").count()).toBe(0);
       await emailButton("backup").click();
       const backup = card.locator('[data-profile-id="openai:backup"]');
       expect(await backup.getByText("Pro", { exact: true }).isVisible()).toBe(true);
       expect(await backup.getByText("$9.00", { exact: true }).isVisible()).toBe(true);
       expect(await backup.getByRole("button", { name: /^Reorder / }).count()).toBe(0);
+    });
+  });
+
+  it("reviews the reset beside its count without spending until the selected account is confirmed", async () => {
+    await withPage(async ({ page }) => {
+      await page.setViewportSize({ width: 400, height: 840 });
+      await page.emulateMedia({ colorScheme: "dark" });
+      const studio = {
+        availableCount: 2,
+        accountLabel: "Studio",
+        accountBinding: "binding-studio",
+        memberId: "studio-member",
+        workspaceId: "studio-workspace",
+        creditId: "studio-credit",
+      };
+      const { card, gateway } = await openAccounts(page, true, {
+        personal: { availableCount: 0 },
+        "work+team": { availableCount: 2, readOnly: true },
+        studio,
+      });
+      const row = card.getByRole("group", { name: "Reset credits", exact: true });
+      const cells = row.locator(".model-providers__credit");
+      const counts = () => cells.locator('span[aria-hidden="true"]').allTextContents();
+      await expect.poll(counts).toEqual(["0", "2", "2", "—"]);
+      const review = cells.nth(2).getByRole("button", { name: /Review reset.*studio/i });
+      expect(await row.getByRole("button").count()).toBe(1);
+      await review.focus();
+      const cellBox = await layoutBox(cells.nth(2)),
+        buttonBox = await layoutBox(review);
+      expect(buttonBox.x).toBeGreaterThanOrEqual(cellBox.x - 1);
+      expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(cellBox.x + cellBox.width + 1);
+      await review.press("Enter");
+      const details = card.locator('[data-profile-id="openai:studio"]');
+      const use = details.getByRole("button", { name: "Use reset credit" });
+      await use.waitFor();
+      expect(await card.locator("[data-profile-id]").count()).toBe(1);
+      expect(
+        await cells
+          .nth(2)
+          .getByRole("button", { name: /Hide details/i })
+          .getAttribute("aria-expanded"),
+      ).toBe("true");
+      const prepare = "codex.prepareResetCredit",
+        consume = "codex.consumeResetCredit";
+      expect(await gateway.getRequests(prepare)).toHaveLength(0);
+      expect(await gateway.getRequests(consume)).toHaveLength(0);
+      await gateway.deferNext(prepare);
+      await page.keyboard.press("Tab");
+      expect(await use.evaluate((el) => el === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      const request = await gateway.waitForRequest(prepare);
+      const selected = {
+        agentId: "main",
+        profileId: "openai:studio",
+        accountBinding: studio.accountBinding,
+        creditId: studio.creditId,
+      };
+      expect(request.params).toMatchObject(selected);
+      const idempotencyKey = asOptionalRecord(request.params)?.idempotencyKey;
+      const confirmationId = "10000000-0000-4000-a000-000000000001";
+      const started = performance.now();
+      await gateway.resolveDeferred(prepare, {
+        confirmationId,
+        idempotencyKey,
+        waitMs: 5000,
+        expiresInMs: 30_000,
+      });
+      const dialog = page.getByRole("dialog");
+      expect(await dialog.getByRole("button", { name: /Confirm in/ }).isDisabled()).toBe(true);
+      const spend = dialog.getByRole("button", { name: "Spend 1 credit" });
+      await spend.waitFor();
+      expect(performance.now() - started).toBeGreaterThanOrEqual(5000);
+      expect(await gateway.getRequests(consume)).toHaveLength(0);
+      await gateway.setMethodResponse(consume, { outcome: "reset" });
+      await spend.click();
+      expect((await gateway.waitForRequest(consume)).params).toEqual({
+        ...selected,
+        idempotencyKey,
+        confirmationId,
+      });
+      await details.getByText(/Limits reset. 1 credit spent./).waitFor();
+      expect(await gateway.getRequests(consume)).toHaveLength(1);
     });
   });
 

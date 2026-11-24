@@ -1,26 +1,10 @@
 import { For, Show } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
-import type { ProviderQuotaGroup } from "../../../lib/provider-quota-summary.ts";
+import {
+  formatUsageWindowLabel,
+  type ProviderQuotaGroup,
+} from "../../../lib/provider-quota-summary.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
-
-// Provider window labels arrive as compact data strings ("5h", "Week"); model
-// scoped labels (e.g. "Opus") pass through untranslated.
-function formatUsageWindowLabel(label: string): string {
-  if (label === "5h") {
-    return t("chat.composer.contextUsage.limitFiveHour");
-  }
-  if (label === "Week") {
-    return t("chat.composer.contextUsage.limitWeekly");
-  }
-  if (label === "Day") {
-    return t("chat.composer.contextUsage.limitDaily");
-  }
-  const hours = /^(\d+)h$/.exec(label);
-  if (hours) {
-    return t("chat.composer.contextUsage.limitHours", { hours: hours[1] ?? "" });
-  }
-  return label;
-}
 
 function formatBudgetAmount(amount: number, unit: string): string {
   if (/^[A-Za-z]{3}$/.test(unit)) {

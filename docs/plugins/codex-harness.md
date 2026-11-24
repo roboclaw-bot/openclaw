@@ -686,9 +686,32 @@ channel is the communication surface.
 The plugin's `codex.accountUsage` Gateway method accepts `agentId` and `profileId`.
 It reuses `account/rateLimits/read` in a temporary local app-server with the
 selected login, even when the normal harness uses a native home or remote server.
-Each request fetches current quotas for the selected saved subscription login.
+The detailed reading belongs to the selected subscription login. A cached quota reading cannot authorize a credit spend.
 The request requires `operator.admin` and rejects changed or removed credentials.
 Proxy launch arguments are rejected to avoid changing a shared daemon's login.
+
+In **Settings → Models → Provider access → OpenAI**, select a quota segment to see
+when it resets automatically. Waiting uses no credit. Earned **Reset credits**
+are separate from the ordinary **Credits** balance.
+
+Choose **Review reset** beside an eligible account’s balance, then **Use reset credit**
+in its details. With one account, choose **Use reset credit** directly.
+Check the account, credit, and expiry. After five seconds, **Spend 1 credit**
+resets eligible limits for that subscription. Opening the dialog, waiting, or
+canceling never spends a credit. A count without individual credit details is
+read-only. Agents have no reset-credit tool.
+
+If a reply is lost, refresh the account. A confirmed retry of a pending request
+reuses its original account, credit, and key; it never substitutes another credit.
+If the connection dropped before the Gateway recorded the request, Settings offers
+a retry only for the same account and original credit, with unchanged reset history.
+The Gateway checks that credit again. If it expired, the request can settle without
+spending anything or using a replacement. Refreshing never resubmits.
+
+If another tab has since used a different credit, the earlier result may remain
+unknown. You can acknowledge that uncertainty and choose a different available
+credit. This is a **new** reset, with its own confirmation and five-second wait;
+it does not retry the earlier request.
 
 ## Native subagent status
 

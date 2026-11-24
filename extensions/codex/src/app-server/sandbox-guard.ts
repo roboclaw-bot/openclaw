@@ -131,8 +131,25 @@ export async function prepareCodexAppServerDirectSandboxBypassBlock(
   params: Omit<
     Parameters<typeof resolveCodexAppServerDirectSandboxBypassBlock>[0],
     "executionPolicy"
-  >,
+  > & { isolated?: boolean; confirmedAccountReset?: true },
 ): Promise<PreparedCodexNativeBlock> {
+  if (params.method === "account/rateLimitResetCredit/consume") {
+    // Account management does not execute code on the Gateway or a paired node. Never
+    // admit this through a session or shared app-server, even under an unrestricted policy.
+    const allowed =
+      params.confirmedAccountReset &&
+      params.isolated &&
+      !params.sessionKey &&
+      !params.sessionId &&
+      !params.sessionTarget;
+    return {
+      block: allowed
+        ? undefined
+        : "Use the selected subscription in Models settings to spend a reset credit.",
+      async assertCurrent() {},
+      release() {},
+    };
+  }
   if (
     ALLOWED_CONTROL_PLANE_METHODS.has(params.method) &&
     params.method !== "config/mcpServer/reload"

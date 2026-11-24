@@ -5,6 +5,8 @@ export type CodexAppServerPreparedAuthProfileSnapshot = {
   inferenceAuth?: "host-oauth";
   loginParams: CodexLoginAccountParams;
   secretFreeCacheKey: string;
+  /** A short-lived account action must not change the token underneath its confirmed member. */
+  pinAccessToken?: true;
   /** Genuine ChatGPT principal id; email/profile fallbacks are not authorization identity. */
   chatgptAccountId?: string;
 };

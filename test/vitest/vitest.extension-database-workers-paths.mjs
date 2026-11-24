@@ -222,6 +222,7 @@ export const databaseWorkerExtensionTestFiles = [
   "extensions/codex/src/command-handler-scope.worker.test.ts",
   "extensions/codex/src/commands.test.ts",
   // Async command auth reaches the host-owned shared-state broker.
+  "extensions/codex/src/account-usage.test.ts",
   "extensions/codex/src/account-usage.worker-read.test.ts",
   "extensions/codex/src/command-diagnostics.worker-read.test.ts",
   "extensions/codex/src/command-account.test.ts",

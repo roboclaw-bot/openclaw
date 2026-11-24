@@ -118,7 +118,14 @@ it("uses the scoped quota once for a single login, retaining the collapsed summa
     cards: [
       card({ apiKey: undefined, profiles, usage, catalogStatus: "ready", auth: { kind: "ok" } }),
     ],
-    accountUsage: { client, agentId: "main", revision: 0 },
+    accountUsage: {
+      client,
+      agentId: "main",
+      revision: 0,
+      generation: 0,
+      cacheAvailable: false,
+      canConsume: () => false,
+    },
   });
   const container = mount(view);
   const summary = container.querySelector<HTMLButtonElement>(".provider-row__summary")!;

@@ -148,6 +148,8 @@ type CodexAppServerJsonClientOptions = Pick<
   agentId?: string;
   storePath?: string;
   isolated?: boolean;
+  /** Set only after the Models handler admits a deliberate, account-bound redemption. */
+  confirmedAccountReset?: true;
   signal?: AbortSignal;
   assertCurrent?: () => void;
   assertCurrentAsync?: () => Promise<void>;
@@ -159,17 +161,17 @@ type CodexAppServerJsonClientOptions = Pick<
   controlObservation?: CodexControlRequestObservation;
 };
 
+type RequestWriteEvidence = { onRequestWrite?: () => void; onIngressRejected?: () => void };
+type SingleRequestOptions = CodexAppServerJsonClientOptions & RequestWriteEvidence;
+
 export async function requestCodexAppServerJson<M extends CodexAppServerRequestMethod>(
-  params: CodexAppServerJsonClientOptions & {
-    method: M;
-    requestParams: CodexAppServerRequestParams<M>;
-  },
+  params: SingleRequestOptions & { method: M; requestParams: CodexAppServerRequestParams<M> },
 ): Promise<CodexAppServerRequestResult<M>>;
 export async function requestCodexAppServerJson<T = JsonValue | undefined>(
-  params: CodexAppServerJsonClientOptions & { method: string; requestParams?: unknown },
+  params: SingleRequestOptions & { method: string; requestParams?: unknown },
 ): Promise<T>;
 export async function requestCodexAppServerJson<T = JsonValue | undefined>(
-  params: CodexAppServerJsonClientOptions & { method: string; requestParams?: unknown },
+  params: SingleRequestOptions & { method: string; requestParams?: unknown },
 ): Promise<T> {
   // Fail closed before spawning or leasing a client for a guard-blocked method.
   observeControl(params.controlObservation, "prepare");
@@ -185,20 +187,27 @@ export async function requestCodexAppServerJson<T = JsonValue | undefined>(
         timeoutMessage: `codex app-server ${params.method} timed out`,
       },
       async (request) =>
-        await request<T>({ method: params.method, requestParams: params.requestParams }),
+        await request<T>({
+          method: params.method,
+          requestParams: params.requestParams,
+          onRequestWrite: params.onRequestWrite,
+          onIngressRejected: params.onIngressRejected,
+        }),
     );
   } finally {
     sandboxGuard.release();
   }
 }
 
-export type CodexAppServerScopedRequest = <T = JsonValue | undefined>(request: {
-  method: string;
-  requestParams?: unknown;
-  /** Rechecks caller-owned authority immediately before each physical write. */
-  assertCurrent?: () => void;
-  assertCurrentAsync?: () => Promise<void>;
-}) => Promise<T>;
+export type CodexAppServerScopedRequest = <T = JsonValue | undefined>(
+  request: RequestWriteEvidence & {
+    method: string;
+    requestParams?: unknown;
+    /** Rechecks caller-owned authority immediately before each physical write. */
+    assertCurrent?: () => void;
+    assertCurrentAsync?: () => Promise<void>;
+  },
+) => Promise<T>;
 
 function createScopeCleanupError(message: string): CodexAppServerScopedRequestRejectedError {
   // Every completed scope needs a fresh abort reason, even on success. Skip its
@@ -232,20 +241,19 @@ const CODEX_USAGE_DEADLINE_RESERVE_MS =
   CODEX_USAGE_ISOLATED_SHUTDOWN.exitTimeoutMs +
   CODEX_ACCOUNT_READ_DEADLINE_MARGIN_MS;
 
-/** Reuses live quota notifications, falling back to an isolated read-only app-server session. */
-export async function readCodexAppServerUsage(
-  options: Pick<
-    CodexAppServerJsonClientOptions,
-    | "signal"
-    | "agentDir"
-    | "config"
-    | "startOptions"
-    | "preparedAuth"
-    | "authRequirement"
-    | "assertCurrent"
-  > & { timeoutMs: number; authProfileId?: string },
-): Promise<{ rateLimits: JsonValue; accountEmail?: string }> {
-  const deadline = performance.now() + options.timeoutMs;
+type UsageReadOptions = Pick<
+  CodexAppServerJsonClientOptions,
+  | "signal"
+  | "agentDir"
+  | "config"
+  | "startOptions"
+  | "preparedAuth"
+  | "authRequirement"
+  | "assertCurrent"
+> & { timeoutMs: number; authProfileId?: string; freshOnly?: boolean };
+
+/** Only a current, account-matched notification; this fallback never starts a native process. */
+export async function readCachedCodexAppServerUsage(options: UsageReadOptions) {
   options.signal?.throwIfAborted();
   options.assertCurrent?.();
   const { readSharedCodexAppServerUsage } = await loadSharedClientUsage();
@@ -260,6 +268,15 @@ export async function readCodexAppServerUsage(
   });
   options.signal?.throwIfAborted();
   options.assertCurrent?.();
+  return cached;
+}
+
+/** Reuses live quota notifications, falling back to an isolated read-only app-server session. */
+export async function readCodexAppServerUsage(
+  options: UsageReadOptions,
+): Promise<{ rateLimits: JsonValue; accountEmail?: string }> {
+  const deadline = performance.now() + options.timeoutMs;
+  const cached = options.freshOnly ? undefined : await readCachedCodexAppServerUsage(options);
   if (cached) {
     // The Gateway report starts its own TTL on reuse: idle data can be up to
     // two TTLs old, while ongoing turns supply newer authoritative notifications.
@@ -433,6 +450,8 @@ export async function withCodexAppServerJsonClient<T>(
               method: request.method,
               requestParams: request.requestParams,
               config: params.config,
+              isolated: params.isolated,
+              confirmedAccountReset: params.confirmedAccountReset,
               sessionKey: params.sessionKey,
               sessionId: params.sessionId,
               agentId: params.agentId,
@@ -451,6 +470,8 @@ export async function withCodexAppServerJsonClient<T>(
               const requestOptions = {
                 timeoutMs: remainingTimeoutMs(),
                 signal: timeoutController.signal,
+                onRequestWrite: request.onRequestWrite,
+                onIngressRejected: request.onIngressRejected,
                 ...(attemptWaiterFinished ? { attemptWaiterFinished } : {}),
                 ...(params.catalogPreview
                   ? {

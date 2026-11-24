@@ -1,17 +1,27 @@
+import { GatewayProtocolRequestTimeoutError } from "@openclaw/gateway-client/browser";
 import { createSignal } from "solid-js";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { retainGatewayResponsePayload } from "../../../../packages/gateway-client/src/protocol-request.js";
 import type { UsageSummary } from "../../../../src/infra/provider-usage.types.js";
 import { createDeferredCore } from "../../../../src/shared/deferred.js";
+import { GatewayBrowserClient, GatewayRequestError } from "../../api/gateway.ts";
 import { registerSettingsEnglish } from "../../i18n/locales/en-settings.ts";
+import * as browserStorage from "../../local-storage.ts";
 import {
   createGatewayRequestMock,
   createTestGatewayClient,
 } from "../../test-helpers/gateway-client.ts";
+import { profile as makeProfile, expectContent } from "../../test-helpers/model-providers.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { createStorageMock } from "../../test-helpers/storage.ts";
 import { AccountLimits, createAccountUsage, type AccountUsageScope } from "./account-usage.tsx";
+import { ProviderProfiles } from "./profiles-view.tsx";
+import { resetRegistryFor, type ResetCreditBalance } from "./reset-credit-operation.ts";
+import { card, props as providerProps } from "./view.test-support.tsx";
 
 registerSettingsEnglish();
+afterEach(() => vi.useRealTimers());
 
 const snapshot = (usedPercent = 25, amount = 12): UsageSummary => ({
   updatedAt: 1,
@@ -26,25 +36,55 @@ const snapshot = (usedPercent = 25, amount = 12): UsageSummary => ({
   ],
 });
 
-function mount(request: ReturnType<typeof createGatewayRequestMock>) {
+function mount(
+  request: ReturnType<typeof createGatewayRequestMock>,
+  options: {
+    gatewayUrl?: string;
+    principal?: string;
+    cacheAvailable?: boolean;
+    order?: () => string[];
+    label?: (id: string) => string;
+  } = {},
+) {
   const client = createTestGatewayClient(request);
+  const { gatewayUrl = client.gatewayUrl, principal = client.recoveryScope } = options;
   const [scope, setScope] = createSignal<AccountUsageScope>({
     client,
     agentId: "main",
     revision: 0,
+    generation: 0,
+    cacheAvailable: options.cacheAvailable ?? false,
+    registry: resetRegistryFor({}, gatewayUrl, principal),
+    canConsume: () => true,
   });
+  const [profile, setProfile] = createSignal("openai:account");
+  const ids = options.order?.();
+  const profiles = () =>
+    ids?.map((id) => makeProfile(id, { displayName: options.label?.(id) ?? id }));
   const view = mountSolid(() => {
-    const read = createAccountUsage(scope, () => "openai:account");
+    if (ids && options.order) {
+      const order = options.order;
+      return (
+        <ProviderProfiles
+          {...providerProps()}
+          card={card({ profiles: profiles(), profileOrders: { openai: order() } })}
+          accountUsage={scope()}
+        />
+      );
+    }
+    const read = createAccountUsage(scope, profile);
     return <AccountLimits read={read} />;
   });
-  return { container: view.container, scope, setScope };
+  return { ...view, scope, setScope, setProfile };
 }
 
 it("loads automatically, renders remaining quota and balance, and re-reads on a new revision", async () => {
-  let nextResult: UsageSummary | Promise<UsageSummary> = snapshot();
+  const raw = snapshot(25, 42219.4424345);
+  let nextResult: UsageSummary | Promise<UsageSummary> = raw;
   const request = createGatewayRequestMock(async () => nextResult);
   const view = mount(request);
-  await waitForSolid(() => expect(view.container.textContent).toContain("12 credits"));
+  await waitForSolid(() => expect(view.container.textContent).toContain("42,219 credits"));
+  expect(raw.providers[0]?.billing?.[0]).toMatchObject({ amount: 42219.4424345 });
   expect(view.container.textContent).toContain("Pro");
   expect(view.container.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("75");
   // A rebuilt scope with the same fields is the same account read.
@@ -58,7 +98,7 @@ it("loads automatically, renders remaining quota and balance, and re-reads on a 
   await waitForSolid(() => expect(request.mock.calls.length).toBe(2));
   expect(request.mock.lastCall?.[1]).toEqual({ agentId: "main", profileId: "openai:account" });
   expect(view.container.querySelector(".provider-usage__window")).toBe(window);
-  expect(view.container.textContent).toContain("12 credits");
+  expect(view.container.textContent).toContain("42,219 credits");
   refresh.resolve(snapshot(90, 14));
   await waitForSolid(() => expect(view.container.textContent).toContain("14 credits"));
   expect(view.container.querySelector(".provider-usage__window")).toBe(window);
@@ -104,4 +144,795 @@ it("shows the empty state when Codex returns a snapshot without quota data", asy
   }));
   const view = mount(request);
   await waitForSolid(() => expect(view.container.textContent).toContain("No live usage data"));
+});
+
+const usage = "codex.accountUsage";
+const prepare = "codex.prepareResetCredit";
+const consume = "codex.consumeResetCredit";
+const actionName = "Use reset credit";
+const retryName = "Retry the original reset";
+const newName = "Start a new reset";
+const account = {
+  accountBinding: "binding-A",
+  accountLabel: "prepared@example.test · member-M · workspace-W",
+  accountEmail: "prepared@example.test",
+  memberId: "member-M",
+  workspaceId: "workspace-W",
+};
+const keyA = "3ba3ba2c-eb3b-4537-a733-ab21e3b176c9";
+const receipt = "8673fb72-3222-492e-8c1a-f45cb21fe2d9";
+const confirmationId = "55a79082-376c-4b78-8851-876ca262133d";
+const ticket = { confirmationId, expiresInMs: 120000, waitMs: 5000 };
+const row = { agentId: "main", profileId: "openai:account" };
+type Spend = {
+  creditId: string;
+  idempotencyKey: string;
+  confirmationId?: string;
+  afterReset?: string;
+};
+const offered = (
+  creditId: string,
+  extra: Partial<ResetCreditBalance> = {},
+): ResetCreditBalance => ({ ...account, availableCount: 1, creditId, ...extra });
+type UsageParams = { profileId: string; quotaOnly?: boolean };
+function fixture(
+  read?: (params: UsageParams) => Promise<UsageSummary & { resetCredits?: ResetCreditBalance }>,
+) {
+  vi.useFakeTimers({
+    toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "performance"],
+  });
+  const io = {
+    balance: offered("A", { availableCount: 2 }),
+    connected: true,
+    quotas: snapshot(),
+    prepare: async ({ idempotencyKey }: Spend) => ({ ...ticket, idempotencyKey }),
+    spend: async (_intent: Spend): Promise<{ outcome: string }> => ({ outcome: "reset" }),
+  };
+  const request = createGatewayRequestMock(async (method, params, options) => {
+    if (method === usage) {
+      if (read) {
+        return read(params as UsageParams);
+      }
+      return (params as UsageParams).quotaOnly
+        ? io.quotas
+        : { ...io.quotas, resetCredits: io.balance };
+    }
+    if (method === prepare) {
+      return io.prepare(params as Spend);
+    }
+    if (method === consume) {
+      if (!io.connected) {
+        // Use the production browser transport offline: no socket, onSent, or network call.
+        return new GatewayBrowserClient({ url: "ws://test.invalid" }).request(
+          method,
+          params,
+          options,
+        );
+      }
+      options?.onSent?.("request-id");
+      return io.spend(params as Spend);
+    }
+    throw new Error("Unexpected RPC: " + method);
+  });
+  return {
+    io,
+    request,
+    writes: () => request.mock.calls.filter(([m]) => m === consume).map(([, p]) => p as Spend),
+    previews: () => request.mock.calls.filter(([m]) => m === prepare).map(([, p]) => p as Spend),
+  };
+}
+async function open(view: ReturnType<typeof mount>, name = actionName) {
+  const trigger = await waitForSolid(() => {
+    const button = view.getByRole<HTMLButtonElement>("button", { name });
+    expect(button.disabled).toBe(false);
+    return button;
+  });
+  trigger.click();
+  const dialog = await waitForSolid(() => view.getByRole("dialog"));
+  const button = dialog.querySelector<HTMLButtonElement>("button.danger")!;
+  const cancel = view.getByRole<HTMLButtonElement>("button", { name: "Cancel" });
+  return { dialog, button, cancel, trigger };
+}
+const tick = async (ms: number) => {
+  await vi.advanceTimersByTimeAsync(ms);
+  flush();
+};
+async function send(view: ReturnType<typeof mount>, name = actionName) {
+  const confirm = await open(view, name);
+  await tick(5000);
+  expect(confirm.button.disabled).toBe(false);
+  confirm.button.click();
+  flush();
+}
+const refreshView = (view: ReturnType<typeof mount>) =>
+  view.setScope({ ...view.scope(), revision: view.scope().revision + 1 });
+
+it("opens a non-spending preparation; after its reply five full seconds enable only a deliberate confirm", async () => {
+  const { io, request, previews, writes } = fixture();
+  const view = mount(request);
+  const deferred = createDeferredCore<Awaited<ReturnType<typeof io.prepare>>>();
+  io.prepare = () => deferred.promise;
+  const first = await open(view);
+  expect(first.dialog.querySelector("input")).toBeNull();
+  expect(first.dialog.textContent).toContain("Workspace");
+  const identity = first.dialog.querySelector("details")!;
+  expect(identity.open).toBe(false);
+  expect(identity.querySelector("summary")?.textContent).toBe(account.accountEmail);
+  expect(identity.textContent).toContain("member-M");
+  expect(first.dialog.textContent).not.toContain(account.accountLabel);
+  expect(document.activeElement).toBe(first.cancel);
+  expect(previews()).toEqual([
+    { ...row, accountBinding: "binding-A", creditId: "A", idempotencyKey: expect.any(String) },
+  ]);
+  await tick(7000);
+  expect(first.button.disabled).toBe(true);
+  deferred.resolve({ ...ticket, idempotencyKey: previews()[0]!.idempotencyKey });
+  await tick(0);
+  expect(first.button.textContent).toMatch(/5/);
+  await tick(4999);
+  expect(first.button.disabled).toBe(true);
+  await tick(1);
+  expect(first.button.disabled).toBe(false);
+  const held = new KeyboardEvent("keydown", {
+    key: "Enter",
+    repeat: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  first.button.focus();
+  first.button.dispatchEvent(held);
+  expect(held.defaultPrevented).toBe(true);
+  expect(writes()).toHaveLength(0);
+  first.button.click();
+  first.button.click();
+  expect(writes()).toEqual([{ ...previews()[0], confirmationId }]);
+  expect(
+    request.mock.calls
+      .filter(([m]) => m === prepare || m === consume)
+      .map((call) => call[2]?.timeoutMs),
+  ).toEqual([30_000, 30_000]);
+  await waitForSolid(() => expect(document.activeElement).toBe(view.getByRole("status")));
+});
+
+it.each([
+  "member",
+  "credit",
+  "profile",
+  "agent",
+  "connection",
+  "last receipt",
+  "pending key",
+  "journal unavailable",
+])("discards delayed confirmation when %s changes, without spending", async (change) => {
+  const { io, request, writes, previews } = fixture();
+  const view = mount(request);
+  if (change === "pending key") {
+    io.balance.pending = { creditId: "A", idempotencyKey: keyA };
+  }
+  const late = createDeferredCore<Awaited<ReturnType<typeof io.prepare>>>();
+  io.prepare = () => late.promise;
+  const first = await open(view, change === "pending key" ? retryName : actionName);
+  io.balance = {
+    ...io.balance,
+    ...(change === "member" && { accountBinding: "binding-B", memberId: "member-B" }),
+    ...(change === "credit" && { creditId: "B" }),
+    ...(change === "journal unavailable" && { journalUnavailable: true }),
+    ...(change === "last receipt" && {
+      lastReset: { creditId: "earlier", idempotencyKey: receipt, outcome: "reset" as const },
+    }),
+    ...(change === "pending key" && { pending: { creditId: "A", idempotencyKey: receipt } }),
+  };
+  if (change === "profile") {
+    view.setProfile("openai:other");
+  }
+  view.setScope({
+    ...view.scope(),
+    revision: 1,
+    ...(change === "agent" && { agentId: "other" }),
+    ...(change === "connection" && { generation: 2, client: createTestGatewayClient(request) }),
+  });
+  await waitForSolid(() => expect(first.dialog.isConnected).toBe(false));
+  late.resolve({ ...ticket, idempotencyKey: keyA });
+  await tick(6000);
+  first.button.click();
+  expect(previews()).toHaveLength(1);
+  expect(writes()).toHaveLength(0);
+});
+
+it("Cancel returns focus; a late ticket cannot enable the reopened dialog", async () => {
+  const { io, request, writes, previews } = fixture(),
+    view = mount(request);
+  const old = createDeferredCore<Awaited<ReturnType<typeof io.prepare>>>();
+  io.prepare = () => old.promise;
+  const before = await open(view);
+  before.cancel.click();
+  await waitForSolid(() => expect(document.activeElement).toBe(before.trigger));
+  io.prepare = async ({ idempotencyKey }) => ({
+    ...ticket,
+    confirmationId: receipt,
+    idempotencyKey,
+  });
+  const second = await open(view);
+  old.resolve({ ...ticket, idempotencyKey: previews()[0]!.idempotencyKey });
+  await tick(5000);
+  second.button.click();
+  expect(writes()).toEqual([{ ...previews()[1], confirmationId: receipt }]);
+});
+
+it.each([
+  "accountLabel",
+  "workspaceId",
+  "memberId",
+  "accountBinding",
+  "readOnly",
+  "countOnly",
+] as const)("makes %s-incomplete or read-only balances display only", async (missing) => {
+  const { io, request, previews } = fixture();
+  if (missing === "readOnly") {
+    io.balance.readOnly = true;
+  } else if (missing === "countOnly") {
+    delete io.balance.creditId;
+  } else {
+    delete io.balance[missing];
+  }
+  const view = mount(request);
+  await waitForSolid(() => expect(view.container.textContent).toContain("Earned reset credits: 2"));
+  expect(view.queryByRole("button")).toBeNull();
+  expect(previews()).toHaveLength(0);
+});
+
+it.each([
+  "offline",
+  "offline retry",
+  "request-start-timeout retry",
+  "rejected",
+  "gateway-suspending",
+  "request-start-timeout",
+  "unavailable",
+  "unmarked start timeout",
+  "sent timeout",
+])(
+  "reports %s independently of another account receipt and retains any original uncertain intent",
+  async (kind) => {
+    const { io, request, writes } = fixture();
+    const retry = kind.endsWith(" retry");
+    const reason = kind.replace(/ retry$/, "");
+    const denied =
+      !retry && !["unavailable", "sent timeout", "unmarked start timeout"].includes(reason);
+    const lastReset = { creditId: "B", idempotencyKey: receipt, outcome: "reset" as const };
+    io.connected = reason !== "offline";
+    io.balance = offered("A", {
+      lastReset,
+      ...(retry && { pending: { creditId: "A", idempotencyKey: keyA } }),
+    });
+    io.spend = async () => {
+      io.balance = offered("C", { lastReset });
+      if (reason === "sent timeout") {
+        throw new GatewayProtocolRequestTimeoutError({
+          method: consume,
+          timeoutMs: 30_000,
+          requestSent: true,
+        });
+      }
+      // Even identical human-readable text cannot make generic UNAVAILABLE a refusal.
+      const failure = new GatewayRequestError({
+        code: reason === "rejected" ? "INVALID_REQUEST" : "UNAVAILABLE",
+        message: "Reset not sent",
+        retryable: reason !== "unmarked start timeout",
+        details: { reason: reason === "unmarked start timeout" ? "request-start-timeout" : reason },
+      });
+      retainGatewayResponsePayload(failure, undefined);
+      throw failure;
+    };
+    const view = mount(request);
+    await send(view, retry ? retryName : newName);
+    await waitForSolid(() =>
+      expectContent(view.getByRole("status"), [
+        "Last request (B): Limits reset.",
+        "Your request (A): " + (denied ? "Reset request not sent" : "Outcome unknown"),
+      ]),
+    );
+    expect(writes()).toHaveLength(1);
+    if (!denied) {
+      expect(view.queryByRole("button", { name: newName })).toBeNull();
+    } else if (io.connected) {
+      await send(view, newName);
+      expect(writes()[1]).toMatchObject({ creditId: "C", afterReset: receipt });
+    }
+  },
+);
+
+it.each([true, false])(
+  "recent A receipt settles our uncertain A while B is pending or finished (%s); an unavailable journal never implies settlement",
+  async (pending) => {
+    const { io, request, writes, previews } = fixture();
+    io.spend = async () => {
+      io.balance = { ...account, journalUnavailable: true, creditId: "C", availableCount: 1 };
+      throw new Error("response lost");
+    };
+    const view = mount(request);
+    await send(view);
+    const status = view.getByRole("status");
+    await waitForSolid(() => expect(status.textContent).toContain("Reset history is unavailable"));
+    expect(status.textContent).toContain("Your request (A): Outcome unknown");
+    expect(view.queryByRole("button", { name: retryName })).toBeNull();
+    expect(view.queryByRole("button", { name: newName })).toBeNull();
+    const a = {
+      creditId: "A",
+      idempotencyKey: writes()[0]!.idempotencyKey,
+      outcome: "alreadyRedeemed" as const,
+    };
+    const b = { creditId: "B", idempotencyKey: receipt, outcome: "noCredit" as const };
+    // Only the exact A/key receipt settles A; the latest account activity can differ.
+    io.balance = offered("C", {
+      lastReset: b,
+      recentReceipts: [b, a],
+      ...(pending && { pending: { creditId: "D", idempotencyKey: keyA } }),
+    });
+    refreshView(view);
+    await waitForSolid(() =>
+      expect(status.textContent).toContain("Your request (A): Already reset."),
+    );
+    expect(status.textContent).toContain("Last request (B): Selected credit unavailable.");
+    const next = await open(view, pending ? retryName : newName);
+    expect(previews()[1]).toMatchObject(
+      pending ? { creditId: "D", idempotencyKey: keyA } : { creditId: "C", afterReset: receipt },
+    );
+    io.balance = { availableCount: 0 };
+    refreshView(view);
+    await waitForSolid(() => expect(next.dialog.isConnected).toBe(false));
+    expect(status.textContent?.trim()).toBe("");
+    expect(writes()).toHaveLength(1);
+  },
+);
+
+it.each(["cache-first", "detail-first", "cache-miss", "stale-detail"])(
+  "fast quota race: %s never masks or delays authoritative detail",
+  async (order) => {
+    const cached = createDeferredCore<UsageSummary & { stale?: boolean }>(),
+      detail = createDeferredCore<UsageSummary & { stale?: boolean }>();
+    const request = createGatewayRequestMock(async (_method, params) =>
+      (params as { quotaOnly?: boolean }).quotaOnly ? cached.promise : detail.promise,
+    );
+    const view = mount(request, { cacheAvailable: true });
+    await waitForSolid(() => expect(request).toHaveBeenCalledTimes(2));
+    if (order === "cache-first") {
+      cached.resolve({ ...snapshot(70), stale: true });
+      await waitForSolid(() => expect(view.container.textContent).toContain("30% left"));
+      expect(view.container.textContent).toContain("Last known limits");
+    }
+    if (order === "cache-miss") {
+      cached.resolve({ updatedAt: 1, providers: [] });
+    }
+    detail.resolve({ ...snapshot(20), stale: order === "stale-detail" });
+    await waitForSolid(() => expect(view.container.textContent).toContain("80% left"));
+    cached.resolve({ ...snapshot(70), stale: true });
+    await Promise.resolve();
+    flush();
+    expect(view.container.textContent).not.toContain("30% left");
+    expect(view.container.textContent?.includes("Last known limits")).toBe(
+      order === "stale-detail",
+    );
+  },
+);
+
+it.each(["expired", "invalid wait", "changed key", "changed retry key", "prepare timeout"])(
+  "an %s ticket cannot dispatch, and its expiry never prepares another",
+  async (mode) => {
+    const { io, request, previews, writes } = fixture();
+    const retry = mode === "changed retry key";
+    if (retry) {
+      io.balance.pending = { creditId: "A", idempotencyKey: keyA };
+    }
+    io.prepare = async ({ idempotencyKey }) => {
+      if (mode === "prepare timeout") {
+        throw new GatewayProtocolRequestTimeoutError({
+          method: prepare,
+          timeoutMs: 30_000,
+          requestSent: true,
+        });
+      }
+      return {
+        ...ticket,
+        idempotencyKey: mode.startsWith("changed") ? receipt : idempotencyKey,
+        waitMs: mode === "invalid wait" ? 2 : 5000,
+        expiresInMs: 8000,
+      };
+    };
+    const view = mount(request);
+    const confirm = await open(view, retry ? retryName : actionName);
+    await tick(5000);
+    expect(confirm.button.disabled).toBe(mode !== "expired");
+    await tick(3000);
+    expect(confirm.button.disabled).toBe(true);
+    expect(confirm.dialog.textContent).toContain(
+      mode === "expired" ? "Confirmation expired" : "Couldn’t prepare",
+    );
+    confirm.button.click();
+    expect(previews()).toHaveLength(1);
+    expect(writes()).toHaveLength(0);
+  },
+);
+
+it.each([
+  { afterReset: null, expired: false },
+  { afterReset: receipt, expired: false },
+  { afterReset: receipt, expired: true },
+])(
+  "recovers only the original key after frame loss (predecessor $afterReset, expired $expired)",
+  async ({ afterReset, expired }) => {
+    using storage = vi
+      .spyOn(browserStorage, "getSafeSessionStorage")
+      .mockReturnValue(createStorageMock());
+    const { io, request, previews, writes } = fixture();
+    const lastReset = afterReset
+      ? { creditId: "prior", idempotencyKey: afterReset, outcome: "reset" as const }
+      : undefined;
+    const a = { creditId: "A", expiresAt: null },
+      b = { creditId: "B", expiresAt: null };
+    io.balance = offered("A", { availableCount: 2, offers: [a, b], lastReset });
+    io.spend = async () => {
+      throw new Error("Connection lost before Gateway admission");
+    };
+    const view = mount(request);
+    await send(view, lastReset ? newName : actionName);
+    const unknown = "Your request (A): Outcome unknown";
+    await waitForSolid(() => expectContent(view.getByRole("status"), [unknown]));
+    const original = previews()[0]!;
+    expect(original).toMatchObject({ creditId: "A", ...(afterReset && { afterReset }) });
+    // Reconnect, then reload from this tab's storage; the newly preferred B is not our target.
+    io.balance = {
+      ...io.balance,
+      availableCount: expired ? 1 : 2,
+      offers: expired ? [b] : [b, a],
+      creditId: "B",
+    };
+    view.setScope({ ...view.scope(), generation: 1, client: createTestGatewayClient(request) });
+    await waitForSolid(() => expect(view.getByRole("button", { name: retryName })).toBeTruthy());
+    view.unmount();
+    const restored = mount(request);
+    await waitForSolid(() => expectContent(restored.getByRole("status"), [unknown]));
+    expect(previews()).toHaveLength(1);
+    expect(writes()).toHaveLength(1);
+    io.prepare = async ({ idempotencyKey }) => ({
+      ...ticket,
+      confirmationId: keyA,
+      idempotencyKey,
+    });
+    io.spend = async ({ creditId, idempotencyKey }) => {
+      const outcome = expired ? "notOffered" : "reset";
+      io.balance = offered("B", { lastReset: { creditId, idempotencyKey, outcome } });
+      return { outcome };
+    };
+    const retry = await open(restored, retryName);
+    expect(previews()[1]).toEqual(original);
+    expectContent(retry.dialog, ["can spend 1 credit", "won’t spend a second credit"]);
+    await tick(4999);
+    expect(retry.button.disabled).toBe(true);
+    await tick(1);
+    expect(writes()).toHaveLength(1);
+    retry.button.click();
+    await waitForSolid(() =>
+      expectContent(restored.getByRole("status"), [
+        expired ? "Your request (A): Reset not sent" : "Your request (A): Limits reset",
+      ]),
+    );
+    expect(writes()).toEqual([
+      { ...original, confirmationId },
+      { ...original, confirmationId: keyA },
+    ]);
+    if (expired) {
+      expect(restored.getByRole("button", { name: newName })).toBeTruthy();
+    }
+    expect(storage).toHaveBeenCalled();
+  },
+);
+
+it("reload preserves unknown A across a shared B retry; only A’s journal can authorize recovery or settle it", async () => {
+  const storage = window.sessionStorage;
+  using spy = vi.spyOn(browserStorage, "getSafeSessionStorage").mockReturnValue(storage);
+  const { io, request, previews, writes } = fixture();
+  const held = createDeferredCore<{ outcome: string }>();
+  io.spend = () => held.promise;
+  const gateway = "wss://example.test/openclaw?route=not-for-storage";
+  const original = mount(request, { gatewayUrl: gateway });
+  await send(original);
+  const saved = Object.keys(storage).filter((k) => k.startsWith("openclaw.control.codexReset."));
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).not.toContain("route=");
+  const a = { creditId: "A", idempotencyKey: writes()[0]!.idempotencyKey };
+  const savedIntent = () => JSON.parse(storage.getItem(saved[0]!)!);
+  const storedA = { ...a, afterReset: null };
+  expect(savedIntent()).toEqual(storedA);
+  original.unmount();
+  // An older tab stored the key and credit without witnessing the original predecessor.
+  storage.setItem(saved[0]!, JSON.stringify(a));
+  const legacy = mount(request, { gatewayUrl: gateway });
+  await waitForSolid(() =>
+    expectContent(legacy.getByRole("status"), ["Your request (A): Outcome unknown"]),
+  );
+  expect(legacy.queryByRole("button", { name: retryName })).toBeNull();
+  legacy.unmount();
+  storage.setItem(saved[0]!, JSON.stringify(storedA));
+  io.balance = offered("B");
+  const elsewhere = mount(request, { gatewayUrl: gateway, principal: "other-principal" });
+  await waitForSolid(() =>
+    expect(elsewhere.getByRole("button", { name: actionName })).toBeTruthy(),
+  );
+  elsewhere.unmount();
+  const recovered = mount(request, { gatewayUrl: gateway });
+  const alias = { agentId: "other", profileId: "openai:alias", accountBinding: "binding-A" };
+  recovered.setScope({ ...recovered.scope(), agentId: alias.agentId });
+  recovered.setProfile(alias.profileId);
+  const unknownA = "Your request (A): Outcome unknown";
+  await waitForSolid(() => expect(recovered.getByRole("status").textContent).toContain(unknownA));
+  expect(recovered.getByRole("button", { name: retryName })).toBeTruthy();
+  expect(recovered.queryByRole("button", { name: newName })).toBeNull();
+  expect(previews()).toHaveLength(1);
+  expect(writes()).toHaveLength(1);
+
+  // Another tab admitted B. Its confirmed retry is shared activity, not A’s result.
+  const b = { creditId: "B", idempotencyKey: receipt };
+  const shared = createDeferredCore<{ outcome: string }>();
+  io.spend = () => shared.promise;
+  io.quotas = {
+    updatedAt: 1,
+    providers: [
+      { provider: "openai", displayName: "OpenAI", windows: [], error: "Quota unavailable" },
+    ],
+  };
+  io.balance = { ...account, creditId: "C", pending: b }; // no offer count during the outage
+  refreshView(recovered);
+  await waitForSolid(() => expectContent(recovered.getByRole("status"), ["Reset pending for B."]));
+  const retry = await open(recovered, retryName);
+  expectContent(recovered.container, ["Quota unavailable"], ["Earned reset credits:"]);
+  expectContent(retry.dialog, [
+    "Expiry unknown",
+    "can spend 1 credit",
+    "won’t spend a second credit",
+  ]);
+  await tick(5000);
+  expect(writes()).toHaveLength(1);
+  retry.button.click();
+  flush();
+  expect(writes()[1]).toEqual({ ...alias, ...b, confirmationId });
+  expect(savedIntent()).toEqual(storedA);
+  // Even if A is offered again and its receipt has rotated out, B must never become A’s predecessor.
+  io.balance = offered("A", { lastReset: { ...b, outcome: "reset" } });
+  shared.resolve({ outcome: "reset" });
+  await waitForSolid(() =>
+    expect(recovered.getByRole("status").textContent).toContain("Last request (B): Limits reset"),
+  );
+  expect(recovered.getByRole("status").textContent).toContain(unknownA);
+  expect(savedIntent()).toEqual(storedA);
+  expect(recovered.queryByRole("button", { name: retryName })).toBeNull();
+  // An exact pending A is independently recoverable even after B completed.
+  io.balance = { ...io.balance, pending: a };
+  refreshView(recovered);
+  await open(recovered, retryName);
+  expect(previews()[2]).toEqual({ ...alias, ...a });
+  io.balance = offered("C", { lastReset: { ...a, outcome: "notOffered" } });
+  refreshView(recovered);
+  const next = await open(recovered, newName);
+  expect(next.button.disabled).toBe(true);
+  expect(previews()[3]).toMatchObject({ creditId: "C", afterReset: a.idempotencyKey });
+  expect(writes()).toHaveLength(2);
+  held.resolve({ outcome: "reset" });
+  await tick(0);
+  expect(spy).toHaveBeenCalled();
+});
+
+it("requires new consent for a different credit after another tab completes B while A is unknown", async () => {
+  const tabStorage = createStorageMock();
+  using storage = vi.spyOn(browserStorage, "getSafeSessionStorage").mockReturnValue(tabStorage);
+  const { io, request, previews, writes } = fixture();
+  let delayedReceipt: ResetCreditBalance["lastReset"];
+  io.spend = async ({ creditId, idempotencyKey }) => {
+    const completed = { creditId, idempotencyKey, outcome: "reset" } as const;
+    if (creditId === "C") {
+      delayedReceipt = completed; // The receipt becomes visible after this tab reloads.
+    }
+    if (creditId !== "B") {
+      throw new Error("Response lost");
+    }
+    io.balance = offered("A", { lastReset: completed });
+    return completed;
+  };
+  const original = mount(request);
+  await send(original);
+  const unknownA = "Your request (A): Outcome unknown";
+  await waitForSolid(() => expectContent(original.getByRole("status"), [unknownA]));
+  original.unmount();
+  const stored = () => JSON.parse(tabStorage.getItem(tabStorage.key(0)!)!);
+  const a = { creditId: "A", idempotencyKey: writes()[0]!.idempotencyKey, afterReset: null };
+  storage.mockReturnValue(createStorageMock()); // An independent tab on the same Gateway account.
+  io.balance = offered("B");
+  const other = mount(request);
+  await send(other);
+  await waitForSolid(() =>
+    expectContent(other.getByRole("status"), ["Your request (B): Limits reset"]),
+  );
+  other.unmount();
+  storage.mockReturnValue(tabStorage);
+  const view = mount(request);
+  await waitForSolid(() =>
+    expectContent(view.getByRole("status"), [unknownA, "Last request (B): Limits reset"]),
+  );
+  expect(view.queryByRole("checkbox")).toBeNull(); // Only A is offered; never rebind it to B.
+  expect(view.queryByRole("button", { name: newName })).toBeNull();
+  expect(view.queryByRole("button", { name: retryName })).toBeNull();
+  io.balance = {
+    ...io.balance,
+    availableCount: 2,
+    offers: ["A", "C"].map((creditId) => ({ creditId, expiresAt: null })),
+  };
+  refreshView(view);
+  const ack = await waitForSolid(() =>
+    view.getByRole<HTMLInputElement>("checkbox", { name: /A may already have been spent/ }),
+  );
+  ack.click();
+  flush();
+  expect(view.getByRole("button", { name: newName })).toBeTruthy();
+  expect(stored()).toEqual(a);
+  view.unmount();
+  const back = mount(request);
+  const again = await waitForSolid(() => back.getByRole<HTMLInputElement>("checkbox"));
+  expect(again.checked).toBe(false);
+  again.click();
+  flush();
+  expect(previews().map((p) => p.creditId)).toEqual(["A", "B"]);
+  const c = await open(back, newName);
+  expectContent(c.dialog, ["A may already have been spent", "different credit", "C"]);
+  const intent = previews()[2]!;
+  expect(intent).toMatchObject({ creditId: "C", afterReset: writes()[1]!.idempotencyKey });
+  expect([a.idempotencyKey, intent.afterReset]).not.toContain(intent.idempotencyKey);
+  await tick(4999);
+  expect(c.button.disabled).toBe(true);
+  expect(writes().map((p) => p.creditId)).toEqual(["A", "B"]);
+  await tick(1);
+  c.button.click();
+  c.button.click();
+  await waitForSolid(() =>
+    expectContent(back.getByRole("status"), ["Your request (C): Outcome unknown"]),
+  );
+  expect(tabStorage.length).toBe(1); // Only the new confirmed intent now needs this slot.
+  expect(stored()).toEqual({
+    creditId: "C",
+    idempotencyKey: intent.idempotencyKey,
+    afterReset: intent.afterReset,
+  });
+  back.unmount();
+  io.balance = offered("A", { lastReset: delayedReceipt });
+  const settled = mount(request);
+  await waitForSolid(() =>
+    expectContent(settled.getByRole("status"), ["Your request (C): Limits reset"]),
+  );
+  expect(previews()).toHaveLength(3);
+  expect(writes()[2]).toEqual({ ...intent, confirmationId });
+  expect(writes().map((p) => p.creditId)).toEqual(["A", "B", "C"]);
+  expect(tabStorage.length).toBe(0);
+});
+
+it("lists offers in server order, starts fresh consent on selection changes, and identifies the credit, expiry and blocking window", async () => {
+  const { io, request, previews, writes } = fixture();
+  vi.useFakeTimers({
+    toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
+  });
+  const expiry = Date.UTC(2039, 0, 19, 12) / 1000;
+  io.balance = {
+    ...account,
+    availableCount: 2,
+    offers: [
+      { creditId: "first", expiresAt: expiry },
+      { creditId: "second", expiresAt: null },
+    ],
+  };
+  io.quotas.providers[0]!.windows = [
+    { label: "5h", usedPercent: 100, resetAt: Date.now() + 2000 },
+    { label: "weekly", usedPercent: 70, resetAt: Date.now() + 1000 },
+  ];
+  const view = mount(request);
+  const first = await open(view);
+  expect(first.dialog.textContent).toContain("first");
+  expect(first.dialog.textContent).toMatch(/5-hour limit resets automatically (at|on) /);
+  expect(first.dialog.textContent).toMatch(/Expires.*2039/);
+  const chooser = view.container.querySelector("select")!;
+  expect([...chooser.options].map((o) => o.value)).toEqual(["first", "second"]);
+  await tick(5000);
+  expect(first.dialog.textContent).not.toContain("5-hour limit resets automatically");
+  chooser.value = "second";
+  chooser.dispatchEvent(new Event("change", { bubbles: true }));
+  flush();
+  expect(first.dialog.isConnected).toBe(false);
+  first.button.click();
+  expect(writes()).toHaveLength(0);
+  const second = await open(view);
+  expect(second.button.disabled).toBe(true);
+  expect(second.dialog.textContent).toContain("No expiry");
+  // A separate tab can review A without sharing or replacing this selection of B.
+  const other = mount(request);
+  const otherDialog = await open(other);
+  expect(otherDialog.button.disabled).toBe(true);
+  expect(previews()[2]!.creditId).toBe("first");
+  expect(second.dialog.isConnected).toBe(true);
+  expect(previews()[1]).toMatchObject({ creditId: "second" });
+  expect(previews()[1]!.idempotencyKey).not.toBe(previews()[0]!.idempotencyKey);
+});
+
+it("keeps reset counts, review and completion on the selected account across reordering", async () => {
+  const ids = ["openai:a", "openai:b", "openai:c"],
+    b = ids[1]!;
+  const [order, setOrder] = createSignal(ids);
+  const refreshed = createDeferredCore(),
+    spent = createDeferredCore<{ outcome: string }>();
+  let refreshing = false,
+    balance = 2;
+  const { io, request, previews, writes } = fixture(async ({ profileId, quotaOnly }) => {
+    if (quotaOnly) {
+      return snapshot(75);
+    }
+    if (profileId !== b) {
+      return {
+        ...snapshot(0, 0),
+        resetCredits: profileId === ids[0] ? { availableCount: 0 } : undefined,
+      };
+    }
+    if (refreshing) {
+      await refreshed.promise;
+    }
+    return {
+      ...snapshot(100, 42219.4424345),
+      resetCredits: offered("credit-b", { availableCount: balance }),
+    };
+  });
+  io.spend = () => spent.promise;
+  const view = mount(request, { order, cacheAvailable: true });
+  const track = (label: string) =>
+    [
+      ...view
+        .getByRole("group", { name: label })
+        .querySelectorAll(".model-providers__credit [aria-hidden]"),
+    ].map((c) => c.textContent);
+  const select = (id: string) => {
+    view.getByRole("button", { name: "Account details: " + id }).click();
+    flush();
+  };
+  await waitForSolid(() => expect(track("Reset credits")).toEqual(["0", "2", "—"]));
+  expect(track("Credits")).toEqual(["0", "42,219", "0"]);
+  select(b);
+  expect(request).toHaveBeenCalledTimes(6); // one detail and one cache read per account
+  const { dialog, button } = await open(view);
+  expectContent(dialog, [account.memberId, account.workspaceId, "credit-b"]);
+  refreshing = true;
+  setOrder([b, ids[0]!, ids[2]!]);
+  refreshView(view);
+  await waitForSolid(() => expectContent(view.container, ["Last known limits"]));
+  expect(track("Reset credits")).toEqual(["2", "0", "—"]);
+  refreshed.resolve();
+  await waitForSolid(() => expectContent(view.container, [], ["Last known limits"]));
+  expect(view.getByRole("dialog")).toBe(dialog);
+  expect(button.disabled).toBe(true);
+  await tick(5000);
+  button.click();
+  flush();
+  select(ids[0]!);
+  expectContent(
+    view.container.querySelector('[data-profile-id="openai:a"]'),
+    ["Earned reset credits: 0"],
+    ["credit-b", "Waiting for Codex"],
+  );
+  balance = 1;
+  spent.resolve({ outcome: "reset" });
+  await waitForSolid(() => expect(track("Reset credits")).toEqual(["1", "0", "—"]));
+  expect(previews()).toEqual([
+    {
+      ...row,
+      profileId: b,
+      accountBinding: account.accountBinding,
+      creditId: "credit-b",
+      idempotencyKey: expect.any(String),
+    },
+  ]);
+  expect(writes()).toEqual([{ ...previews()[0], confirmationId }]);
+  expect(request.mock.calls.filter(([m]) => m === usage)).toHaveLength(14);
 });

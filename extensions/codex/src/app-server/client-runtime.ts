@@ -163,6 +163,9 @@ export function ensureCodexAppServerClientRuntime(
     if (request.method !== "account/chatgptAuthTokens/refresh") {
       return undefined;
     }
+    if (runtime.context.authMode === "pinned-member") {
+      throw new Error("Refresh Models to confirm the current Codex subscription member.");
+    }
     if (runtime.context.authMode === "prepared-api-key") {
       throw new Error("ChatGPT token refresh is unavailable for prepared Codex API-key auth.");
     }

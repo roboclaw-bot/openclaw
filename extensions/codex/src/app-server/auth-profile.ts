@@ -12,6 +12,8 @@ import {
   createCodexAuthProfileSelection,
   type CodexAppServerAuthProfileLookup,
 } from "./auth-profile-selection.js";
+import type { CodexAppServerPreparedAuth } from "./auth-types.js";
+import { isCodexResponsesOAuth } from "./responses-oauth.js";
 export {
   CODEX_APP_SERVER_AUTH_PROVIDER,
   type CodexAppServerAuthProfileLookup,
@@ -44,9 +46,18 @@ export const {
 });
 
 export type CodexAppServerAuthRuntimeContext = CodexAppServerAuthProfileLookup & {
-  authMode?: "prepared-api-key" | "profile";
+  authMode?: "prepared-api-key" | "pinned-member" | "profile";
   onAuthRefreshFailure?: () => void;
 };
+
+export function codexClientAuthMode(prepared: CodexAppServerPreparedAuth | undefined) {
+  if (prepared?.kind === "api-key" || isCodexResponsesOAuth(prepared)) {
+    return "prepared-api-key";
+  }
+  return prepared?.kind === "profile" && prepared.snapshot?.pinAccessToken
+    ? "pinned-member"
+    : "profile";
+}
 
 /** Returns true when an auth profile uses native Codex/OpenAI app-server auth. */
 export async function isCodexAppServerNativeAuthProfile(

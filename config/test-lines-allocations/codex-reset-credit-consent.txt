@@ -1,0 +1,10 @@
+# One signed Gateway/stdio journey owns physical writes, lost replies and cross-client recovery.
+# Exercise separately what its peer cannot see: native pre-write vs ambiguous replay,
+# browser non-dispatch, and preserving the selected workspace/credit across row reordering.
+# The comparison fixture covers counts under reorder; the mobile keyboard path separately
+# proves passive zero/read-only cells, focused disclosure and a single explicit confirmation.
+# Exact-key/expiry recovery is separate from credential publication, sign-in completion
+# and inventory relabel. Those page cases replace the manual-refresh relabel test.
+# The two-tab regression separates the lost A, settled B and fresh C keys, including
+# no spend on acknowledgment and a lost C reply after the final explicit click.
+1687

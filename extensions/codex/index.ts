@@ -60,6 +60,8 @@ import {
   createCodexNodeExecServerCommand,
   createCodexNodeExecServerInvokePolicy,
 } from "./src/node-exec-server.js";
+import { ResetConfirmations } from "./src/reset-credit-confirmation.js";
+import type { ResetRecord } from "./src/reset-credit.js";
 import {
   CODEX_CATALOG_STATE_NAMESPACE,
   type StoredCodexCatalogEntry,
@@ -101,14 +103,35 @@ export default definePluginEntry({
     noopPrefixes: ["plugins.entries.codex.config.codexPlugins"],
   },
   register(api) {
+    const confirmations = new ResetConfirmations();
+    const openResetStore = (assertCurrent: () => void) =>
+      api.runtime.state.openKeyedStoreV2<ResetRecord>(
+        { namespace: "reset-credit-receipts", maxEntries: 10_000, overflowPolicy: "reject-new" },
+        { assertCurrent },
+      );
     api.registerGatewayMethod(
       "codex.accountUsage",
       async (options) => {
         const { handleCodexAccountUsage } = await loadAccountUsage();
-        await handleCodexAccountUsage(options);
+        await handleCodexAccountUsage(options, openResetStore);
       },
       { scope: "operator.admin" },
     );
+    for (const method of ["codex.prepareResetCredit", "codex.consumeResetCredit"] as const) {
+      api.registerGatewayMethod(
+        method,
+        async (options) => {
+          const { handleCodexResetCredit } = await loadAccountUsage();
+          await handleCodexResetCredit(
+            options,
+            openResetStore,
+            confirmations,
+            method === "codex.prepareResetCredit" ? "prepare" : "consume",
+          );
+        },
+        { scope: "operator.admin" },
+      );
+    }
     api.registerService(codexNativeProfileRecoveryService);
     // Bundled modules may execute from a shared dist chunk, so import.meta.url
     // cannot identify the owning plugin package or its pinned dependencies.

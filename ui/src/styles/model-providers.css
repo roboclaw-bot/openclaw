@@ -432,6 +432,14 @@
   text-align: center;
   font-size: var(--control-ui-text-sm);
 }
+.model-providers__credit > button {
+  display: block;
+  margin: var(--space-1) auto 0;
+  max-width: 100%;
+  padding-inline: var(--space-1);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .model-providers__segment-name {
   display: grid;
   align-content: start;
@@ -453,6 +461,30 @@
 
 .model-providers__profile-order ~ .model-providers__account-limits {
   grid-column: 2 / -1;
+}
+
+.model-providers__reset-credits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--border);
+  color: var(--text);
+}
+
+.model-providers__credit-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.model-providers__credit-choice select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .model-providers__account-plan {

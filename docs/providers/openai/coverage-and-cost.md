@@ -12,7 +12,7 @@ sidebarTitle: "Coverage and cost"
 
 OpenClaw keeps subscription quota and Platform API billing distinct:
 
-- ChatGPT/Codex OAuth shows the subscription plan, quota windows, and credit balance.
+- ChatGPT/Codex OAuth shows the subscription plan, quota windows, and credit balance. [Earned quota resets](/plugins/codex-harness#saved-account-usage) are separate from usage credits and API billing.
 - `OPENAI_ADMIN_KEY` shows 30 days of provider-reported organization cost and completions usage in Control UI **Usage**, including daily spend, request/token totals, top models, and cost categories.
 - `OPENAI_PROJECT_ID` optionally scopes Admin API history to one project.
 - OpenClaw never sends `OPENAI_API_KEY` or an `openai` inference profile to organization APIs; those credentials may belong to custom, Azure, or agent-local endpoints.

@@ -20,6 +20,7 @@ import { i18nRevision, t } from "../../lib/reactive/i18n.ts";
 import { observeState } from "../../lib/reactive/observe-state.ts";
 import { navigateToAgent } from "../agents/route-navigation.ts";
 import { UsageRefreshPolicy } from "../usage/refresh-policy.ts";
+import { createAccountUsageInventory } from "./account-usage.tsx";
 import { createModelProviderConfigActions } from "./config-actions.ts";
 import { createModelProviderMutationPresentation } from "./config-mutation-presentation.ts";
 import {
@@ -80,6 +81,7 @@ export function createModelProviders(
   let connected = false;
   let pendingConnection: string | null = null;
   let pendingCredentialInvalidation = false;
+  const accounts = createAccountUsageInventory(context, state, notify);
   let profilesVisible = false;
   let readAccess = false;
   let stopCatalog: (() => void) | undefined;
@@ -92,12 +94,16 @@ export function createModelProviders(
   let agentEpoch = 0;
   const core = new ModelProviderCoreLoader(notify, {
     onStart: (reason) => {
+      accounts.begin();
       supplemental.beginCoreRefresh(reason === "forced");
       if (reason === "forced") {
         state.accountUsageRevision += 1;
       }
     },
-    onComplete: ({ client, data }) => supplemental.adoptCoreData(client, data),
+    onComplete: ({ client, data }) => {
+      accounts.complete(data);
+      supplemental.adoptCoreData(client, data);
+    },
     onCatalogComplete: (result) => {
       state.data &&= {
         ...state.data,
@@ -254,7 +260,10 @@ export function createModelProviders(
       setMessage("add", null);
     },
     canContinue: () => mutationBlockedReason() === null,
-    refresh: (providerId) => refresh("replacement", providerId),
+    refresh: (providerId) => {
+      accounts.signedIn(providerId);
+      return refresh("replacement", providerId);
+    },
   });
   let previousRouteData: ModelProvidersRouteData | undefined;
   let previousLoaderPending: boolean | undefined;
@@ -366,7 +375,7 @@ export function createModelProviders(
           location = next.location;
         }
       }),
-      modelCatalog.subscribeModelCatalogChanges(context.gateway, () => {
+      accounts.subscribe(() => {
         if (login.busy) {
           pendingCredentialInvalidation = true;
         } else {
@@ -417,7 +426,7 @@ export function createModelProviders(
       !client ||
       !state.selectedAgentId ||
       core.loading ||
-      (state.data !== null && state.data.updatedAt !== null && client === dataClient)
+      (state.data?.updatedAt != null && client === dataClient && (!accounts.stale || login.busy))
     ) {
       return;
     }
@@ -464,6 +473,7 @@ export function createModelProviders(
   function resetAgentScopeState() {
     mutations.retire();
     pendingCredentialInvalidation = false;
+    accounts.reset();
     login.reset();
     state.busy = {};
     state.messages = {};
@@ -511,19 +521,20 @@ export function createModelProviders(
       return Promise.resolve();
     }
     // Another client's write is outside the selected owner, so reconcile every provider.
-    const crossClient = pendingCredentialInvalidation;
+    const crossClient =
+      pendingCredentialInvalidation || (accounts.stale && providerId !== "openai");
+    const target =
+      state.data && reason !== "publication" && (providerId || pendingCredentialInvalidation)
+        ? {
+            data: state.data,
+            providerId: crossClient ? undefined : providerId,
+          }
+        : undefined;
     pendingCredentialInvalidation = false;
-    const reconcile = providerId !== undefined || crossClient;
-    const target = reconcile && state.data ? state.data : undefined;
-    return core.refresh(
-      client,
-      state.selectedAgentId,
-      reason,
-      target && {
-        providerId: crossClient ? undefined : providerId,
-        data: target,
-      },
-    );
+    if (target) {
+      accounts.begin(); // Targeted reads skip the full core-refresh hook.
+    }
+    return core.refresh(client, state.selectedAgentId, reason, target);
   }
 
   const setBusy = (key: string, value: boolean) =>
@@ -628,17 +639,9 @@ export function createModelProviders(
       void saveDefaults(field);
     };
     const advertised = isGatewayMethodAdvertised(gatewaySnapshot, "models.probe");
-    const usageAvailable = isGatewayMethodAdvertised(gatewaySnapshot, "codex.accountUsage");
     const props = {
       providerQuery: providerQuery(),
-      accountUsage:
-        !mutationBlockedReason() && usageAvailable && gatewaySnapshot.client
-          ? {
-              client: gatewaySnapshot.client,
-              agentId: state.selectedAgentId,
-              revision: state.accountUsageRevision,
-            }
-          : null,
+      accountUsage: accounts.scope(core.loading),
       connected: gatewaySnapshot.phase === "connected",
       loading: state.data === null && !rosterError && !noSelectableAgents,
       refreshing: core.loading,

@@ -6,9 +6,11 @@ import {
   expectAbsent,
   expectContent,
   expectPresent,
+  loginOption,
   profile,
 } from "../../test-helpers/model-providers.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { loginHarness, selectProvider } from "./model-providers-page.login.test-support.ts";
 import {
   appendPage,
   createPage,
@@ -19,6 +21,8 @@ import {
   drainPageUpdates,
   expandProvider,
   requestCount,
+  startSelectedLogin,
+  submitCredential,
   waitForProviders,
   advanceUsageRetries,
   focusDocument,
@@ -186,6 +190,259 @@ describe("ModelProvidersPage usage convergence", () => {
       }),
     );
   });
+
+  const readUsage = "codex.accountUsage",
+    prepare = "codex.prepareResetCredit",
+    spend = "codex.consumeResetCredit";
+  it.each(["publication", "sign-in", "route inventory"] as const)(
+    "rebinds account readings and credit actions after %s reuses a profile ID",
+    async (cause) => {
+      const id = "openai:shared",
+        peer = "openai:peer";
+      const capability = {
+        provider: "openai",
+        apiKeySupported: false,
+        loginOptions: [loginOption("openai-browser", "openai", "Subscription sign-in", "oauth")],
+      };
+      const { context, snapshot, request, publishEvent, answer } = loginHarness({
+        capabilities: [capability],
+      });
+      snapshot.hello!.features!.methods!.push(readUsage, prepare, spend);
+      snapshot.hello!.auth!.recoveryScope = "synthetic-operator";
+      let rotated = false;
+      const initialName = cause === "sign-in" ? "Shared login" : "Member A";
+      const inventory = () => ({
+        ...createAuthStatus([
+          {
+            profiles: [
+              profile(id, {
+                displayName: rotated && cause !== "sign-in" ? "Member B" : initialName,
+              }),
+              profile(peer, { displayName: "Peer" }),
+            ],
+          },
+        ]),
+        providerCapabilities: [capability],
+      });
+      const original = request.getMockImplementation()!;
+      const detail = deferred<unknown>();
+      const auth = deferred();
+      const earlierInventory = deferred();
+      let readingEarlierInventory = false;
+      const reads: string[] = [];
+      const key = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
+      const reading = (amount: number) => ({
+        providers: [
+          {
+            provider: "openai",
+            displayName: "OpenAI",
+            windows: [],
+            billing: [{ type: "balance", unit: "credits", amount }],
+          },
+        ],
+      });
+      request.mockImplementation(
+        async (method, params?: { profileId?: string; quotaOnly?: boolean }) => {
+          if (method === "models.authStatus") {
+            const captured = inventory();
+            if (rotated) {
+              await auth.promise;
+            } else if (readingEarlierInventory) {
+              await earlierInventory.promise;
+            }
+            return captured;
+          }
+          if (method === prepare) {
+            return { confirmationId: key, idempotencyKey: key, waitMs: 5000, expiresInMs: 60000 };
+          }
+          if (method !== readUsage) {
+            return original(method);
+          }
+          if (params?.quotaOnly) {
+            return { providers: [] };
+          }
+          reads.push(params!.profileId!);
+          const shared = params?.profileId === id;
+          if (shared && rotated) {
+            return detail.promise;
+          }
+          return {
+            ...reading(shared ? 731 : 42),
+            ...(shared && {
+              resetCredits: {
+                availableCount: 8,
+                accountBinding: "binding-A",
+                accountLabel: "Member A",
+                workspaceId: "workspace",
+                memberId: "A",
+                creditId: "old-credit",
+                pending: {
+                  creditId: "old-credit",
+                  idempotencyKey: key,
+                },
+              },
+            }),
+          };
+        },
+      );
+      const page = appendPage(context);
+      await waitForProviders(page);
+      const row = await expandProvider(page, "openai");
+      await waitForSolid(() =>
+        expectContent(row, [`${initialName}: 731`, "Peer: 42", `${initialName}: 8`]),
+      );
+      row.querySelector<HTMLButtonElement>(".model-providers__segment-name")!.click();
+      await waitForSolid(() => expectContent(row, ["Reset pending for old-credit"]));
+      let confirm: HTMLButtonElement | null = null;
+      if (cause === "publication") {
+        vi.useFakeTimers();
+        row.querySelector<HTMLButtonElement>(".model-providers__reset-credits button")!.click();
+        await waitForSolid(() => expect(requestCount(request, prepare)).toBe(1));
+        const before = requestCount(request, "models.authStatus");
+        readingEarlierInventory = true;
+        for (const [agentId, authChanged] of [
+          ["other", true],
+          ["writer", false],
+        ] as const) {
+          publishEvent({
+            type: "event",
+            event: "chat.metadata.changed",
+            payload: { agentId, modelCatalogChanged: true, authChanged },
+          });
+        }
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(requestCount(request, "models.authStatus")).toBeGreaterThan(before);
+        confirm = row.querySelector<HTMLButtonElement>("openclaw-modal-actions button.danger")!;
+        expect(confirm.disabled).toBe(false);
+        expect(reads).toEqual([id, peer]);
+      }
+      if (cause === "sign-in") {
+        vi.spyOn(window, "open").mockReturnValue(null);
+        await selectProvider(page, "openai");
+        await startSelectedLogin(page, "Subscription sign-in");
+        await submitCredential(page);
+      }
+      rotated = true;
+      if (cause === "publication") {
+        publishEvent({
+          type: "event",
+          event: "chat.metadata.changed",
+          payload: {
+            agentId: "writer",
+            authChanged: true,
+            modelCatalogChanged: true,
+          },
+        });
+        confirm!.click(); // Even before Solid detaches the old confirmation.
+      } else if (cause === "sign-in") {
+        // A completed OpenAI login has no per-profile or member ID in the callback.
+        answer.resolve({ done: true, status: "done" });
+      } else {
+        publishRouteData(page, { ...createApiKeyProviderData(), authStatus: inventory() });
+      }
+      const expectNoOldCredit = () =>
+        expectContent(
+          row,
+          [],
+          ["731", "Earned reset credits: 8", "old-credit", "Retry the original reset"],
+        );
+      if (cause !== "route inventory") {
+        await waitForSolid(expectNoOldCredit);
+        expect(reads).toEqual([id, peer]); // Do not read the new member under the old inventory.
+        if (confirm) {
+          expect(confirm.isConnected).toBe(false);
+          earlierInventory.resolve(); // This pre-publication reply still names A.
+          await vi.advanceTimersByTimeAsync(150); // Admit the coalesced catch-up.
+          expectNoOldCredit();
+          expect(reads).toEqual([id, peer]);
+        }
+      }
+      auth.resolve();
+      const newName = cause === "sign-in" ? initialName : "Member B";
+      await vi.waitFor(() => {
+        expect(reads.filter((readId) => readId === id)).toHaveLength(2);
+        expectContent(row, [newName, "Peer: 42"]);
+        expectNoOldCredit();
+      });
+      if (cause === "sign-in") {
+        detail.resolve({
+          ...reading(17),
+          resetCredits: {
+            availableCount: 3,
+            accountBinding: "binding-B",
+            accountLabel: "Member B",
+            memberId: "B",
+            workspaceId: "workspace",
+            creditId: "new-credit",
+          },
+        });
+        await waitForSolid(() =>
+          expectContent(row, ["Shared login: 17", "Earned reset credits: 3", "Use reset credit"]),
+        );
+      } else {
+        detail.reject(new Error("Member usage unavailable"));
+        await waitForSolid(() =>
+          expectContent(row, [newName + ": Member usage unavailable", "Peer: 42"]),
+        );
+      }
+      expectNoOldCredit();
+      expect(reads.filter((readId) => readId === peer)).toHaveLength(
+        cause === "route inventory" ? 1 : 2,
+      );
+      expect(requestCount(request, prepare)).toBe(confirm ? 1 : 0);
+      expect(requestCount(request, spend)).toBe(0);
+    },
+  );
+
+  it.each([
+    ["operator.admin", [readUsage, prepare, spend], true, true],
+    ["operator.admin", [spend], false, false],
+    ["operator.admin", [readUsage, spend], true, false],
+    ["operator.write", [readUsage, prepare, spend], false, false],
+  ] as const)(
+    "gates balance and spending on %s and %j",
+    async (scope, methods, canRead, canSpend) => {
+      const { context, request, snapshot } = createHarness("main");
+      snapshot.hello = {
+        type: "hello-ok",
+        protocol: 3,
+        features: { methods: ["config.get", ...methods] },
+        auth: { role: "operator", scopes: [scope], recoveryScope: "synthetic-principal" },
+      };
+      const original = request.getMockImplementation()!;
+      request.mockImplementation(async (method) => {
+        if (method === "models.authStatus") {
+          return createAuthStatus([{ profiles: [profile("openai:sub")] }]);
+        }
+        if (method === "codex.accountUsage") {
+          return {
+            updatedAt: 1,
+            providers: [],
+            resetCredits: {
+              availableCount: 1,
+              creditId: "one",
+              accountBinding: "binding-A",
+              accountLabel: "Workspace A / member M",
+              workspaceId: "workspace-A",
+              memberId: "member-M",
+            },
+          };
+        }
+        return original(method);
+      });
+      const page = appendPage(context);
+      await waitForProviders(page);
+      const row = await expandProvider(page, "openai");
+      if (canRead) {
+        await waitForSolid(() => expect(row.textContent).toContain("Earned reset credits: 1"));
+        expect(row.textContent).not.toContain("No live usage data");
+      }
+      expect(requestCount(request, "codex.accountUsage")).toBe(canSpend ? 2 : canRead ? 1 : 0);
+      expect(row.textContent?.includes("Use reset credit")).toBe(canSpend);
+      expect(requestCount(request, prepare)).toBe(0);
+      expect(requestCount(request, spend)).toBe(0);
+    },
+  );
 
   it.each(["reconnect", "manual refresh"] as const)(
     "restarts an exhausted retry cycle on %s",
