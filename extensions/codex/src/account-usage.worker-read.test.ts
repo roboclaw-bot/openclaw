@@ -8,6 +8,7 @@ import { withOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { expect, it, vi } from "vitest";
 import { handleCodexAccountUsage } from "./account-usage-runtime.js";
 import { readCodexAppServerUsage } from "./app-server/request.js";
+import { createCodexTestMemberAccess } from "./app-server/test-support.js";
 
 // mock-isolation: Exercise real auth storage without starting a Codex subprocess.
 vi.mock("./app-server/request.js", () => ({ readCodexAppServerUsage: vi.fn() }));
@@ -31,7 +32,11 @@ it.each([false, true])(
         {
           version: 1,
           profiles: {
-            [profileId]: { type: "token", provider: "openai", token: "synthetic-usage-token" },
+            [profileId]: {
+              type: "token",
+              provider: "openai",
+              token: createCodexTestMemberAccess(),
+            },
           },
         },
         "fixture",

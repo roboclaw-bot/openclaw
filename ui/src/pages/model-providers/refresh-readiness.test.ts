@@ -33,7 +33,6 @@ it.each(["refreshing", "error"] as const)(
     let usageReads = 0;
     h.request.mockImplementation(async (method: string) => {
       if (method === "models.authStatus") {
-        // A provider-wide plan is shown only when it describes a single account.
         return createAuthStatus([{ profiles: [profile("openai:one")] }]);
       }
       if (method === "models.list") {
@@ -49,7 +48,13 @@ it.each(["refreshing", "error"] as const)(
         return {
           updatedAt: 3,
           providers: [
-            { provider: "openai", displayName: "OpenAI", plan: "Recovered", windows: [] },
+            {
+              provider: "openai",
+              displayName: "OpenAI",
+              plan: "Admin API",
+              billing: [{ type: "spend", amount: 4, unit: "USD" }],
+              windows: [],
+            },
           ],
         };
       }
@@ -68,7 +73,7 @@ it.each(["refreshing", "error"] as const)(
       await vi.advanceTimersByTimeAsync(5_000);
       await waitForSolid(() => {
         expect(requestCount(h.request, "usage.status")).toBe(initialReads + 2);
-        expect(page.querySelector(".provider-row__plan")?.textContent).toBe("Recovered");
+        expect(page.querySelector(".provider-row__plan")?.textContent).toBe("Admin API");
         expect(page.view.props.providerUsageFailed).toBe(false);
         expect(page.view.props.catalogDiscovering).toBe(true);
         expect(page.view.props.refreshing).toBe(true);

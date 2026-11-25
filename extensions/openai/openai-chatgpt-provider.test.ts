@@ -6,6 +6,7 @@ import type {
 import { markdownToIR } from "openclaw/plugin-sdk/text-chunking";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPENAI_CODEX_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL } from "./default-models.js";
+import { buildOpenAISetupProvider } from "./setup-api.js";
 
 const refreshOpenAICodexTokenMock = vi.hoisted(() => vi.fn());
 const loginOpenAICodexDeviceCodeMock = vi.hoisted(() => vi.fn());
@@ -47,8 +48,9 @@ function runLogin(
     oauth: {},
     ...overrides,
   } as never;
-  return buildOpenAIProvider()
-    .auth?.find((method) => method.id === "oauth")
+  // Settings resolves the declared choice through the lightweight setup registry.
+  return buildOpenAISetupProvider()
+    .auth.find((method) => method.wizard?.choiceId === "openai")
     ?.run(context);
 }
 function catalogModel(
@@ -260,6 +262,28 @@ describe("OpenAI provider Codex transport hooks", () => {
     expect(loginOpenAICodexOAuthMock).toHaveBeenCalledOnce();
     expect(result?.profiles[0]?.credential).toMatchObject({ type: "oauth", ...tokens });
   });
+
+  it.each([false, true])(
+    "asks before switching a remote device login to a localhost return (continue: %s)",
+    async (accepted) => {
+      loginOpenAICodexDeviceCodeMock.mockResolvedValueOnce(null);
+      loginOpenAICodexOAuthMock.mockResolvedValueOnce(tokens);
+      const confirm = vi.fn(async () => accepted);
+      const login = runLogin({ isRemote: true }, { confirm });
+      if (accepted) {
+        await expect(login).resolves.toMatchObject({
+          profiles: [expect.objectContaining({ credential: expect.objectContaining(tokens) })],
+        });
+      } else {
+        await expect(login).rejects.toMatchObject({ name: "WizardCancelledError" });
+      }
+      expect(confirm).toHaveBeenCalledWith({
+        message: expect.stringMatching(/device code.*browser sign-in/i),
+        initialValue: false,
+      });
+      expect(loginOpenAICodexOAuthMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    },
+  );
 
   it("Codex login surfaces other device-code failures without browser fallback", async () => {
     const error = new Error("The sign-in code expired before it was approved.");

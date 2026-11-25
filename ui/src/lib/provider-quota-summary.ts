@@ -1,5 +1,8 @@
 import type { ModelAuthStatusResult } from "../api/types.ts";
-import { t } from "./reactive/i18n.ts";
+import { registerProviderQuotaEnglish } from "../i18n/locales/en-provider-quota.ts";
+import { registerEnglishCatalog, t } from "./reactive/i18n.ts";
+
+registerEnglishCatalog(registerProviderQuotaEnglish);
 
 // Provider window labels arrive as compact data strings ("5h", "Week"); model
 // scoped labels (e.g. "Opus") pass through untranslated.

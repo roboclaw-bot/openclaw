@@ -1,13 +1,20 @@
 /** Client-owned Codex app-server rate-limit snapshots. */
 import { defineCodexBuildState } from "../build-state.js";
 import type { CodexAppServerClient } from "./client.js";
-import { isJsonObject, type JsonObject, type JsonValue } from "./protocol.js";
+import {
+  isJsonObject,
+  type CodexLoginAccountParams,
+  type JsonObject,
+  type JsonValue,
+} from "./protocol.js";
+import { codexSubscriptionMember } from "./subscription-member.js";
 
 const DEFAULT_CODEX_RATE_LIMIT_CACHE_MAX_AGE_MS = 10 * 60_000;
 const SPARSE_ACCOUNT_METADATA_KEYS = ["credits", "individualLimit", "planType"] as const;
 
 type CodexRateLimitCacheState = {
-  value: JsonValue;
+  value?: JsonValue;
+  memberBinding?: string | null;
   updatedAtMs: number;
   revision: number;
 };
@@ -18,6 +25,45 @@ const rateLimitsByClient = defineCodexBuildState(
   () => new WeakMap<CodexAppServerClient, CodexRateLimitCacheState>(),
 )();
 
+/** Native rolling updates have no member ID. A client that has served multiple members
+ * cannot attribute even a later notification to either of them. Its own turns still use it. */
+export function observeCodexRateLimitLogin(
+  client: CodexAppServerClient,
+  login: CodexLoginAccountParams,
+): void {
+  const binding = codexSubscriptionMember(login)?.accountBinding ?? null;
+  const previous = rateLimitsByClient.get(client);
+  if (previous?.memberBinding === undefined) {
+    // Do not attribute values observed before the first acknowledged login.
+    rateLimitsByClient.set(client, {
+      memberBinding: binding,
+      updatedAtMs: 0,
+      revision: previous?.revision ?? 0,
+    });
+  } else if (previous.memberBinding !== binding) {
+    previous.memberBinding = null;
+  }
+}
+
+/** Older backends omit accountId. An explicit owner applies to the entire envelope. */
+export function codexRateLimitsMatchWorkspace(value: unknown, workspaceId: string | undefined) {
+  return !isJsonObject(value) || value.accountId == null || value.accountId === workspaceId;
+}
+
+export function readCodexRateLimitsForLogin(
+  client: CodexAppServerClient,
+  maxAgeMs: number,
+  login: CodexLoginAccountParams | undefined,
+) {
+  const owner = rateLimitsByClient.get(client)?.memberBinding;
+  const member = codexSubscriptionMember(login);
+  if (!member || owner !== member.accountBinding) {
+    return undefined;
+  }
+  const value = readRecentCodexRateLimits(client, maxAgeMs);
+  return codexRateLimitsMatchWorkspace(value, member.workspaceId) ? value : undefined;
+}
+
 /** Replaces one physical client's cache with an authoritative rate-limit read response. */
 export function rememberCodexRateLimitsRead(
   client: CodexAppServerClient,
@@ -26,6 +72,7 @@ export function rememberCodexRateLimitsRead(
   if (value !== undefined) {
     const currentState = rateLimitsByClient.get(client);
     rateLimitsByClient.set(client, {
+      memberBinding: currentState?.memberBinding,
       value,
       updatedAtMs: Date.now(),
       revision: (currentState?.revision ?? 0) + Number(hasCodexRateLimit(value)),
@@ -47,6 +94,7 @@ export function mergeCodexRateLimitsUpdate(
   const current = currentState?.value;
   const limitId = readLimitId(update);
   rateLimitsByClient.set(client, {
+    memberBinding: currentState?.memberBinding,
     value: mergeRateLimitUpdate(current, update),
     updatedAtMs: Date.now(),
     revision: (currentState?.revision ?? 0) + Number(limitId === "codex"),

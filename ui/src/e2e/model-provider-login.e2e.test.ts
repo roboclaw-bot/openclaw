@@ -3,6 +3,9 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Locator } from "playwright";
 import { expect, it } from "vitest";
+import { resolveModelProviderCapabilities } from "../../../src/gateway/server-methods/model-provider-capabilities.ts";
+import { loadPluginManifest } from "../../../src/plugins/manifest.ts";
+import { createPluginMetadataSnapshotFixture } from "../../../src/plugins/plugin-metadata.test-support.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import {
   defaultControlUiFeatureMethods,
@@ -36,6 +39,22 @@ async function captureProviderProof(fileName: string, content: Locator): Promise
     path.join(suite.artifactDir, fileName),
     await takeControlUiViewportScreenshot(page, page.locator(".shell"), [content]),
   );
+}
+
+function openaiSettingsCapabilities() {
+  const rootDir = path.resolve("extensions/openai");
+  const loaded = loadPluginManifest(rootDir, false);
+  if (!loaded.ok) {
+    throw new Error(loaded.error);
+  }
+  const { id, providers, providerAuthChoices } = loaded.manifest;
+  return resolveModelProviderCapabilities({
+    config: {},
+    workspaceDir: suite.artifactDir,
+    metadataSnapshot: createPluginMetadataSnapshotFixture({
+      plugins: [{ id, rootDir, providers, providerAuthChoices, origin: "bundled" }],
+    }),
+  }).capabilities;
 }
 
 suite.define(() => {
@@ -647,6 +666,117 @@ suite.define(() => {
       expect(await gateway.getRequests("openclaw.setup.activate.start")).toHaveLength(0);
     });
   });
+  it.each(["remote page", "remote Gateway"] as const)(
+    "leads with Codex device sign-in on a phone: %s",
+    async (connection) => {
+      await suite.withPage(
+        { viewport: { width: 390, height: 844 }, reducedMotion: "reduce", serviceWorkers: "block" },
+        async ({ page, context }) => {
+          const remote = "https://gateway.example.test";
+          await context.route(remote + "/**", async (route) => {
+            const url = new URL(route.request().url());
+            await route.fulfill({
+              response: await route.fetch({
+                url: new URL(url.pathname + url.search, suite.server.baseUrl).href,
+              }),
+            });
+          });
+          const verificationUrl = "https://auth.openai.com/codex/device";
+          await context.route(verificationUrl, (route) =>
+            route.fulfill({ contentType: "text/html", body: "Enter your fixture code" }),
+          );
+          const gateway = await installMockGateway(page, {
+            featureMethods: [...defaultControlUiFeatureMethods, "models.authLogin", "wizard.next"],
+            methodResponses: {
+              "models.authStatus": {
+                ts: 1,
+                providers: [],
+                providerCapabilities: openaiSettingsCapabilities(),
+              },
+              "models.authLogin": { done: false, status: "running" },
+              "wizard.next": {
+                done: false,
+                status: "running",
+                step: {
+                  id: "code",
+                  type: "progress",
+                  executor: "gateway",
+                  externalUrl: verificationUrl,
+                  deviceCode: { code: "TEST-1234" },
+                },
+              },
+            },
+          });
+          const forwarded = connection === "remote Gateway";
+          // A loopback Settings page can still control a remote Gateway. Only the test socket is used.
+          if (forwarded) {
+            await page.addInitScript(() => {
+              window["__OPENCLAW_NATIVE_CONTROL_AUTH__"] = {
+                gatewayUrl: "wss://gateway.example.test",
+                token: null,
+              };
+            });
+          }
+          await page.goto(
+            new URL("settings/model-providers", forwarded ? suite.server.baseUrl : remote).href,
+          );
+          await page.locator('[data-models-catalog-provider="openai"] button').click();
+          const methods = page.locator("[data-models-login-choice]");
+          await methods.waitFor();
+          if (!forwarded) {
+            await captureProviderProof("remote-login-choices.png", methods);
+          }
+          const dialog = page.getByRole("dialog");
+          const primary = methods.getByRole("button").first();
+          expect(await primary.locator("strong").textContent()).toBe(
+            "Sign in to Codex with a code",
+          );
+          expect(await primary.textContent()).toContain("ChatGPT subscription");
+          expect(await dialog.getByRole("button", { name: /Sign in with ChatGPT/ }).count()).toBe(
+            0,
+          );
+          expect(await dialog.getByRole("button", { name: /API key/ }).isVisible()).toBe(true);
+          await expect
+            .poll(() => primary.evaluate((button) => button === document.activeElement))
+            .toBe(true);
+          expect(await gateway.getRequests("models.authLogin")).toHaveLength(0);
+          await gateway.deferNext("wizard.next");
+          if (forwarded) {
+            await dialog
+              .getByText("Browser sign-in for the Responses API", { exact: true })
+              .click();
+            const browser = dialog.getByRole("button", { name: /Sign in with ChatGPT/ });
+            expect(await browser.textContent()).toMatch(
+              /Gateway computer.*forward its callback port/,
+            );
+            const reservedTab = page.waitForEvent("popup");
+            await browser.click();
+            const tabClosed = (await reservedTab).waitForEvent("close");
+            expect((await gateway.waitForRequest("models.authLogin")).params).toMatchObject({
+              authChoice: "openai/openai-token-sharing",
+            });
+            await gateway.waitForRequest("wizard.next");
+            await gateway.resolveDeferred("wizard.next", { done: true, status: "cancelled" });
+            await tabClosed;
+            return;
+          }
+          const popup = page.waitForEvent("popup");
+          await page.keyboard.press("Enter");
+          expect((await gateway.waitForRequest("models.authLogin")).params).toMatchObject({
+            authChoice: "openai/openai",
+          });
+          await gateway.waitForRequest("wizard.next");
+          await gateway.deferNext("wizard.next");
+          await gateway.resolveDeferred("wizard.next");
+          await page.getByText("TEST-1234", { exact: true }).waitFor();
+          await expect.poll(() => popup.then((tab) => tab.url())).toBe(verificationUrl);
+          await gateway.waitForRequest("wizard.next", { after: 1 });
+          await gateway.resolveDeferred("wizard.next", { done: true, status: "cancelled" });
+        },
+      );
+    },
+  );
+
   it("shows a provider's accounts and every connection method before browser sign-in", async () => {
     await suite.withPage(
       { ...createControlUiE2eContextOptions(), reducedMotion: "reduce" },
@@ -707,33 +837,7 @@ suite.define(() => {
                   ],
                 },
               ],
-              providerCapabilities: [
-                {
-                  provider: "openai",
-                  apiKeySupported: true,
-                  quickApiKeySetup: true,
-                  loginOptions: [
-                    {
-                      id: "openai",
-                      brandId: "openai",
-                      groupLabel: "OpenAI",
-                      label: "Codex login",
-                      hint: "Sign in with your ChatGPT account using a one-time code",
-                      kind: "device-code",
-                      featured: true,
-                      docsUrl: "https://docs.openclaw.ai/providers/openai/authentication",
-                    },
-                    {
-                      id: "openai-token-sharing",
-                      brandId: "openai",
-                      label: "Sign in with ChatGPT",
-                      hint: "Use your ChatGPT plan for eligible Responses API requests",
-                      kind: "oauth",
-                      featured: false,
-                    },
-                  ],
-                },
-              ],
+              providerCapabilities: openaiSettingsCapabilities(),
             },
             "models.authLogin": { done: false, status: "running" },
             "wizard.next": {
@@ -814,7 +918,7 @@ suite.define(() => {
         expect(login.params).toEqual({
           sessionId: expect.any(String),
           agentId: "main",
-          authChoice: "openai-token-sharing",
+          authChoice: "openai/openai-token-sharing",
         });
         const popup = await popupReady;
         await gateway.waitForRequest("wizard.next", {

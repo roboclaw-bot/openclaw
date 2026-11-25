@@ -19,6 +19,7 @@ import {
 } from "openclaw/plugin-sdk/provider-auth";
 import {
   CODEX_APP_SERVER_API_KEY_ENV_VARS,
+  codexAuthHandoff,
   fingerprintApiKeyAuthProfileCacheKey,
   fingerprintTokenAuthProfileCacheKey,
   readCodexCliAuthFileApiKey,
@@ -61,6 +62,7 @@ import type {
   CodexGetAccountResponse,
   CodexLoginAccountParams,
 } from "./protocol.js";
+import { observeCodexRateLimitLogin } from "./rate-limit-cache.js";
 import {
   isCodexResponsesOAuthCredential,
   resolveCodexInferenceCredential,
@@ -454,10 +456,8 @@ export async function applyCodexAppServerAuthProfile(params: {
     }
     if (loginParams.type === "chatgptAuthTokens") {
       params.assertCurrent?.();
-      return {
-        accessFingerprint: fingerprintTokenAuthProfileCacheKey(loginParams.accessToken),
-        chatgptAccountId: loginParams.chatgptAccountId,
-      };
+      observeCodexRateLimitLogin(params.client, loginParams);
+      return codexAuthHandoff(loginParams);
     }
   }
   return undefined;

@@ -67,6 +67,7 @@ import { registerMemoryImportEnglish } from "../../ui/src/i18n/locales/en-memory
 import { registerModelAccountsEnglish } from "../../ui/src/i18n/locales/en-model-accounts.ts";
 import { registerModelControlsEnglish } from "../../ui/src/i18n/locales/en-model-controls.ts";
 import { registerModelFavoritesEnglish } from "../../ui/src/i18n/locales/en-model-favorites.ts";
+import { registerModelProviderLoginEnglish } from "../../ui/src/i18n/locales/en-model-provider-login.ts";
 import { registerModelSetupEnglish } from "../../ui/src/i18n/locales/en-model-setup.ts";
 import { registerNativeLinkMenuEnglish } from "../../ui/src/i18n/locales/en-native-link-menu.ts";
 import { registerNewSessionSetupEnglish } from "../../ui/src/i18n/locales/en-new-session-setup.ts";
@@ -80,6 +81,7 @@ import { registerPortalsEnglish } from "../../ui/src/i18n/locales/en-portals.ts"
 import { registerPreferencesEnglish } from "../../ui/src/i18n/locales/en-preferences.ts";
 import { registerProcessesEnglish } from "../../ui/src/i18n/locales/en-processes.ts";
 import { registerProfileEnglish } from "../../ui/src/i18n/locales/en-profile.ts";
+import { registerProviderQuotaEnglish } from "../../ui/src/i18n/locales/en-provider-quota.ts";
 import { registerProviderUsageEnglish } from "../../ui/src/i18n/locales/en-provider-usage.ts";
 import { registerRouteSubtitlesEnglish } from "../../ui/src/i18n/locales/en-route-subtitles.ts";
 import { registerSecretsStoreEnglish } from "../../ui/src/i18n/locales/en-secrets-store.ts";
@@ -156,6 +158,7 @@ const sourceFiles = [
   "en-chat-command-results.ts",
   "en-chat-commands.ts",
   "en-chat-composer.ts",
+  "en-provider-quota.ts",
   "en-chat-worktree.ts",
   "en-chat-details.ts",
   "en-chat-goals.ts",
@@ -200,6 +203,7 @@ const sourceFiles = [
   "en-model-controls.ts",
   "en-model-favorites.ts",
   "en-model-provider-auth.ts",
+  "en-model-provider-login.ts",
   "en-model-setup.ts",
   "en-personal-instructions.ts",
   "en-provider-usage.ts",
@@ -675,6 +679,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
         permissions: registerChatPermissionsEnglish.catalog.chat.permissions,
       },
     },
+    registerProviderQuotaEnglish.catalog,
     registerChatGoalsEnglish.catalog,
     registerChatProviderReviewEnglish.catalog,
     registerChatPublicQrEnglish.catalog,
@@ -698,6 +703,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerCronScheduleEnglish.catalog,
     registerModelControlsEnglish.catalog,
     registerModelFavoritesEnglish.catalog,
+    registerModelProviderLoginEnglish.catalog,
     registerModelSetupEnglish.catalog,
     registerPersonalInstructionsEnglish.catalog,
     registerSessionMachineEnglish.catalog,

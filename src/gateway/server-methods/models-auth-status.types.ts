@@ -13,6 +13,10 @@ export type ModelAuthStatusProfile = Pick<
   AuthProviderHealth["profiles"][number],
   "profileId" | "type" | "status" | "reasonCode"
 > & {
+  /** Provider route authorized by a flow-specific OAuth grant; null means identity only. */
+  authRequirement?:
+    | import("../../plugin-sdk/provider-model-types.js").ProviderModelRouteAuthRequirement
+    | null;
   expiry?: ModelAuthExpiry;
   /** True only for saved OAuth/token profiles this gateway can remove. */
   logoutSupported?: boolean;

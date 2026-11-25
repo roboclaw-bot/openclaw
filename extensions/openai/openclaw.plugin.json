@@ -498,7 +498,7 @@
         "aliases": ["codex"]
       },
       "choiceLabel": "Codex login",
-      "choiceHint": "Sign in with your ChatGPT account using a one-time code",
+      "choiceHint": "Codex models and usage. Enter a one-time code on any device.",
       "docsUrl": "https://docs.openclaw.ai/providers/openai/authentication",
       "assistantPriority": -10,
       "deprecatedChoiceIds": ["openai-device-code"],
@@ -515,7 +515,7 @@
       "appGuidedAuth": "oauth",
       "credentialOnly": true,
       "choiceLabel": "Sign in with ChatGPT",
-      "choiceHint": "Use your ChatGPT plan for eligible Responses API requests",
+      "choiceHint": "For eligible Responses API requests. Use a browser on the Gateway computer or forward its callback port.",
       "docsUrl": "https://docs.openclaw.ai/providers/openai/authentication",
       "assistantPriority": 0,
       "groupId": "openai",

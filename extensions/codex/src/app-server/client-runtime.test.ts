@@ -7,7 +7,12 @@ import {
 } from "./client-fork-settings.js";
 import { wasCodexAppServerThreadClosed } from "./client-thread-closure.js";
 import type { CodexAppServerClient } from "./client.js";
-import { createClientHarness } from "./test-support.js";
+import {
+  observeCodexRateLimitLogin,
+  readCodexRateLimitsForLogin,
+  readCodexRateLimitsRevision,
+} from "./rate-limit-cache.js";
+import { createClientHarness, createCodexTestMemberAccess } from "./test-support.js";
 
 const EXPECTED_LIVE_THREAD_IDLE_TIMEOUT_MS = 30 * 60_000;
 const EXPECTED_MAX_IDLE_LIVE_THREADS = 64;
@@ -18,15 +23,10 @@ const mocks = vi.hoisted(() => ({
     accessToken: "refreshed",
     chatgptAccountId: "account",
   })),
-  mergeRateLimitUpdate: vi.fn(),
 }));
 
 vi.mock("./auth-bridge.js", () => ({
   refreshCodexAppServerAuthTokens: mocks.refreshAuth,
-}));
-
-vi.mock("./rate-limit-cache.js", () => ({
-  mergeCodexRateLimitsUpdate: mocks.mergeRateLimitUpdate,
 }));
 
 const {
@@ -96,7 +96,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   mocks.refreshAuth.mockClear();
-  mocks.mergeRateLimitUpdate.mockClear();
 });
 
 it("keeps native creation instructions and latest turn settings only for the live parent", () => {
@@ -182,6 +181,15 @@ it("installs shared handlers once per physical client", async () => {
   ensureCodexAppServerClientRuntime(client, context);
   ensureCodexAppServerClientRuntime(client, updatedContext);
 
+  const tokens = (member: string) => ({
+    chatgptAccountId: "account",
+    accessToken: createCodexTestMemberAccess(member, "initial", "account"),
+    chatgptPlanType: null,
+  });
+  const first = { type: "chatgptAuthTokens" as const, ...tokens("first") };
+  const second = tokens("second");
+  observeCodexRateLimitLogin(client, first);
+  mocks.refreshAuth.mockResolvedValueOnce(second);
   expect(addNotificationHandler).toHaveBeenCalledTimes(2);
   expect(addRequestHandler).toHaveBeenCalledTimes(1);
   expect(addCloseHandler).toHaveBeenCalledTimes(2);
@@ -189,28 +197,38 @@ it("installs shared handlers once per physical client", async () => {
     method: "account/rateLimits/updated",
     params: { rateLimits: { primary: { usedPercent: 12 } } },
   });
+  await vi.waitFor(() =>
+    expect(readCodexRateLimitsForLogin(client, 60_000, first)).toMatchObject({
+      rateLimits: { primary: { usedPercent: 12 } },
+    }),
+  );
   send({
     id: "refresh-1",
     method: "account/chatgptAuthTokens/refresh",
     params: { reason: "expired" },
   });
 
-  await vi.waitFor(() => expect(mocks.mergeRateLimitUpdate).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(mocks.refreshAuth).toHaveBeenCalledTimes(1));
   expect(mocks.refreshAuth).toHaveBeenCalledWith({
     ...context,
     config: updatedContext.config,
   });
   expect(mocks.refreshAuth.mock.calls[0]?.[0]?.authProfileStore).toBe(context.authProfileStore);
-  expect(mocks.mergeRateLimitUpdate).toHaveBeenCalledWith(client, {
-    rateLimits: { primary: { usedPercent: 12 } },
-  });
   await vi.waitFor(() =>
     expect(writes.map((line) => JSON.parse(line) as unknown)).toContainEqual({
       id: "refresh-1",
-      result: { accessToken: "refreshed", chatgptAccountId: "account" },
+      result: second,
     }),
   );
+  // Notifications carry no identity; a delayed update after a member switch is ambiguous.
+  send({
+    method: "account/rateLimits/updated",
+    params: { rateLimits: { primary: { usedPercent: 38 } } },
+  });
+  await vi.waitFor(() => expect(readCodexRateLimitsRevision(client)).toBe(2));
+  for (const login of [first, { type: "chatgptAuthTokens" as const, ...second }]) {
+    expect(readCodexRateLimitsForLogin(client, 60_000, login)).toBeUndefined();
+  }
 });
 
 it.each([

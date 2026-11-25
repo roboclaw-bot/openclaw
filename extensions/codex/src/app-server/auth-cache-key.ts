@@ -5,6 +5,7 @@ import path from "node:path";
 import { sha256Hex } from "openclaw/plugin-sdk/node-crypto-runtime";
 import { readSecretFile } from "openclaw/plugin-sdk/secret-file";
 import { isRecord, normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
+import type { CodexAppServerAuthHandoff } from "./auth-types.js";
 import type { CodexAppServerStartOptions } from "./config-contracts.js";
 import { resolveCodexAppServerSpawnEnv } from "./transport-stdio.js";
 
@@ -42,6 +43,17 @@ export function fingerprintApiKeyAuthProfileCacheKey(apiKey: string): string {
 
 export function fingerprintTokenAuthProfileCacheKey(accessToken: string): string {
   return fingerprintAuthCacheKey("token", "auth-profile-token", accessToken);
+}
+
+/** The refresh handoff records the acknowledged token without retaining the token itself. */
+export function codexAuthHandoff(login: {
+  accessToken: string;
+  chatgptAccountId: string;
+}): CodexAppServerAuthHandoff {
+  return {
+    accessFingerprint: fingerprintTokenAuthProfileCacheKey(login.accessToken),
+    chatgptAccountId: login.chatgptAccountId,
+  };
 }
 
 function fingerprintAuthCacheKey(prefix: string, domain: string, ...parts: string[]): string {

@@ -1,4 +1,6 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { createSignal } from "solid-js";
+import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import type { ModelProviderCard } from "./data.ts";
@@ -6,6 +8,19 @@ import type { ModelProvidersViewProps } from "./view-types.ts";
 import { ModelProviders } from "./view.tsx";
 
 const mountedViews = new WeakMap<HTMLElement, (props: ModelProvidersViewProps) => void>();
+
+export function usageScope(read: (profileId: string) => unknown) {
+  return {
+    client: createTestGatewayClient((_method, params) =>
+      read(String(asOptionalRecord(params)?.profileId)),
+    ),
+    agentId: "main",
+    revision: 0,
+    generation: 0,
+    cacheAvailable: false,
+    canConsume: () => false,
+  };
+}
 
 export function card(overrides: Partial<ModelProviderCard> = {}): ModelProviderCard {
   return {
@@ -35,6 +50,7 @@ export function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelPr
     refreshing: false,
     error: null,
     providerUsageFailed: false,
+    codexUsageMissing: false,
     updatedAt: 1,
     onOpenUsage: () => undefined,
     onOpenAgent: () => undefined,

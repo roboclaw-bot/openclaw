@@ -24,6 +24,7 @@ import {
 } from "../../agents/auth-profiles.js";
 import { refreshRuntimeAuthProfileStoreSources } from "../../agents/auth-profiles/runtime-snapshots.js";
 import type { RuntimeAuthProfileStore } from "../../agents/auth-profiles/types.js";
+import { resolveProviderModelAuthPolicy } from "../../agents/model-auth-policy.js";
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { providerUsageLabel, resolveUsageProviderId } from "../../infra/provider-usage.shared.js";
@@ -495,6 +496,19 @@ export const modelsAuthStatusHandlers: GatewayRequestHandlers = {
                 prof.expiresAt,
               ),
             };
+            const credential = store.profiles[prof.profileId];
+            if (
+              includeProfileIdentity &&
+              providerKey === "openai" &&
+              credential?.type === "oauth" &&
+              credential.authFlow
+            ) {
+              profile.authRequirement = resolveProviderModelAuthPolicy({
+                provider: providerKey,
+                mode: credential.type,
+                authFlow: credential.authFlow,
+              }).authRequirement;
+            }
             if (includeProfileIdentity && metadata.displayName) {
               profile.displayName = metadata.displayName;
             }

@@ -115,7 +115,8 @@ choose based on model access, hosted plugins, usage tracking, and permissions.
 
         Codex login shows a one-time device code, so it also works on headless
         or remote hosts. It falls back to the localhost browser callback only
-        when OpenAI has device-code login turned off.
+        when OpenAI has device-code login turned off. In Settings, you can
+        choose whether to continue with that browser flow.
       </Step>
       <Step title="Use the standard OpenAI model route">
         <a id="use-the-canonical-openai-model-route" />

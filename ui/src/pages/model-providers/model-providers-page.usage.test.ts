@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import {
+  capability,
   expectAbsent,
   expectContent,
   expectPresent,
@@ -35,6 +36,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const organizationUsage = (plan: string) => ({
+  updatedAt: Date.now(),
+  providers: [
+    {
+      provider: "openai",
+      displayName: "OpenAI",
+      plan,
+      windows: [],
+      billing: [{ type: "spend" as const, amount: 25, unit: "USD" }],
+    },
+  ],
+});
+
 describe("ModelProvidersPage usage convergence", () => {
   it("refreshes only expired provider usage on activation and retains the displayed plan", async () => {
     vi.useFakeTimers();
@@ -46,17 +60,13 @@ describe("ModelProvidersPage usage convergence", () => {
     harness.request.mockImplementation((method, ...args) =>
       method === "usage.status" ? replacement.promise : request(method, ...args),
     );
-    const plans = (plan: string) => ({
-      updatedAt: Date.now(),
-      providers: [{ provider: "openai", displayName: "OpenAI", plan, windows: [] }],
-    });
     const page = createPage(harness.context);
     mountPage(page);
     const loadedAt = Date.now();
     publishRouteData(page, {
       ...createApiKeyProviderData(),
       updatedAt: loadedAt,
-      providerUsage: plans("Original"),
+      providerUsage: organizationUsage("Original"),
     });
     const plan = () => page.querySelector(".provider-row__plan")?.textContent;
     await waitForSolid(() => expect(plan()).toBe("Original"));
@@ -79,7 +89,7 @@ describe("ModelProvidersPage usage convergence", () => {
     expect(harness.request.mock.calls.map(([method]) => method)).toEqual(["usage.status"]);
     expect(plan()).toBe("Original");
 
-    replacement.resolve(plans("Updated"));
+    replacement.resolve(organizationUsage("Updated"));
     await waitForSolid(() => expect(plan()).toBe("Updated"));
     activate();
     expect(harness.request.mock.calls.map(([method]) => method)).toEqual(["usage.status"]);
@@ -147,22 +157,28 @@ describe("ModelProvidersPage usage convergence", () => {
       expect(expanded()).not.toBeNull();
       expect(expanded()!.textContent).not.toContain("Loading");
     });
-    initial.reject(new Error("Timed out"));
-    const retryHint = "Access token: Timed out · Refresh to try again.";
-    await vi.waitFor(() => expectContent(bars, [retryHint]));
-    expect(expanded()!.textContent).not.toContain("Timed out");
+    const quotaError = "Couldn't load this account's quota. Refresh to try again.";
+    initial.reject(new Error(quotaError));
+    await vi.waitFor(() =>
+      expect(
+        [...bars.querySelectorAll("small[role=status]")].map((node) => node.textContent),
+      ).toContain(`Access token: ${quotaError}`),
+    );
+    expect(expanded()!.textContent).not.toContain(quotaError);
     expect(segments()).toHaveLength(0);
     refresh();
     const expectLimits = (percent: number) => {
       const left = expect.stringContaining(`${percent}% left`);
       expect(segments().map((el) => el.ariaLabel)).toEqual([left, left]);
     };
-    await vi.waitFor(() => expect(segments().map((el) => el.textContent)).toEqual(["90%", "—"]));
+    await vi.waitFor(() =>
+      expect(segments().map((el) => el.textContent)).toEqual(["90% left", "—"]),
+    );
     slow.resolve();
     await vi.waitFor(() => expectLimits(90));
     expectAbsent(bars, "small[role=status]");
     expect(expanded()).not.toBeNull();
-    expect(expanded()!.textContent).not.toMatch(/Timed out|Loading|90%/u);
+    expect(expanded()!.textContent).not.toMatch(/load this account|Loading|90%/u);
     expect(accountRequests.slice(2)).toEqual([
       { agentId: "main", profileId: "openai:one" },
       { agentId: "main", profileId: "openai:two" },
@@ -199,14 +215,12 @@ describe("ModelProvidersPage usage convergence", () => {
     async (cause) => {
       const id = "openai:shared",
         peer = "openai:peer";
-      const capability = {
-        provider: "openai",
-        apiKeySupported: false,
-        loginOptions: [loginOption("openai-browser", "openai", "Subscription sign-in", "oauth")],
-      };
-      const { context, snapshot, request, publishEvent, answer } = loginHarness({
-        capabilities: [capability],
-      });
+      const capabilities = [
+        capability("openai", {
+          loginOptions: [loginOption("openai-browser", "openai", "Subscription sign-in", "oauth")],
+        }),
+      ];
+      const { context, snapshot, request, publishEvent, answer } = loginHarness({ capabilities });
       snapshot.hello!.features!.methods!.push(readUsage, prepare, spend);
       snapshot.hello!.auth!.recoveryScope = "synthetic-operator";
       let rotated = false;
@@ -222,7 +236,7 @@ describe("ModelProvidersPage usage convergence", () => {
             ],
           },
         ]),
-        providerCapabilities: [capability],
+        providerCapabilities: capabilities,
       });
       const original = request.getMockImplementation()!;
       const detail = deferred<unknown>();
@@ -292,11 +306,13 @@ describe("ModelProvidersPage usage convergence", () => {
         expectContent(row, [`${initialName}: 731`, "Peer: 42", `${initialName}: 8`]),
       );
       row.querySelector<HTMLButtonElement>(".model-providers__segment-name")!.click();
-      await waitForSolid(() => expectContent(row, ["Reset pending for old-credit"]));
+      await waitForSolid(() => expectContent(row, ["Account reset pending."], ["old-credit"]));
       let confirm: HTMLButtonElement | null = null;
       if (cause === "publication") {
         vi.useFakeTimers();
-        row.querySelector<HTMLButtonElement>(".model-providers__reset-credits button")!.click();
+        row
+          .querySelector<HTMLButtonElement>('[role="group"][aria-label="Reset credits"] button')!
+          .click();
         await waitForSolid(() => expect(requestCount(request, prepare)).toBe(1));
         const before = requestCount(request, "models.authStatus");
         readingEarlierInventory = true;
@@ -344,7 +360,7 @@ describe("ModelProvidersPage usage convergence", () => {
         expectContent(
           row,
           [],
-          ["731", "Earned reset credits: 8", "old-credit", "Retry the original reset"],
+          ["731", "Account reset pending.", "old-credit", "Retry the original reset"],
         );
       if (cause !== "route inventory") {
         await waitForSolid(expectNoOldCredit);
@@ -377,7 +393,7 @@ describe("ModelProvidersPage usage convergence", () => {
           },
         });
         await waitForSolid(() =>
-          expectContent(row, ["Shared login: 17", "Earned reset credits: 3", "Use reset credit"]),
+          expectContent(row, ["Shared login: 17", "Shared login: 3", "Use reset credit"]),
         );
       } else {
         detail.reject(new Error("Member usage unavailable"));
@@ -396,12 +412,15 @@ describe("ModelProvidersPage usage convergence", () => {
 
   it.each([
     ["operator.admin", [readUsage, prepare, spend], true, true],
+    ["operator.admin", [], false, false, "subscription"],
+    ["operator.admin", [], false, false, "api-key"],
     ["operator.admin", [spend], false, false],
+    ["operator.write", [], false, false],
     ["operator.admin", [readUsage, spend], true, false],
     ["operator.write", [readUsage, prepare, spend], false, false],
   ] as const)(
     "gates balance and spending on %s and %j",
-    async (scope, methods, canRead, canSpend) => {
+    async (scope, methods, canRead, canSpend, authRequirement = "subscription") => {
       const { context, request, snapshot } = createHarness("main");
       snapshot.hello = {
         type: "hello-ok",
@@ -412,7 +431,7 @@ describe("ModelProvidersPage usage convergence", () => {
       const original = request.getMockImplementation()!;
       request.mockImplementation(async (method) => {
         if (method === "models.authStatus") {
-          return createAuthStatus([{ profiles: [profile("openai:sub")] }]);
+          return createAuthStatus([{ profiles: [{ ...profile("openai:sub"), authRequirement }] }]);
         }
         if (method === "codex.accountUsage") {
           return {
@@ -434,10 +453,14 @@ describe("ModelProvidersPage usage convergence", () => {
       await waitForProviders(page);
       const row = await expandProvider(page, "openai");
       if (canRead) {
-        await waitForSolid(() => expect(row.textContent).toContain("Earned reset credits: 1"));
+        await waitForSolid(() => expect(row.textContent).toContain("Reset credits: 1"));
         expect(row.textContent).not.toContain("No live usage data");
       }
       expect(requestCount(request, "codex.accountUsage")).toBe(canSpend ? 2 : canRead ? 1 : 0);
+      const pluginLink = row.querySelector('a[href$="/settings/plugins/codex"]');
+      expect(Boolean(pluginLink)).toBe(
+        scope === "operator.admin" && !canRead && authRequirement === "subscription",
+      );
       expect(row.textContent?.includes("Use reset credit")).toBe(canSpend);
       expect(requestCount(request, prepare)).toBe(0);
       expect(requestCount(request, spend)).toBe(0);
@@ -580,18 +603,15 @@ describe("ModelProvidersPage usage convergence", () => {
       expect(page.querySelector('[data-provider-id="openai"]')).toBe(row);
       expect(page.querySelector(".model-providers__search input")).toBe(search);
       expect(document.activeElement).toBe(search);
-      expect(row.querySelector(".provider-row__plan")?.textContent).toBe("Pro");
+      expect(row.querySelector(".provider-row__plan")?.textContent).toBe("Admin API");
     };
     search.focus();
     page.loaderPending = false;
     await waitForSolid(() => expect(usageReads).toBe(1));
     expect(requestCount(harness.request, "models.authStatus")).toBe(0);
-    usage.resolve({
-      updatedAt: 1,
-      providers: [{ provider: "openai", displayName: "OpenAI", plan: "Pro", windows: [] }],
-    });
+    usage.resolve(organizationUsage("Admin API"));
     await waitForSolid(() =>
-      expect(row.querySelector(".provider-row__plan")?.textContent).toBe("Pro"),
+      expect(row.querySelector(".provider-row__plan")?.textContent).toBe("Admin API"),
     );
     expectRetainedControls();
     page.view.props.onRefresh();

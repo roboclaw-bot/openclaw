@@ -100,11 +100,20 @@ export function hasVerifiedProvider(card: ModelProviderCard): boolean {
   return card.catalogStatus === "ready" && !needsAuthAttention(card);
 }
 
+/** An OAuth connector can authorize Responses or identity alone, not native Codex quota. */
+export function supportsCodexAccountUsage(profile: ModelAuthStatusProfile): boolean {
+  return (
+    profile.type !== "api_key" &&
+    profile.reasonCode !== "setup_inactive" &&
+    (profile.authRequirement === undefined || profile.authRequirement === "subscription")
+  );
+}
+
 /** Codex samples one login; it doesn't report a pool shared by the other credentials. */
 export function hasSeparateAccountLimits(card: ModelProviderCard): boolean {
   return (
     card.id === "openai" &&
-    card.profiles.some((profile) => profile.type !== "api_key") &&
+    card.profiles.some(supportsCodexAccountUsage) &&
     (card.profiles.length > 1 || Boolean(card.apiKey) || card.configApiKeys.length > 0)
   );
 }

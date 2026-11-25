@@ -9,6 +9,7 @@ import { providerDisplayLabel } from "../../components/provider-icon-data.ts";
 import { t } from "../../i18n/index.ts";
 import { registerModelSetupEnglish } from "../../i18n/locales/en-model-setup.ts";
 import { resolveAgentModelPrimary } from "../../lib/agents/display.ts";
+import { isLocalPortalHostname } from "../../lib/gateway-locality.ts";
 import { canonicalModelAuthProviderId } from "../../lib/model-auth.ts";
 import { buildModelProviderCards } from "./data.ts";
 import { hasProviderAccounts } from "./profiles-view.tsx";
@@ -29,6 +30,35 @@ export type LoginProvider = {
   /** Setup suggests this provider first. */
   featured?: true;
 };
+
+/** A loopback callback can reach the Gateway only if both ends are local (or deliberately forwarded). */
+export function remoteCodexMethods(
+  provider: LoginProvider,
+  gatewayUrl: string,
+  page: Pick<Location, "hostname" | "href">,
+) {
+  if (
+    provider.id !== "openai" ||
+    (isLocalPortalHostname(page.hostname) &&
+      isLocalPortalHostname(URL.parse(gatewayUrl, page.href)?.hostname ?? ""))
+  ) {
+    return undefined;
+  }
+  const device = provider.choices.find(
+    (choice) => choice.id === "openai/openai" && choice.kind === "device-code",
+  );
+  if (!device) {
+    return undefined;
+  }
+  const callback = provider.choices.find(
+    (choice) => choice.id === "openai/openai-token-sharing" && choice.kind === "oauth",
+  );
+  return {
+    device,
+    callback,
+    other: provider.choices.filter((choice) => choice !== device && choice !== callback),
+  };
+}
 
 export function buildLoginProviders({
   providers,

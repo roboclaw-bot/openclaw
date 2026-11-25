@@ -25,7 +25,6 @@ import {
   createInitializingClientHarness,
   createStartOptions,
 } from "./shared-client-start.test-support.js";
-import { registerSharedClientUsageTests } from "./shared-client-usage.test-support.js";
 import { registerSharedClientWebSocketStartupTests } from "./shared-client-websocket-startup.test-support.js";
 import { createClientHarness } from "./test-support.js";
 import { CODEX_APP_SERVER_VERSION, MIN_SUPPORTED_CODEX_APP_SERVER_VERSION } from "./version.js";
@@ -107,7 +106,8 @@ vi.mock("./computer-use-artifacts.js", async (importOriginal) => ({
   reconcileCodexComputerUseStartArtifacts: mocks.reconcileCodexComputerUseStartArtifacts,
 }));
 
-vi.mock("./auth-profile.js", () => ({
+vi.mock("./auth-profile.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./auth-profile.js")>()),
   resolveCodexAppServerAuthProfileIdForAgent: mocks.resolveCodexAppServerAuthProfileIdForAgent,
   resolveCodexAppServerAuthProfileStore: mocks.resolveCodexAppServerAuthProfileStore,
 }));
@@ -1298,8 +1298,6 @@ describe("shared Codex app-server client", () => {
       expect(resolvedCacheKeys.join("\n")).not.toContain("second-secret-token");
     },
   );
-
-  registerSharedClientUsageTests();
 
   it.each(["api-key", "subscription"] as const)(
     "reuses a turn's %s physical client for a control resume",

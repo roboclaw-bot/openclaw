@@ -7,11 +7,24 @@ import { withAuthProfileStoreAtEffect } from "openclaw/plugin-sdk/provider-auth-
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleCodexAccountUsage, handleCodexResetCredit } from "./account-usage-runtime.js";
+import { prepareCodexAppServerAuthBinding } from "./app-server/auth-binding.js";
+import { CodexAppServerClient } from "./app-server/client.js";
+import { resolveCodexAppServerRuntimeOptions } from "./app-server/config.js";
+import { rememberCodexRateLimitsRead } from "./app-server/rate-limit-cache.js";
 import {
   readCachedCodexAppServerUsage,
   readCodexAppServerUsage,
   requestCodexAppServerJson,
 } from "./app-server/request.js";
+import {
+  getSharedCodexAppServerClient,
+  retireSharedCodexAppServerClientIfCurrent,
+} from "./app-server/shared-client.js";
+import {
+  createClientHarness,
+  createCodexTestMemberAccess as access,
+} from "./app-server/test-support.js";
+import { CODEX_APP_SERVER_VERSION } from "./app-server/version.js";
 import { ResetConfirmations } from "./reset-credit-confirmation.js";
 import type { ResetRecord } from "./reset-credit.js";
 
@@ -35,17 +48,6 @@ function usage(usedPercent: number) {
   };
 }
 
-function access(member: string | null = "alex", rotation = "first", workspace = "alex-account") {
-  const payload = {
-    "https://api.openai.com/auth": {
-      chatgpt_account_id: workspace,
-      chatgpt_account_user_id: member ?? undefined,
-      chatgpt_user_id: "same-global-user",
-    },
-    "https://api.openai.com/profile": { email: "current@example.test" },
-  };
-  return `e30.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${rotation}`;
-}
 const providerRequest = vi.mocked(requestCodexAppServerJson);
 
 describe("Codex saved account usage and reset credits", () => {
@@ -76,7 +78,11 @@ describe("Codex saved account usage and reset credits", () => {
           accountId: "alex-account",
           email: "same@example.test",
         },
-        "openai:blair": { type: "token", provider: "openai", token: "blair-token-placeholder" },
+        "openai:blair": {
+          type: "token",
+          provider: "openai",
+          token: access("blair", "first", "blair-account"),
+        },
         "openai:api": { type: "api_key", provider: "openai", key: "api-key-placeholder" },
       },
     };
@@ -92,7 +98,7 @@ describe("Codex saved account usage and reset credits", () => {
   });
 
   afterEach(async () => {
-    vi.mocked(performance.now).mockRestore();
+    vi.restoreAllMocks();
     await state.cleanup();
   });
 
@@ -180,6 +186,27 @@ describe("Codex saved account usage and reset credits", () => {
           ],
         }),
       );
+    }
+  });
+
+  it("returns an actionable read failure only for the requested profile and clears it on recovery", async () => {
+    vi.mocked(readCachedCodexAppServerUsage).mockResolvedValue(undefined);
+    const read = vi
+      .mocked(readCodexAppServerUsage)
+      .mockRejectedValueOnce(new Error("native transport detail"));
+    const selected = { agentId: "work", profileId: "openai:blair" };
+    const failed = await request(selected, "read", null);
+    expect(failed.mock.calls[0]?.[2]).toMatchObject({
+      code: "UNAVAILABLE",
+      message: "Couldn't load this account's quota. Refresh to try again.",
+    });
+    for (const profileId of ["openai:alex", selected.profileId]) {
+      const refreshed = await request({ ...selected, profileId }, "read", null);
+      const answer = refreshed.mock.calls[0];
+      expect(answer?.[0]).toBe(true);
+      expect(answer?.[1]).toMatchObject({ providers: [{ windows: [{ usedPercent: 20 }] }] });
+      expect(answer?.[1]).not.toHaveProperty("providers.0.error");
+      expect(read.mock.lastCall?.[0].preparedAuth).toMatchObject({ profileId });
     }
   });
 
@@ -284,8 +311,8 @@ describe("Codex saved account usage and reset credits", () => {
   });
   const row = offer(spend.creditId);
 
-  async function balance() {
-    const [ok, payload] = (await request(selection)).mock.calls[0]!;
+  async function balance(profileId = selection.profileId) {
+    const [ok, payload] = (await request({ ...selection, profileId })).mock.calls[0]!;
     expect(ok).toBe(true);
     type Balance = Pick<typeof spend, "accountBinding"> & {
       creditId?: string;
@@ -343,7 +370,13 @@ describe("Codex saved account usage and reset credits", () => {
       outcome: "reset" as const,
     };
     await journal(() => {}).register(accountBinding, legacy);
-    expect(await balance()).toMatchObject({ lastReset: legacy, recentReceipts: [legacy] });
+    providerRequest.mockResolvedValueOnce({
+      ...limits("another-credit"),
+      accountId: "other-workspace",
+    });
+    const foreign = await balance();
+    expect(foreign).toMatchObject({ accountBinding, lastReset: legacy, recentReceipts: [legacy] });
+    expect(foreign).not.toHaveProperty("offers");
     journalOffline = true;
     const offline = await balance();
     expect(offline).toMatchObject({
@@ -404,8 +437,18 @@ describe("Codex saved account usage and reset credits", () => {
       expect(providerRequest).not.toHaveBeenCalled();
       store.profiles[selection.profileId] = original;
     }
+    store.profiles["openai:alias"] = { ...original, access: access("alex", "rotated") };
+    store.profiles["openai:other-workspace"] = {
+      ...original,
+      accountId: "another-workspace",
+      access: access("alex", "first", "another-workspace"),
+    };
     const target = await offeredIntent();
-    store.profiles[selection.profileId] = { ...original, access: access("alex", "rotated") };
+    expect((await balance("openai:alias")).accountBinding).toBe(target.accountBinding);
+    expect((await balance("openai:other-workspace")).accountBinding).not.toBe(
+      target.accountBinding,
+    );
+    store.profiles[selection.profileId] = store.profiles["openai:alias"];
     providerRequest
       .mockResolvedValueOnce(limits("other", row.id))
       .mockResolvedValueOnce({ outcome: "reset" });
@@ -489,19 +532,208 @@ describe("Codex saved account usage and reset credits", () => {
     expect((await balance()).lastReset).toBeUndefined();
   });
 
-  it("cached quota can survive a failed live read, but a cached credit never becomes an offer", async () => {
-    providerRequest.mockRejectedValueOnce(new Error("offline"));
-    vi.mocked(readCachedCodexAppServerUsage).mockResolvedValue({ rateLimits: limits(row.id) });
-    const cached = (await request({ ...selection, quotaOnly: true })).mock.calls[0]?.[1];
-    expect(cached).toMatchObject({ stale: true, providers: [{ windows: [{ usedPercent: 80 }] }] });
-    expect(cached).not.toHaveProperty("resetCredits");
-    expect(providerRequest).not.toHaveBeenCalled();
-    const result = (await request(selection)).mock.calls[0]?.[1];
-    expect(result).toMatchObject({
-      stale: true,
-      providers: [{ windows: [{ label: "5h", usedPercent: 80 }] }],
-      resetCredits: { memberId: "alex" },
-    });
-    expect(result).not.toHaveProperty("resetCredits.creditId");
+  it("uses the warm quota only for its saved member when the fresh native read fails", async () => {
+    const { withAuthProfileStoreAtEffect: persistedReader } = await vi.importActual<
+      typeof import("openclaw/plugin-sdk/provider-auth-runtime")
+    >("openclaw/plugin-sdk/provider-auth-runtime");
+    vi.mocked(withAuthProfileStoreAtEffect).mockImplementation(persistedReader);
+    const native =
+      await vi.importActual<typeof import("./app-server/request.js")>("./app-server/request.js");
+    vi.mocked(readCachedCodexAppServerUsage).mockImplementation(
+      native.readCachedCodexAppServerUsage,
+    );
+    vi.mocked(readCodexAppServerUsage).mockImplementation(native.readCodexAppServerUsage);
+    providerRequest.mockImplementation(native.requestCodexAppServerJson);
+    const appServer = { command: state.path("synthetic-codex"), homeScope: "agent" as const };
+    config.plugins = { entries: { codex: { config: { appServer } } } };
+    await state.writeConfig(config);
+    const agentDir = state.agentDir(selection.agentId);
+    const profileId = selection.profileId;
+    await state.writeAuthProfiles(
+      { ...store, profiles: { ...store.profiles, "openai:alias": store.profiles[profileId]! } },
+      selection.agentId,
+    );
+    const failedReads: string[] = [];
+    const wrongWorkspace = {
+      ...limits("foreign-credit"),
+      accountId: "other-workspace",
+      rateLimits: { ...usage(94).rateLimits, credits: { balance: "37" } },
+    };
+    const peer = (offline = false, reply = usage(80)) => {
+      let selected = "";
+      return createClientHarness({
+        onWrite: (line, send) => {
+          const { id, method, params } = JSON.parse(line) as {
+            id?: number;
+            method: string;
+            params?: { accessToken: string };
+          };
+          if (id === undefined) {
+            return;
+          }
+          if (method === "account/login/start") {
+            selected = params?.accessToken ?? "";
+          }
+          if (method === "account/rateLimits/read" && offline) {
+            failedReads.push(selected);
+            send({ id, error: { code: -32603, message: "synthetic quota outage" } });
+            return;
+          }
+          const responses: Record<string, unknown> = {
+            initialize: { userAgent: "fixture/" + CODEX_APP_SERVER_VERSION },
+            "account/login/start": { type: "chatgptAuthTokens" },
+            "account/rateLimits/read": reply,
+            "account/read": { account: null },
+          };
+          if (Object.hasOwn(responses, method)) {
+            send({ id, result: responses[method] });
+          }
+        },
+      });
+    };
+    const wire = peer();
+    const start = vi
+      .spyOn(CodexAppServerClient, "start")
+      .mockResolvedValueOnce(wire.client)
+      .mockImplementation(async () => peer(true).client);
+    try {
+      const binding = await prepareCodexAppServerAuthBinding({
+        authProfileId: profileId,
+        authProfileStore: store,
+        agentDir,
+        config,
+      });
+      const startOptions = resolveCodexAppServerRuntimeOptions({
+        pluginConfig: { appServer },
+      }).start;
+      const live = await getSharedCodexAppServerClient({
+        agentDir,
+        config,
+        startOptions,
+        preparedAuth: { kind: "profile", profileId, store },
+        authRequirement: "subscription",
+        authBindingFingerprint: binding?.fingerprint,
+      });
+      rememberCodexRateLimitsRead(live, { ...limits(row.id), accountId: "alex-account" });
+      const observedAt = Date.now();
+      const now = vi.spyOn(Date, "now").mockReturnValue(observedAt);
+      const observed = new Promise<void>((done) => {
+        live.addNotificationHandler(() => done());
+      });
+      wire.send({ method: "account/rateLimits/updated", params: usage(27) });
+      await observed;
+      const options = {
+        agentDir,
+        authProfileId: profileId,
+        startOptions,
+        config,
+        timeoutMs: 3_000,
+      };
+      const ttl = (cacheTtlMs: number) => ({ ...config, models: { usage: { cacheTtlMs } } });
+      now.mockReturnValue(observedAt + 90_000);
+      expect(
+        await native.readCachedCodexAppServerUsage({ ...options, config: ttl(120_000) }),
+      ).toMatchObject({ rateLimits: usage(27) });
+      now.mockReturnValue(observedAt + 60_000);
+      // Exactly at the default TTL, general usage falls back to an isolated native read.
+      start.mockResolvedValueOnce(peer().client);
+      expect(await native.readCodexAppServerUsage(options)).toMatchObject({
+        rateLimits: usage(80),
+      });
+      now.mockReturnValue(observedAt);
+      for (const other of [
+        { config: ttl(0) },
+        { agentDir: state.agentDir("main") },
+        { authProfileId: "openai:alias" },
+        { startOptions: { ...startOptions, args: ["app-server", "-c", "different=true"] } },
+      ]) {
+        expect(
+          await native.readCachedCodexAppServerUsage({ ...options, ...other }),
+        ).toBeUndefined();
+      }
+      expect(start).toHaveBeenCalledTimes(2);
+      expect(wire.writes.map((line) => JSON.parse(line).method)).not.toContain(
+        "account/rateLimits/read",
+      );
+      const load = async (quotaOnly = false) =>
+        (await request({ ...selection, ...(quotaOnly && { quotaOnly }) })).mock.calls[0]?.[1];
+      const warm = { stale: true, providers: [{ windows: [{ usedPercent: 27 }] }] };
+      expect(await load(true)).toMatchObject(warm);
+      const same = await load();
+      expect(same).toMatchObject({ ...warm, resetCredits: { memberId: "alex" } });
+      expect(same).not.toHaveProperty("resetCredits.creditId");
+      const saved = store.profiles[profileId];
+      if (saved?.type !== "oauth") {
+        throw new Error("Expected fixture OAuth login");
+      }
+      const replaceAccess = (member: string | null, workspace = saved.accountId) =>
+        state.writeAuthProfiles(
+          {
+            ...store,
+            profiles: {
+              [profileId]: {
+                ...saved,
+                accountId: workspace,
+                access: access(member, "rotated", workspace),
+              },
+            },
+          },
+          selection.agentId,
+        );
+      await replaceAccess("alex");
+      expect(await load(true)).toMatchObject(warm);
+      await replaceAccess("blair");
+      const rebound = await load();
+      expect(rebound).toMatchObject({
+        providers: [{ windows: [] }],
+        resetCredits: { memberId: "blair" },
+      });
+      expect(rebound).not.toHaveProperty("stale");
+      expect(failedReads).toEqual([access(), access("blair", "rotated")]);
+      expect(await load(true)).toMatchObject({ providers: [] });
+      await replaceAccess(null);
+      expect(await load(true)).toMatchObject({ providers: [] });
+      await replaceAccess("alex", "other-workspace");
+      expect(await load(true)).toMatchObject({ providers: [] });
+      await replaceAccess("alex");
+      expect(await load(true)).toMatchObject(warm);
+      const unavailable = expect.objectContaining({
+        providers: [
+          {
+            provider: "openai",
+            displayName: "OpenAI",
+            windows: [],
+            error: "Couldn't load this account's quota. Refresh to try again.",
+          },
+        ],
+        resetCredits: expect.objectContaining({ memberId: "alex", workspaceId: "alex-account" }),
+      });
+      const foreignPeer = peer(false, wrongWorkspace);
+      start.mockResolvedValueOnce(foreignPeer.client);
+      const foreign = await load();
+      expect(
+        foreignPeer.writes
+          .map((line) => JSON.parse(line))
+          .find((rpc) => rpc.method === "account/login/start")?.params.chatgptAccountId,
+      ).toBe("alex-account");
+      expect(foreign).not.toHaveProperty("resetCredits.availableCount");
+      expect(foreign).not.toHaveProperty("resetCredits.offers");
+      start.mockResolvedValueOnce(peer(false, wrongWorkspace).client);
+      const readOnly = (await request(selection, "read", null)).mock.calls[0]?.[1];
+      expect(readOnly).toMatchObject({ providers: [{ windows: [], error: expect.any(String) }] });
+      expect(readOnly).not.toHaveProperty("resetCredits");
+      rememberCodexRateLimitsRead(live, wrongWorkspace);
+      expect([foreign, await load(true), await load()]).toEqual([
+        unavailable,
+        expect.objectContaining({ providers: [] }),
+        unavailable,
+      ]);
+      rememberCodexRateLimitsRead(live, usage(27));
+      expect(await load(true)).toMatchObject(warm);
+      retireSharedCodexAppServerClientIfCurrent(live);
+      expect(await load(true)).toMatchObject({ providers: [] });
+    } finally {
+      await wire.client.closeAndWait();
+    }
   });
 });

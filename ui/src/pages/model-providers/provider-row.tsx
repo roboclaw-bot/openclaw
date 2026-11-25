@@ -3,6 +3,7 @@ import type { JSX } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { splitTrailingAuthProfile } from "../../../../src/agents/model-ref-profile.js";
 import type { ModelsProbeResult } from "../../api/types.ts";
+import { pathForPluginSettings } from "../../app-route-paths.ts";
 import { providerDisplayLabel } from "../../components/provider-icon-data.ts";
 import { Icon } from "../../components/solid/icon.tsx";
 import { ProviderBrandIcon } from "../../components/solid/provider-icon.tsx";
@@ -15,6 +16,7 @@ import { formatUiExternalText } from "../../lib/format-error.ts";
 import { canonicalModelAuthProviderId } from "../../lib/model-auth.ts";
 import { modelSettingFallbacks, modelSettingPrimary } from "../../lib/model-setting.ts";
 import { t } from "../../lib/reactive/i18n.ts";
+import { accountCreditBalance } from "./account-usage.tsx";
 import {
   modelCatalogRef,
   type ModelProviderCard,
@@ -23,6 +25,7 @@ import {
 import { apiKeySource, profileIdentity, ProviderProfiles } from "./profiles-view.tsx";
 import {
   hasSeparateAccountLimits,
+  supportsCodexAccountUsage,
   isProviderUsable,
   needsAuthAttention,
   renderMutationMessage,
@@ -140,6 +143,22 @@ function ProviderCredentials(props: ProviderRowProps) {
           onSignInAgain={() => props.onConnect(props.card)}
           keyAction={keySource(props.card) === undefined ? keyAction : undefined}
         />
+      </Show>
+      <Show
+        when={
+          showProfiles() &&
+          props.connected &&
+          props.codexUsageMissing &&
+          props.card.id === "openai" &&
+          props.card.profiles.some(supportsCodexAccountUsage)
+        }
+      >
+        <small class="settings-row__desc">
+          {t("modelProviders.limits.requiresCodex")}{" "}
+          <a href={pathForPluginSettings("codex", props.basePath)}>
+            {t("modelProviders.limits.codexSettings")}
+          </a>
+        </small>
       </Show>
       <Show when={keySource(props.card)}>
         {(source) => (
@@ -533,28 +552,6 @@ export function ProviderRow(props: ProviderRowProps) {
   const organizationUsage = () =>
     card().usage?.costHistory || card().usage?.billing?.some((entry) => entry.type === "spend");
   const accountScoped = () => hasSeparateAccountLimits(card()) && !organizationUsage();
-  const shownByAccount = createMemo(() => {
-    const { id, profiles, profileProviderIds, usage } = card();
-    return (
-      props.canViewProfiles &&
-      props.accountUsage &&
-      usage &&
-      canonicalModelAuthProviderId(usage.provider) === "openai" &&
-      id === "openai" &&
-      !organizationUsage() &&
-      profiles.some(
-        ({ profileId, type }) =>
-          type !== "api_key" &&
-          (profileProviderIds[profileId] ?? id) === "openai" &&
-          (usage.authProfileId === profileId || (!usage.authProfileId && !usage.error)),
-      )
-    );
-  });
-  const limits = () =>
-    !shownByAccount() &&
-    (hasProviderUsageDetails(card().usage) || (accountScoped() && card().usage?.plan))
-      ? card().usage
-      : undefined;
   const [expanded, setExpanded] = createSignal<boolean>();
   // Work in progress and broken credentials start open; a click always wins.
   const startsOpen = () =>
@@ -564,10 +561,50 @@ export function ProviderRow(props: ProviderRowProps) {
     Boolean(props.busy[`probe:${card().id}`]) ||
     needsCredentialFix(card());
   const open = () => expanded() ?? startsOpen();
-  // Once the account owns the reading, don't report the older sample as its status or plan.
-  const summaryCard = createMemo(() =>
-    open() && shownByAccount() ? { ...card(), usage: undefined } : card(),
-  );
+  // usage.status has no agent or login binding. Even an authStatus profile id names a
+  // reusable slot, not its current workspace member. Only the account row reads that member.
+  const presentedCard = createMemo(() => {
+    const current = card();
+    const { id, profiles, profileProviderIds, usage } = current;
+    if (
+      !usage ||
+      id !== "openai" ||
+      canonicalModelAuthProviderId(usage.provider) !== id ||
+      organizationUsage() ||
+      (!profiles.length && !usage.authProfileId)
+    ) {
+      return current;
+    }
+    const accountSample =
+      usage.authProfileId ||
+      usage.accountEmail ||
+      usage.error ||
+      usage.plan ||
+      usage.windows.length ||
+      accountCreditBalance(usage);
+    if (!accountSample) {
+      return current;
+    }
+    // Without per-login reads the separate “Limits for one account” panel names no owner.
+    if (!props.canViewProfiles || !props.accountUsage) {
+      const logins = profiles.filter(
+        (profile) =>
+          supportsCodexAccountUsage(profile) &&
+          (profileProviderIds[profile.profileId] ?? id) === id,
+      );
+      if (
+        logins.length > 1 &&
+        (!usage.authProfileId || logins.some((p) => p.profileId === usage.authProfileId))
+      ) {
+        return current;
+      }
+    }
+    return { ...current, usage: undefined };
+  });
+  const limits = () => {
+    const { usage } = presentedCard();
+    return hasProviderUsageDetails(usage) || (accountScoped() && usage?.plan) ? usage : undefined;
+  };
   const detailId = () => `provider-detail-${card().id.replace(/[^a-z0-9-]/giu, "-")}`;
   // Open, the credential rows below name the account, so the summary doesn't.
   const credential = () => (open() ? undefined : credentialLine(card()));
@@ -593,14 +630,14 @@ export function ProviderRow(props: ProviderRowProps) {
           <span class="provider-row__name">{providerName(card())}</span>
           <span class="provider-row__meta settings-row__desc">
             <span class="provider-row__meta-part">{credential()}</span>
-            <Show when={!accountScoped() && summaryCard().usage?.plan}>
+            <Show when={!accountScoped() && presentedCard().usage?.plan}>
               {(plan) => <span class="provider-row__meta-part provider-row__plan">{plan()}</span>}
             </Show>
             <span class="provider-row__meta-part">{modelsText(card())}</span>
           </span>
         </span>
         <span class="provider-row__status">
-          {renderProviderStatus(summaryCard(), props.probeResults[card().id])}
+          {renderProviderStatus(presentedCard(), props.probeResults[card().id])}
         </span>
         <Icon name="chevronDown" class="provider-row__chevron" />
       </button>

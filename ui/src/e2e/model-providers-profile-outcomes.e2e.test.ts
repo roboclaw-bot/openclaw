@@ -24,13 +24,14 @@ const statusText = async (card: Locator) =>
   (await text(card, ".model-providers__head .settings-status"))?.trim();
 const config = { ...configSnapshot({}, "accounts"), sourceConfig: {} };
 
-const usage = (usedPercent: number, amount?: number, plan?: string) => ({
+const usage = (usedPercent: number, amount?: number, plan?: string, error?: string) => ({
   updatedAt: NOW,
   providers: [
     {
       provider: "openai",
       displayName: "OpenAI",
       plan,
+      error,
       windows: [
         {
           label: "5h",
@@ -61,7 +62,10 @@ async function openAccounts(
 ) {
   const accounts = (withUsage ? subscriptions : subscriptions.slice(0, 2)).map(({ name }) => ({
     profileId: `openai:${name}`,
-    email: `${name}@example.com`,
+    email:
+      resetBalances && ["studio", "work+team"].includes(name)
+        ? "shared@example.test"
+        : `${name}@example.com`,
     type: "oauth",
     status: "ok",
   }));
@@ -88,7 +92,15 @@ async function openAccounts(
       "codex.accountUsage": {
         cases: subscriptions.map(({ name, used, credits, plan }) => ({
           match: { profileId: `openai:${name}` },
-          response: { ...usage(used, credits, plan), resetCredits: resetBalances?.[name] },
+          response: {
+            ...usage(
+              used,
+              credits,
+              plan,
+              resetBalances && name === "work+team" ? "Incomplete usage" : undefined,
+            ),
+            resetCredits: resetBalances?.[name],
+          },
         })),
       },
     },
@@ -293,84 +305,124 @@ suite.define(() => {
     });
   });
 
-  it("reviews the reset beside its count without spending until the selected account is confirmed", async () => {
+  it("confirms one exact reset from the mobile comparison and refreshes only that account’s quotas", async () => {
     await withPage(async ({ page }) => {
-      await page.setViewportSize({ width: 400, height: 840 });
-      await page.emulateMedia({ colorScheme: "dark" });
+      await page.setViewportSize({ width: 375, height: 667 });
+      const ids = ["first-", "second-"].map((prefix) => prefix + "opaque".repeat(30));
       const studio = {
         availableCount: 2,
         accountLabel: "Studio",
+        accountEmail: "shared@example.test",
         accountBinding: "binding-studio",
         memberId: "studio-member",
         workspaceId: "studio-workspace",
-        creditId: "studio-credit",
+        offers: ids.map((creditId, index) => ({
+          creditId,
+          expiresAt: 2_200_000_000,
+          title: index ? "Service award" : undefined,
+        })),
       };
       const { card, gateway } = await openAccounts(page, true, {
         personal: { availableCount: 0 },
-        "work+team": { availableCount: 2, readOnly: true },
+        "work+team": {
+          ...studio,
+          workspaceId: "other-workspace",
+          accountBinding: "other-binding",
+          readOnly: true,
+        },
         studio,
       });
       const row = card.getByRole("group", { name: "Reset credits", exact: true });
       const cells = row.locator(".model-providers__credit");
       const counts = () => cells.locator('span[aria-hidden="true"]').allTextContents();
       await expect.poll(counts).toEqual(["0", "2", "2", "—"]);
-      const review = cells.nth(2).getByRole("button", { name: /Review reset.*studio/i });
+      const weekly = card
+        .getByRole("group", { name: "Week", exact: true })
+        .locator("[data-account-segment]");
+      expect(await weekly.nth(0).textContent()).toBe("0% left");
+      expect(await weekly.nth(2).textContent()).toBe("65% left");
+      const use = cells.nth(2).getByRole("button", { name: /Use reset credit/ });
       expect(await row.getByRole("button").count()).toBe(1);
-      await review.focus();
-      const cellBox = await layoutBox(cells.nth(2)),
-        buttonBox = await layoutBox(review);
-      expect(buttonBox.x).toBeGreaterThanOrEqual(cellBox.x - 1);
-      expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(cellBox.x + cellBox.width + 1);
-      await review.press("Enter");
-      const details = card.locator('[data-profile-id="openai:studio"]');
-      const use = details.getByRole("button", { name: "Use reset credit" });
-      await use.waitFor();
-      expect(await card.locator("[data-profile-id]").count()).toBe(1);
-      expect(
-        await cells
-          .nth(2)
-          .getByRole("button", { name: /Hide details/i })
-          .getAttribute("aria-expanded"),
-      ).toBe("true");
+      const box = await layoutBox(cells.nth(2)),
+        button = await layoutBox(use);
+      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.width).toBeGreaterThan(button.height * 2); // A readable phone action, not a stack of words.
+      expect(button.x).toBeGreaterThanOrEqual(box.x - 1);
+      expect(button.x + button.width).toBeLessThanOrEqual(Math.min(375, box.x + box.width + 1));
       const prepare = "codex.prepareResetCredit",
         consume = "codex.consumeResetCredit";
-      expect(await gateway.getRequests(prepare)).toHaveLength(0);
-      expect(await gateway.getRequests(consume)).toHaveLength(0);
       await gateway.deferNext(prepare);
-      await page.keyboard.press("Tab");
-      expect(await use.evaluate((el) => el === document.activeElement)).toBe(true);
-      await page.keyboard.press("Enter");
-      const request = await gateway.waitForRequest(prepare);
+      await use.press("Enter");
+      const dialog = page.getByRole("dialog");
+      expect(await dialog.isVisible()).toBe(true);
+      expect(await card.locator("[data-profile-id]").count()).toBe(0);
       const selected = {
         agentId: "main",
         profileId: "openai:studio",
         accountBinding: studio.accountBinding,
-        creditId: studio.creditId,
       };
-      expect(request.params).toMatchObject(selected);
-      const idempotencyKey = asOptionalRecord(request.params)?.idempotencyKey;
+      const first = await gateway.waitForRequest(prepare);
+      expect(first.params).toMatchObject({ ...selected, creditId: ids[0] });
+      expect(await dialog.textContent()).not.toContain("other-workspace");
+      expect(await dialog.textContent()).toContain("studio-workspace");
       const confirmationId = "10000000-0000-4000-a000-000000000001";
-      const started = performance.now();
+      const ticket = { confirmationId, waitMs: 5000, expiresInMs: 30_000 };
       await gateway.resolveDeferred(prepare, {
-        confirmationId,
-        idempotencyKey,
-        waitMs: 5000,
-        expiresInMs: 30_000,
+        ...ticket,
+        idempotencyKey: asOptionalRecord(first.params)?.idempotencyKey,
       });
-      const dialog = page.getByRole("dialog");
+      await dialog.getByText("Change credit", { exact: true }).click();
+      const picker = dialog.getByRole("combobox");
+      const labels = await picker.getByRole("option").allTextContents();
+      expect(labels[0]).toContain("Credit 1 of 2");
+      expect(labels[1]).toContain("Service award");
+      expect(await dialog.ariaSnapshot()).not.toContain("opaqueopaque");
+      expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await gateway.deferNext(prepare);
+      await picker.selectOption({ index: 1 });
+      await expect.poll(async () => (await gateway.getRequests(prepare)).length).toBe(2);
+      const second = (await gateway.getRequests(prepare))[1]!;
+      expect(second.params).toMatchObject({ ...selected, creditId: ids[1] });
+      const idempotencyKey = asOptionalRecord(second.params)?.idempotencyKey;
+      const started = performance.now();
+      await gateway.resolveDeferred(prepare, { ...ticket, idempotencyKey });
       expect(await dialog.getByRole("button", { name: /Confirm in/ }).isDisabled()).toBe(true);
       const spend = dialog.getByRole("button", { name: "Spend 1 credit" });
       await spend.waitFor();
       expect(performance.now() - started).toBeGreaterThanOrEqual(5000);
       expect(await gateway.getRequests(consume)).toHaveLength(0);
       await gateway.setMethodResponse(consume, { outcome: "reset" });
+      const reads = (await gateway.getRequests("codex.accountUsage")).length;
+      await gateway.deferNext("codex.accountUsage");
       await spend.click();
       expect((await gateway.waitForRequest(consume)).params).toEqual({
         ...selected,
+        creditId: ids[1],
         idempotencyKey,
         confirmationId,
       });
-      await details.getByText(/Limits reset. 1 credit spent./).waitFor();
+      await card.getByText(/Updating limits/).waitFor();
+      await gateway.resolveDeferred("codex.accountUsage", {
+        ...usage(5, 12.75, "Business"),
+        resetCredits: { ...studio, availableCount: 1, offers: studio.offers.slice(0, 1) },
+      });
+      await expect.poll(counts).toEqual(["0", "2", "1", "—"]);
+      expect(await weekly.nth(2).textContent()).toBe("95% left");
+      expect(await weekly.nth(1).textContent()).toBe("100% left");
+      const status = card.getByRole("status").filter({ hasText: "1 credit spent" });
+      expect(await status.textContent()).toContain("2 · shared@example.test");
+      expect(await status.textContent()).not.toMatch(
+        /Updating limits|Incomplete usage|opaqueopaque/,
+      );
+      expect(
+        await card.getByRole("status").filter({ hasText: "Incomplete usage" }).textContent(),
+      ).toContain("1 · shared@example.test:");
+      expect(await card.ariaSnapshot()).not.toContain("opaqueopaque");
+      expect(
+        (await gateway.getRequests("codex.accountUsage"))
+          .slice(reads)
+          .map((r) => asOptionalRecord(r.params)?.profileId),
+      ).toEqual(["openai:studio", "openai:studio"]);
       expect(await gateway.getRequests(consume)).toHaveLength(1);
     });
   });

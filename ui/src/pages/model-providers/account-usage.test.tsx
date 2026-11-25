@@ -23,18 +23,18 @@ import { card, props as providerProps } from "./view.test-support.tsx";
 registerSettingsEnglish();
 afterEach(() => vi.useRealTimers());
 
-const snapshot = (usedPercent = 25, amount = 12): UsageSummary => ({
-  updatedAt: 1,
-  providers: [
-    {
-      provider: "openai",
-      displayName: "OpenAI",
-      plan: "Pro",
-      windows: [{ label: "5h", usedPercent }],
-      billing: [{ type: "balance", amount, unit: "credits" }],
-    },
-  ],
-});
+function accountSnapshot(fields: Partial<UsageSummary["providers"][number]> = {}): UsageSummary {
+  return {
+    updatedAt: 1,
+    providers: [{ provider: "openai", displayName: "OpenAI", windows: [], ...fields }],
+  };
+}
+const snapshot = (usedPercent = 25, amount = 12) =>
+  accountSnapshot({
+    plan: "Pro",
+    windows: [{ label: "5h", usedPercent }],
+    billing: [{ type: "balance", amount, unit: "credits" }],
+  });
 
 function mount(
   request: ReturnType<typeof createGatewayRequestMock>,
@@ -43,7 +43,6 @@ function mount(
     principal?: string;
     cacheAvailable?: boolean;
     order?: () => string[];
-    label?: (id: string) => string;
   } = {},
 ) {
   const client = createTestGatewayClient(request);
@@ -58,12 +57,11 @@ function mount(
     canConsume: () => true,
   });
   const [profile, setProfile] = createSignal("openai:account");
-  const ids = options.order?.();
-  const profiles = () =>
-    ids?.map((id) => makeProfile(id, { displayName: options.label?.(id) ?? id }));
+  const { order } = options;
+  const ids = order?.();
+  const profiles = () => ids?.map((id) => makeProfile(id, { displayName: id }));
   const view = mountSolid(() => {
-    if (ids && options.order) {
-      const order = options.order;
+    if (order) {
       return (
         <ProviderProfiles
           {...providerProps()}
@@ -138,10 +136,7 @@ it("drops a pending response when the selected agent changes and shows the curre
 });
 
 it("shows the empty state when Codex returns a snapshot without quota data", async () => {
-  const request = createGatewayRequestMock(async () => ({
-    updatedAt: 1,
-    providers: [{ provider: "openai", displayName: "OpenAI", windows: [] }],
-  }));
+  const request = createGatewayRequestMock(() => accountSnapshot());
   const view = mount(request);
   await waitForSolid(() => expect(view.container.textContent).toContain("No live usage data"));
 });
@@ -151,7 +146,10 @@ const prepare = "codex.prepareResetCredit";
 const consume = "codex.consumeResetCredit";
 const actionName = "Use reset credit";
 const retryName = "Retry the original reset";
-const newName = "Start a new reset";
+const unknownOutcome = "Your request: Outcome unknown";
+function waitForStatus(view: ReturnType<typeof mount>, ...messages: string[]) {
+  return waitForSolid(() => expectContent(view.getByRole("status"), messages));
+}
 const account = {
   accountBinding: "binding-A",
   accountLabel: "prepared@example.test · member-M · workspace-W",
@@ -174,6 +172,11 @@ const offered = (
   creditId: string,
   extra: Partial<ResetCreditBalance> = {},
 ): ResetCreditBalance => ({ ...account, availableCount: 1, creditId, ...extra });
+function prepared(idempotencyKey: string, id = confirmationId) {
+  return { ...ticket, confirmationId: id, idempotencyKey };
+}
+const sentTimeout = (method: string) =>
+  new GatewayProtocolRequestTimeoutError({ method, timeoutMs: 30_000, requestSent: true });
 type UsageParams = { profileId: string; quotaOnly?: boolean };
 function fixture(
   read?: (params: UsageParams) => Promise<UsageSummary & { resetCredits?: ResetCreditBalance }>,
@@ -185,7 +188,7 @@ function fixture(
     balance: offered("A", { availableCount: 2 }),
     connected: true,
     quotas: snapshot(),
-    prepare: async ({ idempotencyKey }: Spend) => ({ ...ticket, idempotencyKey }),
+    prepare: async ({ idempotencyKey }: Spend) => prepared(idempotencyKey),
     spend: async (_intent: Spend): Promise<{ outcome: string }> => ({ outcome: "reset" }),
   };
   const request = createGatewayRequestMock(async (method, params, options) => {
@@ -221,7 +224,7 @@ function fixture(
     previews: () => request.mock.calls.filter(([m]) => m === prepare).map(([, p]) => p as Spend),
   };
 }
-async function open(view: ReturnType<typeof mount>, name = actionName) {
+async function open(view: ReturnType<typeof mount>, name: string | RegExp = actionName) {
   const trigger = await waitForSolid(() => {
     const button = view.getByRole<HTMLButtonElement>("button", { name });
     expect(button.disabled).toBe(false);
@@ -266,7 +269,7 @@ it("opens a non-spending preparation; after its reply five full seconds enable o
   ]);
   await tick(7000);
   expect(first.button.disabled).toBe(true);
-  deferred.resolve({ ...ticket, idempotencyKey: previews()[0]!.idempotencyKey });
+  deferred.resolve(prepared(previews()[0]!.idempotencyKey));
   await tick(0);
   expect(first.button.textContent).toMatch(/5/);
   await tick(4999);
@@ -332,7 +335,7 @@ it.each([
     ...(change === "connection" && { generation: 2, client: createTestGatewayClient(request) }),
   });
   await waitForSolid(() => expect(first.dialog.isConnected).toBe(false));
-  late.resolve({ ...ticket, idempotencyKey: keyA });
+  late.resolve(prepared(keyA));
   await tick(6000);
   first.button.click();
   expect(previews()).toHaveLength(1);
@@ -347,13 +350,9 @@ it("Cancel returns focus; a late ticket cannot enable the reopened dialog", asyn
   const before = await open(view);
   before.cancel.click();
   await waitForSolid(() => expect(document.activeElement).toBe(before.trigger));
-  io.prepare = async ({ idempotencyKey }) => ({
-    ...ticket,
-    confirmationId: receipt,
-    idempotencyKey,
-  });
+  io.prepare = async ({ idempotencyKey }) => prepared(idempotencyKey, receipt);
   const second = await open(view);
-  old.resolve({ ...ticket, idempotencyKey: previews()[0]!.idempotencyKey });
+  old.resolve(prepared(previews()[0]!.idempotencyKey));
   await tick(5000);
   second.button.click();
   expect(writes()).toEqual([{ ...previews()[1], confirmationId: receipt }]);
@@ -376,7 +375,7 @@ it.each([
     delete io.balance[missing];
   }
   const view = mount(request);
-  await waitForSolid(() => expect(view.container.textContent).toContain("Earned reset credits: 2"));
+  await waitForSolid(() => expect(view.container.textContent).toContain("Reset credits: 2"));
   expect(view.queryByRole("button")).toBeNull();
   expect(previews()).toHaveLength(0);
 });
@@ -408,11 +407,7 @@ it.each([
     io.spend = async () => {
       io.balance = offered("C", { lastReset });
       if (reason === "sent timeout") {
-        throw new GatewayProtocolRequestTimeoutError({
-          method: consume,
-          timeoutMs: 30_000,
-          requestSent: true,
-        });
+        throw sentTimeout(consume);
       }
       // Even identical human-readable text cannot make generic UNAVAILABLE a refusal.
       const failure = new GatewayRequestError({
@@ -425,18 +420,17 @@ it.each([
       throw failure;
     };
     const view = mount(request);
-    await send(view, retry ? retryName : newName);
-    await waitForSolid(() =>
-      expectContent(view.getByRole("status"), [
-        "Last request (B): Limits reset.",
-        "Your request (A): " + (denied ? "Reset request not sent" : "Outcome unknown"),
-      ]),
+    await send(view, retry ? retryName : actionName);
+    await waitForStatus(
+      view,
+      "Last request: Limits reset.",
+      "Your request: " + (denied ? "Reset request not sent" : "Outcome unknown"),
     );
     expect(writes()).toHaveLength(1);
     if (!denied) {
-      expect(view.queryByRole("button", { name: newName })).toBeNull();
+      expect(view.queryByRole("button", { name: actionName })).toBeNull();
     } else if (io.connected) {
-      await send(view, newName);
+      await send(view);
       expect(writes()[1]).toMatchObject({ creditId: "C", afterReset: receipt });
     }
   },
@@ -454,9 +448,9 @@ it.each([true, false])(
     await send(view);
     const status = view.getByRole("status");
     await waitForSolid(() => expect(status.textContent).toContain("Reset history is unavailable"));
-    expect(status.textContent).toContain("Your request (A): Outcome unknown");
+    expect(status.textContent).toContain(unknownOutcome);
     expect(view.queryByRole("button", { name: retryName })).toBeNull();
-    expect(view.queryByRole("button", { name: newName })).toBeNull();
+    expect(view.queryByRole("button", { name: actionName })).toBeNull();
     const a = {
       creditId: "A",
       idempotencyKey: writes()[0]!.idempotencyKey,
@@ -470,11 +464,9 @@ it.each([true, false])(
       ...(pending && { pending: { creditId: "D", idempotencyKey: keyA } }),
     });
     refreshView(view);
-    await waitForSolid(() =>
-      expect(status.textContent).toContain("Your request (A): Already reset."),
-    );
-    expect(status.textContent).toContain("Last request (B): Selected credit unavailable.");
-    const next = await open(view, pending ? retryName : newName);
+    await waitForSolid(() => expect(status.textContent).toContain("Your request: Already reset."));
+    expect(status.textContent).toContain("Last request: Selected credit unavailable.");
+    const next = await open(view, pending ? retryName : actionName);
     expect(previews()[1]).toMatchObject(
       pending ? { creditId: "D", idempotencyKey: keyA } : { creditId: "C", afterReset: receipt },
     );
@@ -526,11 +518,7 @@ it.each(["expired", "invalid wait", "changed key", "changed retry key", "prepare
     }
     io.prepare = async ({ idempotencyKey }) => {
       if (mode === "prepare timeout") {
-        throw new GatewayProtocolRequestTimeoutError({
-          method: prepare,
-          timeoutMs: 30_000,
-          requestSent: true,
-        });
+        throw sentTimeout(prepare);
       }
       return {
         ...ticket,
@@ -575,9 +563,8 @@ it.each([
       throw new Error("Connection lost before Gateway admission");
     };
     const view = mount(request);
-    await send(view, lastReset ? newName : actionName);
-    const unknown = "Your request (A): Outcome unknown";
-    await waitForSolid(() => expectContent(view.getByRole("status"), [unknown]));
+    await send(view);
+    await waitForStatus(view, unknownOutcome);
     const original = previews()[0]!;
     expect(original).toMatchObject({ creditId: "A", ...(afterReset && { afterReset }) });
     // Reconnect, then reload from this tab's storage; the newly preferred B is not our target.
@@ -591,14 +578,10 @@ it.each([
     await waitForSolid(() => expect(view.getByRole("button", { name: retryName })).toBeTruthy());
     view.unmount();
     const restored = mount(request);
-    await waitForSolid(() => expectContent(restored.getByRole("status"), [unknown]));
+    await waitForStatus(restored, unknownOutcome);
     expect(previews()).toHaveLength(1);
     expect(writes()).toHaveLength(1);
-    io.prepare = async ({ idempotencyKey }) => ({
-      ...ticket,
-      confirmationId: keyA,
-      idempotencyKey,
-    });
+    io.prepare = async ({ idempotencyKey }) => prepared(idempotencyKey, keyA);
     io.spend = async ({ creditId, idempotencyKey }) => {
       const outcome = expired ? "notOffered" : "reset";
       io.balance = offered("B", { lastReset: { creditId, idempotencyKey, outcome } });
@@ -612,17 +595,16 @@ it.each([
     await tick(1);
     expect(writes()).toHaveLength(1);
     retry.button.click();
-    await waitForSolid(() =>
-      expectContent(restored.getByRole("status"), [
-        expired ? "Your request (A): Reset not sent" : "Your request (A): Limits reset",
-      ]),
+    await waitForStatus(
+      restored,
+      expired ? "Your request: Reset not sent" : "Your request: Limits reset",
     );
     expect(writes()).toEqual([
       { ...original, confirmationId },
       { ...original, confirmationId: keyA },
     ]);
     if (expired) {
-      expect(restored.getByRole("button", { name: newName })).toBeTruthy();
+      expect(restored.getByRole("button", { name: actionName })).toBeTruthy();
     }
     expect(storage).toHaveBeenCalled();
   },
@@ -648,9 +630,7 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   // An older tab stored the key and credit without witnessing the original predecessor.
   storage.setItem(saved[0]!, JSON.stringify(a));
   const legacy = mount(request, { gatewayUrl: gateway });
-  await waitForSolid(() =>
-    expectContent(legacy.getByRole("status"), ["Your request (A): Outcome unknown"]),
-  );
+  await waitForStatus(legacy, unknownOutcome);
   expect(legacy.queryByRole("button", { name: retryName })).toBeNull();
   legacy.unmount();
   storage.setItem(saved[0]!, JSON.stringify(storedA));
@@ -664,10 +644,9 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   const alias = { agentId: "other", profileId: "openai:alias", accountBinding: "binding-A" };
   recovered.setScope({ ...recovered.scope(), agentId: alias.agentId });
   recovered.setProfile(alias.profileId);
-  const unknownA = "Your request (A): Outcome unknown";
-  await waitForSolid(() => expect(recovered.getByRole("status").textContent).toContain(unknownA));
+  await waitForStatus(recovered, unknownOutcome);
   expect(recovered.getByRole("button", { name: retryName })).toBeTruthy();
-  expect(recovered.queryByRole("button", { name: newName })).toBeNull();
+  expect(recovered.queryByRole("button", { name: actionName })).toBeNull();
   expect(previews()).toHaveLength(1);
   expect(writes()).toHaveLength(1);
 
@@ -675,17 +654,12 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   const b = { creditId: "B", idempotencyKey: receipt };
   const shared = createDeferredCore<{ outcome: string }>();
   io.spend = () => shared.promise;
-  io.quotas = {
-    updatedAt: 1,
-    providers: [
-      { provider: "openai", displayName: "OpenAI", windows: [], error: "Quota unavailable" },
-    ],
-  };
+  io.quotas = accountSnapshot({ error: "Quota unavailable" });
   io.balance = { ...account, creditId: "C", pending: b }; // no offer count during the outage
   refreshView(recovered);
-  await waitForSolid(() => expectContent(recovered.getByRole("status"), ["Reset pending for B."]));
+  await waitForStatus(recovered, "Account reset pending.");
   const retry = await open(recovered, retryName);
-  expectContent(recovered.container, ["Quota unavailable"], ["Earned reset credits:"]);
+  expectContent(recovered.container, ["Quota unavailable"], ["Reset credits:"]);
   expectContent(retry.dialog, [
     "Expiry unknown",
     "can spend 1 credit",
@@ -700,10 +674,8 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   // Even if A is offered again and its receipt has rotated out, B must never become A’s predecessor.
   io.balance = offered("A", { lastReset: { ...b, outcome: "reset" } });
   shared.resolve({ outcome: "reset" });
-  await waitForSolid(() =>
-    expect(recovered.getByRole("status").textContent).toContain("Last request (B): Limits reset"),
-  );
-  expect(recovered.getByRole("status").textContent).toContain(unknownA);
+  await waitForStatus(recovered, "Last request: Limits reset");
+  expect(recovered.getByRole("status").textContent).toContain(unknownOutcome);
   expect(savedIntent()).toEqual(storedA);
   expect(recovered.queryByRole("button", { name: retryName })).toBeNull();
   // An exact pending A is independently recoverable even after B completed.
@@ -713,7 +685,7 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   expect(previews()[2]).toEqual({ ...alias, ...a });
   io.balance = offered("C", { lastReset: { ...a, outcome: "notOffered" } });
   refreshView(recovered);
-  const next = await open(recovered, newName);
+  const next = await open(recovered);
   expect(next.button.disabled).toBe(true);
   expect(previews()[3]).toMatchObject({ creditId: "C", afterReset: a.idempotencyKey });
   expect(writes()).toHaveLength(2);
@@ -726,53 +698,56 @@ it("requires new consent for a different credit after another tab completes B wh
   const tabStorage = createStorageMock();
   using storage = vi.spyOn(browserStorage, "getSafeSessionStorage").mockReturnValue(tabStorage);
   const { io, request, previews, writes } = fixture();
+  const opaque = "-opaque".repeat(23);
+  const originalId = "first" + opaque,
+    otherId = "other" + opaque,
+    replacementId = "new" + opaque;
+  io.balance = offered(originalId);
   let delayedReceipt: ResetCreditBalance["lastReset"];
   io.spend = async ({ creditId, idempotencyKey }) => {
     const completed = { creditId, idempotencyKey, outcome: "reset" } as const;
-    if (creditId === "C") {
+    if (creditId === replacementId) {
       delayedReceipt = completed; // The receipt becomes visible after this tab reloads.
     }
-    if (creditId !== "B") {
+    if (creditId !== otherId) {
       throw new Error("Response lost");
     }
-    io.balance = offered("A", { lastReset: completed });
+    io.balance = offered(originalId, { lastReset: completed });
     return completed;
   };
   const original = mount(request);
   await send(original);
-  const unknownA = "Your request (A): Outcome unknown";
-  await waitForSolid(() => expectContent(original.getByRole("status"), [unknownA]));
+  await waitForStatus(original, unknownOutcome);
   original.unmount();
   const stored = () => JSON.parse(tabStorage.getItem(tabStorage.key(0)!)!);
-  const a = { creditId: "A", idempotencyKey: writes()[0]!.idempotencyKey, afterReset: null };
+  const a = { creditId: originalId, idempotencyKey: writes()[0]!.idempotencyKey, afterReset: null };
   storage.mockReturnValue(createStorageMock()); // An independent tab on the same Gateway account.
-  io.balance = offered("B");
+  io.balance = offered(otherId);
   const other = mount(request);
   await send(other);
-  await waitForSolid(() =>
-    expectContent(other.getByRole("status"), ["Your request (B): Limits reset"]),
-  );
+  await waitForStatus(other, "Your request: Limits reset");
   other.unmount();
   storage.mockReturnValue(tabStorage);
   const view = mount(request);
-  await waitForSolid(() =>
-    expectContent(view.getByRole("status"), [unknownA, "Last request (B): Limits reset"]),
-  );
+  await waitForStatus(view, unknownOutcome, "Last request: Limits reset");
   expect(view.queryByRole("checkbox")).toBeNull(); // Only A is offered; never rebind it to B.
-  expect(view.queryByRole("button", { name: newName })).toBeNull();
+  expect(view.queryByRole("button", { name: actionName })).toBeNull();
   expect(view.queryByRole("button", { name: retryName })).toBeNull();
   io.balance = {
     ...io.balance,
     availableCount: 2,
-    offers: ["A", "C"].map((creditId) => ({ creditId, expiresAt: null })),
+    offers: [originalId, replacementId].map((creditId) => ({ creditId, expiresAt: null })),
   };
   refreshView(view);
   const ack = await waitForSolid(() =>
-    view.getByRole<HTMLInputElement>("checkbox", { name: /A may already have been spent/ }),
+    view.getByRole<HTMLInputElement>("checkbox", {
+      name: /earlier credit may already have been spent/,
+    }),
   );
+  expectContent(view.container, [], [originalId, otherId, replacementId]);
   ack.click();
   flush();
-  expect(view.getByRole("button", { name: newName })).toBeTruthy();
+  expect(view.getByRole("button", { name: actionName })).toBeTruthy();
   expect(stored()).toEqual(a);
   view.unmount();
   const back = mount(request);
@@ -780,36 +755,39 @@ it("requires new consent for a different credit after another tab completes B wh
   expect(again.checked).toBe(false);
   again.click();
   flush();
-  expect(previews().map((p) => p.creditId)).toEqual(["A", "B"]);
-  const c = await open(back, newName);
-  expectContent(c.dialog, ["A may already have been spent", "different credit", "C"]);
+  expect(previews().map((p) => p.creditId)).toEqual([originalId, otherId]);
+  const c = await open(back);
+  expectContent(
+    c.dialog,
+    ["earlier credit may already have been spent", "different credit"],
+    [originalId, otherId, replacementId],
+  );
   const intent = previews()[2]!;
-  expect(intent).toMatchObject({ creditId: "C", afterReset: writes()[1]!.idempotencyKey });
+  expect(intent).toMatchObject({
+    creditId: replacementId,
+    afterReset: writes()[1]!.idempotencyKey,
+  });
   expect([a.idempotencyKey, intent.afterReset]).not.toContain(intent.idempotencyKey);
   await tick(4999);
   expect(c.button.disabled).toBe(true);
-  expect(writes().map((p) => p.creditId)).toEqual(["A", "B"]);
+  expect(writes().map((p) => p.creditId)).toEqual([originalId, otherId]);
   await tick(1);
   c.button.click();
   c.button.click();
-  await waitForSolid(() =>
-    expectContent(back.getByRole("status"), ["Your request (C): Outcome unknown"]),
-  );
+  await waitForStatus(back, unknownOutcome);
   expect(tabStorage.length).toBe(1); // Only the new confirmed intent now needs this slot.
   expect(stored()).toEqual({
-    creditId: "C",
+    creditId: replacementId,
     idempotencyKey: intent.idempotencyKey,
     afterReset: intent.afterReset,
   });
   back.unmount();
-  io.balance = offered("A", { lastReset: delayedReceipt });
+  io.balance = offered(originalId, { lastReset: delayedReceipt });
   const settled = mount(request);
-  await waitForSolid(() =>
-    expectContent(settled.getByRole("status"), ["Your request (C): Limits reset"]),
-  );
+  await waitForStatus(settled, "Your request: Limits reset");
   expect(previews()).toHaveLength(3);
   expect(writes()[2]).toEqual({ ...intent, confirmationId });
-  expect(writes().map((p) => p.creditId)).toEqual(["A", "B", "C"]);
+  expect(writes().map((p) => p.creditId)).toEqual([originalId, otherId, replacementId]);
   expect(tabStorage.length).toBe(0);
 });
 
@@ -833,31 +811,79 @@ it("lists offers in server order, starts fresh consent on selection changes, and
   ];
   const view = mount(request);
   const first = await open(view);
-  expect(first.dialog.textContent).toContain("first");
+  expect(first.dialog.textContent).toContain("Credit 1 of 2");
   expect(first.dialog.textContent).toMatch(/5-hour limit resets automatically (at|on) /);
-  expect(first.dialog.textContent).toMatch(/Expires.*2039/);
-  const chooser = view.container.querySelector("select")!;
-  expect([...chooser.options].map((o) => o.value)).toEqual(["first", "second"]);
+  expect(first.dialog.textContent).toMatch(/2039/);
+  const chooser = first.dialog.querySelector("select")!;
+  expect([...chooser.options].map((o) => o.textContent)).toEqual([
+    expect.stringContaining("Credit 1 of 2"),
+    expect.stringContaining("Credit 2 of 2"),
+  ]);
   await tick(5000);
   expect(first.dialog.textContent).not.toContain("5-hour limit resets automatically");
-  chooser.value = "second";
+  chooser.selectedIndex = 1;
   chooser.dispatchEvent(new Event("change", { bubbles: true }));
   flush();
-  expect(first.dialog.isConnected).toBe(false);
+  expect(first.dialog.isConnected).toBe(true);
   first.button.click();
   expect(writes()).toHaveLength(0);
-  const second = await open(view);
-  expect(second.button.disabled).toBe(true);
-  expect(second.dialog.textContent).toContain("No expiry");
+  expect(first.button.disabled).toBe(true);
+  expect(first.dialog.textContent).toContain("No expiry");
   // A separate tab can review A without sharing or replacing this selection of B.
   const other = mount(request);
   const otherDialog = await open(other);
   expect(otherDialog.button.disabled).toBe(true);
   expect(previews()[2]!.creditId).toBe("first");
-  expect(second.dialog.isConnected).toBe(true);
+  expect(first.dialog.isConnected).toBe(true);
   expect(previews()[1]).toMatchObject({ creditId: "second" });
   expect(previews()[1]!.idempotencyKey).not.toBe(previews()[0]!.idempotencyKey);
+  await tick(5000);
+  first.button.click();
+  expect(writes()).toEqual([{ ...previews()[1], confirmationId }]);
 });
+
+it.each(["stale", "failed", "failed retry"])(
+  "keeps the receipt separate from a %s post-reset quota read",
+  async (mode) => {
+    const retry = mode === "failed retry";
+    const message = retry
+      ? "Your request: Already reset. No additional credit spent."
+      : "Your request: Limits reset. 1 credit spent.";
+    const failure = "Limits unavailable for this account";
+    const held = createDeferredCore();
+    const id = "offer-" + "0123456789abcdef".repeat(7);
+    const pending = retry ? { creditId: id, idempotencyKey: keyA } : undefined;
+    const { io, request, writes } = fixture(async ({ quotaOnly }) => {
+      if (quotaOnly) {
+        return snapshot(70);
+      }
+      if (!writes().length) {
+        return { ...snapshot(45), resetCredits: offered(id, { pending }) };
+      }
+      await held.promise;
+      if (mode !== "stale") {
+        throw new Error(failure);
+      }
+      return { ...snapshot(70), stale: true, resetCredits: { ...account } };
+    });
+    io.spend = async () => ({ outcome: retry ? "alreadyRedeemed" : "reset" });
+    const view = mount(request, { cacheAvailable: true });
+    await send(view, retry ? retryName : actionName);
+    await waitForStatus(view, message, ...(retry ? [] : ["Updating limits"]));
+    expect(view.getByRole("status").textContent).not.toContain(id);
+    held.resolve();
+    const quota = ["Last known limits", "30% left", ...(mode === "stale" ? [] : [failure])];
+    const absent = [id, "Updating limits", actionName, retryName];
+    await waitForSolid(() => expectContent(view.container, [message, ...quota], absent));
+    expect(writes()).toHaveLength(1);
+    if (retry) {
+      expect(view.container.textContent).not.toContain("1 credit spent");
+      expect(writes()[0]).toMatchObject({ ...row, ...pending, confirmationId });
+      view.setScope({ ...view.scope(), credentialRevision: 1 });
+      await waitForSolid(() => expectContent(view.container, [failure], [message]));
+    }
+  },
+);
 
 it("keeps reset counts, review and completion on the selected account across reordering", async () => {
   const ids = ["openai:a", "openai:b", "openai:c"],
@@ -899,10 +925,10 @@ it("keeps reset counts, review and completion on the selected account across reo
   };
   await waitForSolid(() => expect(track("Reset credits")).toEqual(["0", "2", "—"]));
   expect(track("Credits")).toEqual(["0", "42,219", "0"]);
-  select(b);
   expect(request).toHaveBeenCalledTimes(6); // one detail and one cache read per account
-  const { dialog, button } = await open(view);
-  expectContent(dialog, [account.memberId, account.workspaceId, "credit-b"]);
+  const { dialog, button } = await open(view, /Use reset credit/);
+  expectContent(dialog, [account.memberId, account.workspaceId], ["credit-b"]);
+  expect(dialog.querySelector("dd summary")?.textContent).toBe(`${b} · ${account.accountEmail}`);
   refreshing = true;
   setOrder([b, ids[0]!, ids[2]!]);
   refreshView(view);
@@ -918,8 +944,8 @@ it("keeps reset counts, review and completion on the selected account across reo
   select(ids[0]!);
   expectContent(
     view.container.querySelector('[data-profile-id="openai:a"]'),
-    ["Earned reset credits: 0"],
-    ["credit-b", "Waiting for Codex"],
+    [],
+    ["Reset credits:", "credit-b", "Waiting for Codex"],
   );
   balance = 1;
   spent.resolve({ outcome: "reset" });

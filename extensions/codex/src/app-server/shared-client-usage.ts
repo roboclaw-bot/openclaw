@@ -8,7 +8,7 @@ import {
   codexAppServerStartOptionsKey,
   resolveCodexAppServerRuntimeOptions,
 } from "./config-runtime.js";
-import { readRecentCodexRateLimits } from "./rate-limit-cache.js";
+import { readCodexRateLimitsForLogin } from "./rate-limit-cache.js";
 import { createSharedCodexAppServerClientKeyResolver } from "./shared-client-key.js";
 import { getSharedCodexAppServerClientState } from "./shared-client-lifecycle.js";
 import {
@@ -80,7 +80,12 @@ export async function readSharedCodexAppServerUsage(
     ...options,
     agentDir,
     authProfileId: undefined,
-    preparedAuth: { kind: "profile", profileId, store: binding.authProfileStore },
+    preparedAuth: {
+      kind: "profile",
+      profileId,
+      store: binding.authProfileStore,
+      snapshot: prepared?.snapshot,
+    },
     authBindingFingerprint: binding.fingerprint,
   });
   assertCurrent();
@@ -94,7 +99,11 @@ export async function readSharedCodexAppServerUsage(
   if (!entry?.ready || !client || !captureSharedClientRegistration(client)()) {
     return undefined;
   }
-  const rateLimits = readRecentCodexRateLimits(client, maxAgeMs);
+  const login =
+    context.preparedAuth?.kind === "profile"
+      ? context.preparedAuth.snapshot.loginParams
+      : undefined;
+  const rateLimits = readCodexRateLimitsForLogin(client, maxAgeMs, login);
   const accountEmail = store.profiles[profileId]?.email;
   return rateLimits === undefined
     ? undefined

@@ -1,43 +1,33 @@
+import type { JSX } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
-import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { ModalDialog, type OpenClawModalDialog } from "../../components/modal-dialog.tsx";
 import { DialogHeader } from "../../components/solid/dialog-header.tsx";
-import { formatDateTimeMs, formatTimeMs } from "../../lib/reactive/format.ts";
+import { formatDateTimeMs, formatNumber } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { listen } from "../../lib/reactive/listener.ts";
 import { observeState } from "../../lib/reactive/observe-state.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { createInterval, createTimeout } from "../../lib/reactive/timers.ts";
 import { generateUUID } from "../../lib/uuid.ts";
+import type { AccountUsageRead } from "./account-usage.tsx";
 import {
   CODEX_ACCOUNT_REQUEST_TIMEOUT_MS,
   hasResetIdentity,
   type ResetAttempt,
-  type ResetCreditBalance,
   type ResetIntent,
-  type ResetOperation,
 } from "./reset-credit-operation.ts";
 
-type Account = {
-  client: GatewayBrowserClient;
-  agentId: string;
-  profileId: string;
-};
-type Summary = {
-  resetCredits?: ResetCreditBalance;
-  operation?: ResetOperation;
-  observed?: ResetAttempt;
-  error?: string;
-  nextReset?: { at: number; label: string };
-};
+type Account = ReturnType<AccountUsageRead["account"]>;
+type Summary = ReturnType<AccountUsageRead["result"]>;
+export type CreditColumn = { name: string; translate?: string; grabbed: boolean };
+type Offer = { creditId: string; expiresAt?: number | null; title?: string };
 type Selection = {
   accountBinding: string;
   accountLabel: string;
   accountEmail?: string;
   memberId: string;
   workspaceId: string;
-  creditId: string;
-  expiresAt?: number | null;
+  choices: Offer[];
   idempotencyKey?: string;
   afterReset?: string | null;
   unresolved?: ResetAttempt;
@@ -54,6 +44,8 @@ const uuid = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 export function AccountResetCredits(props: {
   account: Account;
   summary: Summary;
+  column?: CreditColumn;
+  children: JSX.Element;
   canConsume: () => boolean;
   refresh: () => void;
 }) {
@@ -78,10 +70,12 @@ export function AccountResetCredits(props: {
     );
   const activity = () =>
     Boolean(
-      attempt() || journal()?.pending || journal()?.lastReset || journal()?.journalUnavailable,
+      props.summary.confirmed ||
+      attempt() ||
+      journal()?.pending ||
+      journal()?.lastReset ||
+      journal()?.journalUnavailable,
     );
-  // A choice is local to the verified subscription, never an operation or reservation.
-  const [choice, choose] = createSignal<{ binding: string; id: string }>();
   // The registry has already checked for an exact receipt. A different journal head
   // rules out a local retry against the old predecessor, not a debit of this credit.
   const superseded = createMemo(() => {
@@ -99,7 +93,7 @@ export function AccountResetCredits(props: {
     if (!credits) {
       return [];
     }
-    const candidates: { creditId: string; expiresAt?: number | null; title?: string }[] =
+    const candidates: Offer[] =
       credits.offers ?? (credits.creditId ? [{ creditId: credits.creditId }] : []);
     const local = attempt();
     return candidates.filter(
@@ -145,26 +139,19 @@ export function AccountResetCredits(props: {
         }
         return {
           ...identity,
-          creditId: retry.creditId,
-          expiresAt: offer?.expiresAt,
+          choices: [offer ?? { creditId: retry.creditId }],
           afterReset: own(retry) ? local?.afterReset : undefined,
           idempotencyKey: retry.idempotencyKey,
           action: "retry",
         };
       }
-      const selected = choice();
-      const offer =
-        (selected?.binding === accountBinding
-          ? offers().find((o) => o.creditId === selected.id)
-          : undefined) ?? offers()[0];
-      if (!offer || (credits.availableCount ?? 0) <= 0) {
+      if (!offers().length || (credits.availableCount ?? 0) <= 0) {
         return undefined;
       }
       const last = credits.lastReset;
       return {
         ...identity,
-        creditId: offer.creditId,
-        expiresAt: offer.expiresAt,
+        choices: offers(),
         afterReset: last?.idempotencyKey ?? null,
         unresolved: superseded(),
         action: last || local ? "newSpend" : "use",
@@ -177,120 +164,129 @@ export function AccountResetCredits(props: {
         a?.accountEmail === b?.accountEmail &&
         a?.memberId === b?.memberId &&
         a?.workspaceId === b?.workspaceId &&
-        a?.expiresAt === b?.expiresAt &&
-        a?.creditId === b?.creditId &&
+        a?.choices.length === b?.choices.length &&
+        !a?.choices.some(
+          (offer, i) =>
+            offer.creditId !== b?.choices[i]?.creditId ||
+            offer.title !== b?.choices[i]?.title ||
+            offer.expiresAt !== b?.choices[i]?.expiresAt,
+        ) &&
         a?.idempotencyKey === b?.idempotencyKey &&
         a?.afterReset === b?.afterReset &&
         a?.action === b?.action &&
         a?.unresolved === b?.unresolved,
     },
   );
+  const localPhase = () => attempt()?.phase ?? props.summary.confirmed;
   let status!: HTMLDivElement;
   return (
     <>
-      <Show when={(balance()?.availableCount !== undefined || target()) && balance()}>
-        {(credits) => (
-          <div class="model-providers__reset-credits">
-            <Show when={credits().availableCount !== undefined}>
-              <strong>
-                {t("modelProviders.resetCredits.balance", {
-                  count: String(credits().availableCount),
-                })}
-              </strong>
-            </Show>
-            <Show when={offers().length > 1 && target() && target()?.action !== "retry"}>
-              <label class="model-providers__credit-choice">
-                <span>{t("modelProviders.resetCredits.chooseCredit")}</span>
-                <select
-                  value={target()?.creditId}
-                  disabled={!fresh() || attempt()?.phase === "pending"}
-                  onChange={(e) => {
-                    const selected = target();
-                    if (selected) {
-                      choose({ binding: selected.accountBinding, id: e.currentTarget.value });
-                    }
-                  }}
-                >
-                  <For each={offers()} keyed={(o) => o.creditId}>
-                    {(offer) => (
-                      <option value={offer().creditId}>
-                        {offer().creditId} — {creditExpiry(offer().expiresAt)}
-                      </option>
-                    )}
-                  </For>
-                </select>
-              </label>
-            </Show>
-            <Show
-              when={target()}
-              keyed
-              fallback={
-                <Show when={!activity() && (credits().availableCount ?? 0) > 0}>
-                  <span>
-                    {t(
-                      credits().readOnly || credits().creditId || credits().offers?.length
-                        ? "modelProviders.resetCredits.readOnly"
-                        : "modelProviders.resetCredits.countOnly",
-                    )}
-                  </span>
-                </Show>
-              }
-            >
-              {(selected) => (
-                <CreditAction
-                  selection={selected}
-                  account={props.account}
-                  nextReset={props.summary.nextReset}
-                  refresh={props.refresh}
-                  ready={() =>
-                    props.canConsume() &&
-                    target() === selected &&
-                    fresh() &&
-                    attempt()?.phase !== "pending"
-                  }
-                  observed={() => owner()?.current}
-                  onSpend={(prepared, observed) =>
-                    void owner()?.spend(
-                      props.account.client,
-                      props.account,
-                      {
-                        creditId: selected.creditId,
-                        idempotencyKey: prepared.idempotencyKey,
-                        afterReset: selected.afterReset,
-                      },
-                      prepared.confirmationId,
-                      observed,
-                      selected.action === "retry",
-                    )
-                  }
-                  status={() => status}
-                />
-              )}
-            </Show>
-          </div>
-        )}
+      <Show when={props.column || balance()?.availableCount !== undefined || target()}>
+        <div
+          class={props.column ? "model-providers__credit" : "model-providers__reset-credits"}
+          data-grabbed={props.column?.grabbed || undefined}
+          style={{ "--credit-translate": props.column?.translate }}
+        >
+          <Show
+            when={props.column}
+            fallback={
+              <Show when={balance()?.availableCount !== undefined}>
+                <strong>
+                  {t("modelProviders.resetCredits.balance", {
+                    count: formatNumber(balance()!.availableCount!),
+                  })}
+                </strong>
+              </Show>
+            }
+          >
+            {(column) => (
+              <>
+                <span class="settings-control__sr-label">
+                  {column().name}:{" "}
+                  {balance()?.availableCount ?? t("modelProviders.limits.notReported")}
+                </span>
+                <span aria-hidden="true">{balance()?.availableCount ?? "—"}</span>
+              </>
+            )}
+          </Show>
+          <Show
+            when={target()}
+            keyed
+            fallback={
+              <Show when={!props.column && !activity() && (balance()?.availableCount ?? 0) > 0}>
+                <span>
+                  {t(
+                    balance()?.readOnly || balance()?.creditId || balance()?.offers?.length
+                      ? "modelProviders.resetCredits.readOnly"
+                      : "modelProviders.resetCredits.countOnly",
+                  )}
+                </span>
+              </Show>
+            }
+          >
+            {(selected) => (
+              <CreditAction
+                selection={selected}
+                name={props.column?.name}
+                account={props.account}
+                refresh={props.refresh}
+                ready={() =>
+                  props.canConsume() &&
+                  target() === selected &&
+                  fresh() &&
+                  (!props.column || !props.summary.stale) &&
+                  attempt()?.phase !== "pending"
+                }
+                observed={() => owner()?.current}
+                onSpend={(prepared, observed, creditId) =>
+                  void owner()?.spend(
+                    props.account.client,
+                    props.account,
+                    {
+                      creditId,
+                      idempotencyKey: prepared.idempotencyKey,
+                      afterReset: selected.afterReset,
+                    },
+                    prepared.confirmationId,
+                    observed,
+                    selected.action === "retry",
+                  )
+                }
+                status={() => status}
+              >
+                {props.children}
+              </CreditAction>
+            )}
+          </Show>
+        </div>
       </Show>
       <div
         ref={(node) => {
           status = node;
         }}
-        class={[{ "sr-only": !activity() }]}
+        class={["model-providers__reset-status", { "sr-only": !activity() }]}
         role="status"
         tabindex="-1"
       >
-        <Show when={attempt()}>
-          {(local) => (
-            <div>
-              {t("modelProviders.resetCredits.yourRequest", { credit: local().creditId })}{" "}
-              {t(`modelProviders.resetCredits.${local().phase}`)}
+        <Show when={activity() && props.column}>
+          <strong>{props.column?.name}</strong>
+        </Show>
+        <Show when={localPhase()}>
+          {(phase) => (
+            <div data-confirmed={phase() === "reset" || undefined}>
+              {t("modelProviders.resetCredits.yourRequest")}{" "}
+              {t(`modelProviders.resetCredits.${phase()}`)}
             </div>
           )}
+        </Show>
+        <Show when={localPhase() === "reset" && props.summary.refreshing}>
+          <span>{t("modelProviders.resetCredits.updatingLimits")}</span>
         </Show>
         <Show when={journal()?.lastReset}>
           {(last) => (
             <Show when={!own(last()) || attempt()?.phase !== last().outcome}>
               <div>
-                {t("modelProviders.resetCredits.lastAccountReset", { credit: last().creditId })}{" "}
+                {t("modelProviders.resetCredits.lastAccountReset")}{" "}
                 {t(`modelProviders.resetCredits.${last().outcome}`)}
               </div>
             </Show>
@@ -304,9 +300,7 @@ export function AccountResetCredits(props: {
                 (attempt()?.phase !== "pending" && attempt()?.phase !== "uncertain")
               }
             >
-              <div>
-                {t("modelProviders.resetCredits.accountPending", { credit: pending().creditId })}
-              </div>
+              <div>{t("modelProviders.resetCredits.accountPending")}</div>
             </Show>
           )}
         </Show>
@@ -315,6 +309,7 @@ export function AccountResetCredits(props: {
         </Show>
         <Show
           when={
+            props.summary.confirmed ||
             attempt()?.phase === "uncertain" ||
             journal()?.pending ||
             journal()?.journalUnavailable ||
@@ -332,16 +327,18 @@ export function AccountResetCredits(props: {
 
 function CreditAction(props: {
   selection: Selection;
+  name?: string;
   account: Account;
-  nextReset?: { at: number; label: string };
+  children: JSX.Element;
   refresh: () => void;
   ready: () => boolean;
   observed: () => ResetAttempt | undefined;
-  onSpend: (prepared: Prepared, observed: ResetAttempt | undefined) => void;
+  onSpend: (prepared: Prepared, observed: ResetAttempt | undefined, creditId: string) => void;
   status: () => HTMLElement;
 }) {
   const dialog = observeState({
     open: false,
+    index: 0,
     seconds: 0,
     error: false,
     expired: false,
@@ -381,13 +378,19 @@ function CreditAction(props: {
     },
     () => (dialog.read().open && dialog.read().seconds > 0 ? 250 : undefined),
   );
-  const open = async () => {
-    if (!trigger.isConnected || document.hidden || !props.ready() || dialog.state.open) {
+  const prepare = async (index: number) => {
+    const offer = props.selection.choices[index];
+    if (!offer || !trigger.isConnected || document.hidden || !props.ready()) {
       return;
     }
     const id = ++opening;
     const requestedAt = performance.now();
-    const { creditId, accountBinding, afterReset } = props.selection;
+    expiry.cancel();
+    dialog.state.ticket = undefined;
+    dialog.state.seconds = 0;
+    dialog.state.index = index;
+    const { creditId } = offer;
+    const { accountBinding, afterReset } = props.selection;
     const idempotencyKey = props.selection.idempotencyKey ?? generateUUID();
     observed = props.observed();
     dialog.state.open = true;
@@ -454,9 +457,9 @@ function CreditAction(props: {
     }
     modal.setReturnFocusTarget(props.status());
     dismiss();
-    props.onSpend(prepared, observed);
+    props.onSpend(prepared, observed, props.selection.choices[dialog.state.index]!.creditId);
   };
-  const title = () =>
+  const dialogTitle = () =>
     t(
       props.selection.action === "retry"
         ? "modelProviders.resetCredits.retryTitle"
@@ -466,29 +469,61 @@ function CreditAction(props: {
     );
   const warning = () =>
     props.selection.unresolved
-      ? t("modelProviders.resetCredits.differentWarning", {
-          credit: props.selection.unresolved.creditId,
-        })
+      ? t("modelProviders.resetCredits.differentWarning")
       : t(
           props.selection.action === "retry"
             ? "modelProviders.resetCredits.retryWarning"
             : "modelProviders.resetCredits.warning",
         );
-  const accountName = () => props.selection.accountEmail;
+  // Codex orders offers by earliest expiry. IDs identify the charge, never its label.
+  const options = createMemo(() => {
+    const offers = props.selection.choices;
+    const titles = offers.map(({ title, creditId }) =>
+      title && !title.includes(creditId) && title.length <= 64 && !/[\p{C}]|\S{32}/u.test(title)
+        ? title
+        : undefined,
+    );
+    return offers.map((offer, index) => ({
+      label:
+        titles[index] && titles.indexOf(titles[index]) === titles.lastIndexOf(titles[index])
+          ? titles[index]
+          : offers.length > 1
+            ? t("modelProviders.resetCredits.ordinal", {
+                number: formatNumber(index + 1),
+                count: formatNumber(offers.length),
+              })
+            : undefined,
+      expiry: creditExpiry(offer.expiresAt),
+      title: titles[index],
+    }));
+  });
+  const selected = () => options()[dialog.read().index]!;
+  const accountName = () => {
+    const email = props.selection.accountEmail;
+    const name = props.name;
+    // Keep the comparison label without replacing the verified email with a saved alias.
+    return name && email && name !== email && !name.endsWith(` · ${email}`)
+      ? `${name} · ${email}`
+      : name || email;
+  };
+  const canChoose = () =>
+    options().some(
+      (option, index) =>
+        option.title !== options()[0]?.title ||
+        props.selection.choices[index]?.expiresAt !== props.selection.choices[0]?.expiresAt,
+    );
   return (
     <>
       <Show when={props.selection.unresolved}>
-        {(previous) => (
-          <label>
-            <input
-              type="checkbox"
-              checked={acknowledged()}
-              disabled={!props.ready()}
-              onChange={(event) => acknowledge(event.currentTarget.checked)}
-            />{" "}
-            {t("modelProviders.resetCredits.acknowledge", { credit: previous().creditId })}
-          </label>
-        )}
+        <label>
+          <input
+            type="checkbox"
+            checked={acknowledged()}
+            disabled={!props.ready()}
+            onChange={(event) => acknowledge(event.currentTarget.checked)}
+          />{" "}
+          {t("modelProviders.resetCredits.acknowledge")}
+        </label>
       </Show>
       <Show when={!props.selection.unresolved || acknowledged()}>
         <button
@@ -498,9 +533,21 @@ function CreditAction(props: {
           type="button"
           class="btn btn--sm"
           disabled={!props.ready()}
-          onClick={() => void open()}
+          data-reset-credit-action
+          onClick={() => {
+            if (!dialog.state.open) {
+              void prepare(0);
+            }
+          }}
         >
-          {t(`modelProviders.resetCredits.${props.selection.action}`)}
+          {t(
+            props.selection.action === "retry"
+              ? "modelProviders.resetCredits.retry"
+              : "modelProviders.resetCredits.use",
+          )}
+          <Show when={props.name}>
+            {(name) => <span class="settings-control__sr-label"> ({name()})</span>}
+          </Show>
         </button>
       </Show>
       <Show when={dialog.read().open}>
@@ -509,21 +556,21 @@ function CreditAction(props: {
             modal = node;
             node.setReturnFocusTarget(trigger);
           }}
-          label={title()}
+          label={dialogTitle()}
           description={warning()}
           initialFocus={() => cancel}
           onModal-cancel={dismiss}
         >
-          <div class="oc-dialog confirm-dialog">
-            <DialogHeader title={title()} description={<p>{warning()}</p>} />
+          <div class="oc-dialog confirm-dialog model-providers__reset-dialog">
+            <DialogHeader title={dialogTitle()} description={<p>{warning()}</p>} />
             <div class="oc-dialog__body">
               <dl class="settings-kv">
                 <dt>{t("modelProviders.resetCredits.account")}</dt>
                 <dd>
                   <Show when={accountName()} fallback={props.selection.memberId}>
-                    {(email) => (
+                    {(name) => (
                       <details>
-                        <summary>{email()}</summary>
+                        <summary>{name()}</summary>
                         {t("modelProviders.resetCredits.memberId")}: {props.selection.memberId}
                       </details>
                     )}
@@ -537,12 +584,41 @@ function CreditAction(props: {
                     </>
                   )}
                 </Show>
-                <dt>{t("modelProviders.resetCredits.creditId")}</dt>
-                <dd>{props.selection.creditId}</dd>
+                <Show when={selected().label}>
+                  {(label) => (
+                    <>
+                      <dt>{t("modelProviders.resetCredits.creditId")}</dt>
+                      <dd>{label()}</dd>
+                    </>
+                  )}
+                </Show>
                 <dt>{t("modelProviders.resetCredits.expiry")}</dt>
-                <dd>{creditExpiry(props.selection.expiresAt)}</dd>
+                <dd>{selected().expiry}</dd>
               </dl>
-              <WindowResetHint next={props.nextReset} />
+              <Show when={canChoose()}>
+                <details class="model-providers__credit-choice">
+                  <summary>{t("modelProviders.resetCredits.changeCredit")}</summary>
+                  <select
+                    aria-label={t("modelProviders.resetCredits.chooseCredit")}
+                    value={String(dialog.read().index)}
+                    disabled={!props.ready()}
+                    onChange={(e) => {
+                      if (dialog.state.open) {
+                        void prepare(e.currentTarget.selectedIndex);
+                      }
+                    }}
+                  >
+                    <For each={options()}>
+                      {(option, index) => (
+                        <option value={String(index())}>
+                          {option.label} · {option.expiry}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </details>
+              </Show>
+              {props.children}
               <div
                 class={[{ "sr-only": !dialog.read().expired && !dialog.read().error }]}
                 aria-live="polite"
@@ -626,36 +702,4 @@ function creditExpiry(expiresAt?: number | null) {
     : expiresAt === undefined
       ? t("modelProviders.resetCredits.unknownExpiry")
       : formatDateTimeMs(expiresAt * 1000, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function WindowResetHint(props: { next?: { at: number; label: string } }) {
-  const [now, setNow] = createSignal(Date.now());
-  createTimeout(
-    () => setNow(Date.now()),
-    () =>
-      props.next && props.next.at > now()
-        ? Math.min(2_147_483_647, Math.max(0, props.next.at - Date.now()))
-        : undefined,
-  );
-  return (
-    <Show
-      when={props.next && props.next.at > now() && props.next}
-      fallback={<p>{t("modelProviders.resetCredits.alternative")}</p>}
-    >
-      {(next) => (
-        <p>
-          {new Date(next().at).toDateString() === new Date(now()).toDateString()
-            ? t("modelProviders.resetCredits.nextReset", {
-                window: next().label,
-                time: formatTimeMs(next().at),
-              })
-            : t("modelProviders.resetCredits.nextResetOnDate", {
-                window: next().label,
-                date: formatDateTimeMs(next().at, { dateStyle: "medium" }),
-                time: formatTimeMs(next().at),
-              })}
-        </p>
-      )}
-    </Show>
-  );
 }

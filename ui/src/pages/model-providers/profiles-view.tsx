@@ -25,6 +25,7 @@ import { reorderByArrow, startProfileRowDrag } from "./profile-reorder.ts";
 import {
   needsOAuthSignIn,
   profileAuthProblem,
+  supportsCodexAccountUsage,
   providerStatusCoversAccount,
 } from "./view-status.tsx";
 
@@ -112,6 +113,11 @@ function profileMeta(profile: ProviderProfile): string {
   }
   if (profile.email && profile.displayName && profile.displayName !== source) {
     parts.push(profile.displayName);
+  }
+  if (profile.authRequirement === "api-key") {
+    parts.push(t("modelProviders.profiles.responsesOnly"));
+  } else if (profile.authRequirement === null) {
+    parts.push(t("modelProviders.profiles.identityOnly"));
   }
   if (profile.expiry) {
     parts.push(
@@ -387,12 +393,24 @@ export function ProviderProfiles(
       const scope = props.accountUsage;
       return scope
         ? (subscriptionGroup()?.profiles ?? [])
-            .filter((profile) => profile.type !== "api_key")
+            .filter(supportsCodexAccountUsage)
             .map((profile) => ({ profile, scope }))
         : [];
     },
     (entry) => {
-      const name = createMemo(() => identity(entry().profile));
+      const name = createMemo(() => {
+        const profile = entry().profile;
+        const label = identity(profile);
+        const peers = card().profiles.filter(
+          (p) => supportsCodexAccountUsage(p) && identity(p) === label,
+        );
+        return peers.length > 1
+          ? t("modelProviders.limits.numberedAccount", {
+              number: String(peers.findIndex((p) => p.profileId === profile.profileId) + 1),
+              account: label,
+            })
+          : label;
+      });
       return {
         ...createAccountUsage(
           () => entry().scope,
@@ -528,10 +546,10 @@ function ProviderProfileRow(
     props.canMutate && !group().lock && group().complete && order().length > 1 && index() >= 0;
   const showGrip = () =>
     !props.grouped && !group().lock && (group().complete || group().stored) && order().length > 1;
-  // Subscription columns can swap with each other, but not with a key. A key can
-  // choose any slot in the full order without needing a visible row to drop on.
-  const showKeyPriority = () =>
-    props.grouped && profile().type === "api_key" && group().complete && !group().lock;
+  // Columns swap with other columns. Credentials outside the grid need a full-order
+  // selector because there isn't a visible row for every position they can move to.
+  const showPrioritySelect = () =>
+    props.grouped && !props.usageRead && group().complete && !group().lock;
   const reorderLabel = () =>
     t("modelProviders.profiles.reorder", {
       account: props.identity,
@@ -567,7 +585,7 @@ function ProviderProfileRow(
       data-profile-id={profile().profileId}
       data-profile-provider={provider()}
     >
-      <Show when={showGrip() || (positioned() && !showKeyPriority())}>
+      <Show when={showGrip() || (positioned() && !showPrioritySelect())}>
         <span class="model-providers__profile-order">
           {showGrip() ? (
             <button
@@ -618,7 +636,7 @@ function ProviderProfileRow(
           : profileStatus(profile(), props.card.catalogStatus === "auth-rejected", true)}
       </span>
       <span class="model-providers__profile-actions">
-        <Show when={showKeyPriority()}>
+        <Show when={showPrioritySelect()}>
           <SettingsSelect
             aria-label={reorderLabel()}
             title={reorderBlocked() || undefined}

@@ -7,4 +7,8 @@
 # and inventory relabel. Those page cases replace the manual-refresh relabel test.
 # The two-tab regression separates the lost A, settled B and fresh C keys, including
 # no spend on acknowledgment and a lost C reply after the final explicit click.
-1687
+# The mobile retest separates saved grant eligibility, device sign-in without a loopback
+# callback, a single consent click, and rendering fresh or missing per-account quotas.
+# A retained provider sample has no member; a native read can explicitly name a different
+# workspace. Separate fixtures verify that neither is attributed to the remaining login.
+2173

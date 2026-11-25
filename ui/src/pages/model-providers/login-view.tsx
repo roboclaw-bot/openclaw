@@ -3,13 +3,16 @@ import type { ModelAuthStatusResult } from "../../api/types.ts";
 import { IconButton } from "../../components/solid/icon-button.tsx";
 import { InlineAlert } from "../../components/solid/inline-alert.tsx";
 import { ModelPicker } from "../../components/solid/model-picker.tsx";
+import { registerModelProviderLoginEnglish } from "../../i18n/locales/en-model-provider-login.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../lib/external-link.ts";
 import { formatUiError } from "../../lib/format-error.ts";
-import { t } from "../../lib/reactive/i18n.ts";
+import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { ModelProviderIcon } from "../../lib/reactive/provider-presentation.tsx";
 import { ModelSetupWizard } from "../model-setup/wizard-view-solid.tsx";
 import type { ModelProviderLogin } from "./login-controller.ts";
 import { hasProviderAccounts, ProviderAccountSummary } from "./profiles-view.tsx";
+
+registerEnglishCatalog(registerModelProviderLoginEnglish);
 
 export function ModelProviderLoginView(props: { controller: ModelProviderLogin }) {
   const picker = createMemo(() => props.controller.pickerView());
@@ -97,10 +100,13 @@ function PickerDialog(props: {
   error?: string;
 }) {
   let searchInput: HTMLInputElement | undefined;
+  let recommended: HTMLButtonElement | undefined;
   const current = createMemo(() => props.current);
   return (
     <openclaw-modal-dialog
-      prop:initialFocus={() => (searchInput?.isConnected ? searchInput : null)}
+      prop:initialFocus={() =>
+        recommended?.isConnected ? recommended : searchInput?.isConnected ? searchInput : null
+      }
       label={current().provider?.label ?? t("modelProviders.login.title")}
       onModal-cancel={() => current().onClose()}
     >
@@ -245,7 +251,28 @@ function PickerDialog(props: {
                       data-models-login-choice
                       ref={props.controller.setMethodChoices.bind(props.controller)}
                     >
-                      <For each={provider().choices} keyed={(choice) => choice.id}>
+                      <Show when={current().remoteCodex}>
+                        {(remote) => (
+                          <button
+                            class="model-provider-login__option btn primary"
+                            type="button"
+                            ref={(element) => {
+                              recommended = element;
+                            }}
+                            disabled={current().disabled}
+                            onClick={() => current().onChoice(remote().device)}
+                          >
+                            <span class="model-provider-login__copy">
+                              <strong>{t("modelProviderLogin.remoteCodex.action")}</strong>
+                              <small>{t("modelProviderLogin.remoteCodex.description")}</small>
+                            </span>
+                          </button>
+                        )}
+                      </Show>
+                      <For
+                        each={current().remoteCodex?.other ?? provider().choices}
+                        keyed={(choice) => choice.id}
+                      >
                         {(selected) => (
                           <LoginOption
                             label={selected().label}
@@ -267,6 +294,20 @@ function PickerDialog(props: {
                         disabled={current().disabled}
                         onClick={() => current().onApiKey()}
                       />
+                    </Show>
+                    <Show when={current().remoteCodex?.callback}>
+                      {(callback) => (
+                        <details>
+                          <summary>{t("modelProviderLogin.remoteCodex.responses")}</summary>
+                          <LoginOption
+                            label={callback().label}
+                            hint={callback().hint}
+                            card
+                            disabled={current().disabled}
+                            onClick={() => current().onChoice(callback())}
+                          />
+                        </details>
+                      )}
                     </Show>
                   </section>
                 </>

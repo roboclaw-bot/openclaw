@@ -25,6 +25,7 @@ import {
   directEntry,
   filterLoginProviders,
   providerAccounts,
+  remoteCodexMethods,
   resolveLoginSelection,
   type LoginChoice,
   type LoginProvider,
@@ -396,12 +397,14 @@ export function createModelProviderLogin(options: {
     const recovery =
       missing && accounts.some((card) => card.id === missing.provider) ? missing : null;
     const matches = filterLoginProviders(groups, query());
+    const { gatewayUrl } = options.getScope().context.gateway.connection;
 
     return {
       inventory: picker.inventory,
       unavailable: authStatus?.unavailable,
       query: query(),
       provider,
+      remoteCodex: provider && remoteCodexMethods(provider, gatewayUrl, window.location),
       accounts,
       recovery,
       docsUrl,

@@ -1916,15 +1916,7 @@ const startupEnglish = {
       reason: "Run /pair qr again to get a new setup code.",
       badge: "Expired",
     },
-    // Shared by the chat quota meter and Models settings; keep existing translation keys.
-    composer: {
-      contextUsage: {
-        limitFiveHour: "5-hour",
-        limitWeekly: "Weekly",
-        limitDaily: "Daily",
-        limitHours: "{hours}-hour",
-      },
-    },
+    composer: {},
     attachments: {
       previewUnavailable: "Preview unavailable",
     },

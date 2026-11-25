@@ -1,7 +1,7 @@
 import { embeddedAgentLog, formatErrorMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { defineCodexBuildState } from "../build-state.js";
 import { refreshCodexAppServerAuthTokens } from "./auth-bridge.js";
-import { fingerprintTokenAuthProfileCacheKey } from "./auth-cache-key.js";
+import { codexAuthHandoff } from "./auth-cache-key.js";
 import type { CodexAppServerAuthRuntimeContext as ClientRuntimeContext } from "./auth-profile.js";
 import type { CodexAppServerAuthHandoff } from "./auth-types.js";
 import {
@@ -32,7 +32,7 @@ import {
 } from "./client-workspace-state.js";
 import type { CodexAppServerClient } from "./client.js";
 import { isJsonObject, type CodexServiceTier } from "./protocol.js";
-import { mergeCodexRateLimitsUpdate } from "./rate-limit-cache.js";
+import { mergeCodexRateLimitsUpdate, observeCodexRateLimitLogin } from "./rate-limit-cache.js";
 import { withTimeout } from "./timeout.js";
 
 type ThreadRelease = CodexAppServerLiveThreadOwnership["release"];
@@ -195,10 +195,8 @@ export function ensureCodexAppServerClientRuntime(
       if (runtime.closed) {
         throw new Error("Codex app-server client closed during ChatGPT token refresh.");
       }
-      runtime.authHandoff = {
-        accessFingerprint: fingerprintTokenAuthProfileCacheKey(tokens.accessToken),
-        chatgptAccountId: tokens.chatgptAccountId,
-      };
+      observeCodexRateLimitLogin(client, { type: "chatgptAuthTokens", ...tokens });
+      runtime.authHandoff = codexAuthHandoff(tokens);
       return { ...tokens };
     } catch (error) {
       // Failed refresh leaves Codex holding its old account. Detach the cached

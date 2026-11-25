@@ -341,14 +341,8 @@ export function buildModelProviderCards(input: ModelProviderCardsInput): ModelPr
     draft.hasModelAuth ||= isMonitoredAuthProvider(provider) || apiKeyCapabilities.has(id);
     const usage = provider.usage;
     if (usage && !draft.card.usage) {
-      draft.card.usage = {
-        provider: usage.providerId,
-        displayName: provider.displayName,
-        windows: usage.windows,
-        ...(usage.summary ? { summary: usage.summary } : {}),
-        ...(usage.plan ? { plan: usage.plan } : {}),
-        ...(usage.billing?.length ? { billing: usage.billing } : {}),
-      };
+      const { providerId, ...reading } = usage;
+      draft.card.usage = { ...reading, provider: providerId, displayName: provider.displayName };
     }
   }
 

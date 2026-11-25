@@ -46,11 +46,16 @@
   container-type: inline-size;
 }
 
-.model-providers__profiles-heading {
+.model-providers__profiles-heading,
+.model-providers__probe-target,
+.model-providers__reset-credits {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+}
+
+.model-providers__profiles-heading {
   gap: var(--space-3);
 }
 
@@ -245,7 +250,8 @@
   min-width: 0;
 }
 
-.model-providers__probe {
+.model-providers__probe,
+.model-providers__account-limits {
   display: grid;
   gap: var(--space-2);
   font-size: var(--control-ui-text-sm);
@@ -256,10 +262,6 @@
 }
 
 .model-providers__probe-target {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: 2px var(--space-3);
 }
 
@@ -376,10 +378,14 @@
 }
 .model-providers__usage-label {
   overflow-wrap: anywhere;
+
+  [data-reset-layout] > & {
+    align-self: start;
+  }
 }
 .model-providers__usage-track {
   display: grid;
-  grid: auto / auto-flow minmax(0, 1fr);
+  grid-template-columns: repeat(var(--subscription-count), minmax(0, 1fr));
   gap: var(--space-1);
 }
 [data-account-segment] {
@@ -429,16 +435,19 @@
   color: var(--segment-tone);
 }
 .model-providers__credit {
+  grid-row: 1;
   text-align: center;
   font-size: var(--control-ui-text-sm);
-}
-.model-providers__credit > button {
-  display: block;
-  margin: var(--space-1) auto 0;
-  max-width: 100%;
-  padding-inline: var(--space-1);
-  white-space: normal;
-  overflow-wrap: anywhere;
+  translate: var(--credit-translate);
+
+  > button {
+    display: block;
+    margin: var(--space-1) auto 0;
+    max-width: 100%;
+    padding-inline: var(--space-1);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 .model-providers__segment-name {
   display: grid;
@@ -451,40 +460,80 @@
 /* Codex limits belong to their account: they start under its name and run to the row's end. */
 .model-providers__account-limits {
   grid-column: 1 / -1;
-  display: grid;
-  gap: var(--space-2);
   min-width: 0;
   margin-block-start: var(--space-2);
   color: var(--muted);
-  font-size: var(--control-ui-text-sm);
-}
 
-.model-providers__profile-order ~ .model-providers__account-limits {
-  grid-column: 2 / -1;
+  .model-providers__profile-order ~ & {
+    grid-column: 2 / -1;
+  }
 }
 
 .model-providers__reset-credits {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
   padding-block-start: var(--space-2);
   border-block-start: 1px solid var(--border);
   color: var(--text);
 }
 
-.model-providers__credit-choice {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+/* Three or more phone columns leave too little room for a named action. Keep
+   quotas comparable; list each account’s reset balance and action together. */
+@media (max-width: 560px) {
+  [data-reset-layout="rows-on-phone"] {
+    --subscription-count: 1;
+    grid-template-columns: minmax(0, 1fr);
+
+    .model-providers__credit {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      grid-row: auto;
+      translate: none;
+      text-align: start;
+      > .settings-control__sr-label {
+        all: unset;
+        overflow-wrap: anywhere;
+      }
+      > [aria-hidden] {
+        display: none;
+      }
+      > button {
+        flex-shrink: 0;
+        margin: 0;
+        min-height: 44px;
+      }
+    }
+  }
+}
+.model-providers__reset-dialog {
+  text-align: start;
+  .settings-kv {
+    grid-template-columns: fit-content(32%) minmax(0, 1fr);
+    gap: var(--space-2) var(--space-3);
+    padding-inline: 0;
+    dd + dt {
+      margin-top: 0;
+    }
+  }
+}
+.model-providers__credit-choice select {
+  margin-block-start: var(--space-1);
   max-width: 100%;
-  min-width: 0;
 }
 
-.model-providers__credit-choice select {
-  min-width: 0;
-  max-width: 100%;
+.model-providers__reset-status {
+  &:not(.sr-only) {
+    grid-column: 1 / -1;
+    border-inline-start: 2px solid var(--border);
+    padding-inline-start: var(--space-2);
+    overflow-wrap: anywhere;
+  }
+
+  [data-confirmed] {
+    color: var(--ok);
+    font-weight: 600;
+  }
 }
 
 .model-providers__account-plan {

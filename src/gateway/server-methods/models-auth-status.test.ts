@@ -548,6 +548,23 @@ describe("models.authStatus", () => {
     expect(mocks.setAuthProfileOrder).not.toHaveBeenCalled();
   });
 
+  it("distinguishes OAuth grants with the same email without merging their profile slots", async () => {
+    const native = oauthCredential("openai", { email: "same@example.test" });
+    setPreparedProfiles({
+      "openai:work": native,
+      "openai:sharing": { ...native, authFlow: "chatgpt-token-sharing" },
+      "openai:identity": { ...native, authFlow: "chatgpt-identity" },
+    });
+    await useRealHealth();
+    const profiles = (await firstAuthStatusProvider())?.profiles ?? [];
+    expect(new Set(profiles.map((p) => p.email))).toEqual(new Set([native.email]));
+    expect(Object.fromEntries(profiles.map((p) => [p.profileId, p.authRequirement]))).toEqual({
+      "openai:work": undefined,
+      "openai:sharing": "api-key",
+      "openai:identity": null,
+    });
+  });
+
   it("projects provider capabilities from the published lifecycle metadata", async () => {
     setPreparedMetadataSnapshot(
       createPluginMetadataSnapshotFixture({

@@ -1,6 +1,6 @@
 // Codex reports plan limits per signed-in account, so each OpenAI account row
 // reads its own; the page's forced refresh advances the revision.
-import { createMemo, Loading, onCleanup, onSettled, refresh, Show } from "solid-js";
+import { createMemo, createSignal, Loading, onCleanup, onSettled, refresh, Show } from "solid-js";
 import type {
   ProviderUsageSnapshot,
   UsageSummary,
@@ -16,8 +16,10 @@ import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../../lib/gatew
 import { modelAuthEventInvalidates } from "../../lib/model-auth-request-state.ts";
 import { modelCatalogEventInvalidation } from "../../lib/model-catalog-cache.ts";
 import { formatUsageWindowLabel } from "../../lib/provider-quota-summary.ts";
+import { formatDateTimeMs, formatTimeMs } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
-import { AccountResetCredits } from "./account-reset-credits.tsx";
+import { createTimeout } from "../../lib/reactive/timers.ts";
+import { AccountResetCredits, type CreditColumn } from "./account-reset-credits.tsx";
 import type { ModelProvidersData } from "./load.ts";
 import type { ModelProvidersState } from "./page-state.ts";
 import {
@@ -161,7 +163,13 @@ function AccountReading(props: {
       }
       return props.grouped
         ? []
-        : [{ ...entry, amount: Math.sign(entry.amount) * Math.round(Math.abs(entry.amount)) }];
+        : [
+            {
+              ...entry,
+              label: t("modelProviders.limits.credits"),
+              amount: Math.sign(entry.amount) * Math.round(Math.abs(entry.amount)),
+            },
+          ];
     }),
     costHistory: props.snapshot.costHistory,
   }));
@@ -217,6 +225,8 @@ type AccountKey = Pick<
 type Reading = {
   account: AccountKey;
   loading?: true;
+  refreshing?: boolean;
+  confirmed?: "reset" | "alreadyRedeemed";
   stale?: boolean;
   snapshot?: ProviderUsageSnapshot;
   error?: string;
@@ -292,18 +302,21 @@ export function createAccountUsage(scope: () => AccountUsageScope, readProfileId
         phase === "pending" || phase === "uncertain"
           ? { ...prior, account: key, resetCredits: undefined }
           : (prior ?? { account: key, loading: true });
-      yield initial;
+      yield { ...initial, refreshing: true };
       const early = await first;
       const cache = early.kind === "cache" ? early.snapshot : undefined;
       // Cache updates quota only. It cannot create credit authority or retire an unchanged dialog.
       if (cache) {
-        yield { ...initial, loading: undefined, snapshot: cache, stale: true };
+        yield { ...initial, loading: undefined, snapshot: cache, stale: true, refreshing: true };
       }
       const final = early.kind === "cache" ? await detail : early;
       if (final.kind === "error") {
+        const outcome = prior?.operation?.current?.phase ?? prior?.confirmed;
         yield {
           account: key,
           error: final.error,
+          // Keep this profile’s completed request, never its old offers or authority.
+          confirmed: outcome === "reset" || outcome === "alreadyRedeemed" ? outcome : undefined,
           snapshot: cache,
           stale: Boolean(cache),
         };
@@ -352,6 +365,24 @@ export function createAccountUsage(scope: () => AccountUsageScope, readProfileId
 }
 export type AccountUsageRead = ReturnType<typeof createAccountUsage>;
 
+export function AccountCreditControls(props: { read: AccountUsageRead; column?: CreditColumn }) {
+  return (
+    <Show when={props.read.account()} keyed>
+      {(target) => (
+        <AccountResetCredits
+          account={target}
+          summary={props.read.result()}
+          column={props.column}
+          canConsume={props.read.canConsume}
+          refresh={props.read.refresh}
+        >
+          <WindowResetHint next={props.read.result().nextReset} />
+        </AccountResetCredits>
+      )}
+    </Show>
+  );
+}
+
 export function AccountLimits(props: { read: AccountUsageRead; grouped?: boolean }) {
   const result = () => props.read.result();
   const reportsResetCredits = () => result().resetCredits?.availableCount !== undefined;
@@ -396,17 +427,42 @@ export function AccountLimits(props: { read: AccountUsageRead; grouped?: boolean
             />
           )}
         </Show>
-        <Show when={props.read.account()} keyed>
-          {(target) => (
-            <AccountResetCredits
-              account={target}
-              summary={result()}
-              canConsume={props.read.canConsume}
-              refresh={props.read.refresh}
-            />
-          )}
+        <Show when={!props.grouped}>
+          <AccountCreditControls read={props.read} />
         </Show>
       </Loading>
     </div>
+  );
+}
+
+function WindowResetHint(props: { next?: { at: number; label: string } }) {
+  const [now, setNow] = createSignal(Date.now());
+  createTimeout(
+    () => setNow(Date.now()),
+    () =>
+      props.next && props.next.at > now()
+        ? Math.min(2_147_483_647, Math.max(0, props.next.at - Date.now()))
+        : undefined,
+  );
+  return (
+    <Show
+      when={props.next && props.next.at > now() && props.next}
+      fallback={<p>{t("modelProviders.resetCredits.alternative")}</p>}
+    >
+      {(next) => (
+        <p>
+          {new Date(next().at).toDateString() === new Date(now()).toDateString()
+            ? t("modelProviders.resetCredits.nextReset", {
+                window: next().label,
+                time: formatTimeMs(next().at),
+              })
+            : t("modelProviders.resetCredits.nextResetOnDate", {
+                window: next().label,
+                date: formatDateTimeMs(next().at, { dateStyle: "medium" }),
+                time: formatTimeMs(next().at),
+              })}
+        </p>
+      )}
+    </Show>
   );
 }

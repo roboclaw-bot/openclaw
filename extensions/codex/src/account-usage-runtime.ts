@@ -10,24 +10,28 @@ import {
 } from "openclaw/plugin-sdk/provider-auth-runtime";
 import { z } from "zod";
 import { resolveCodexAppServerPreparedAuthProfileSnapshot } from "./app-server/auth-bridge.js";
+import { supportsCodexSubscriptionAuth } from "./app-server/auth-profile.js";
 import { readCodexPluginConfig, resolveCodexAppServerRuntimeOptions } from "./app-server/config.js";
 import { isCodexAppServerProxyLaunch } from "./app-server/launch-args.js";
+import { codexRateLimitsMatchWorkspace } from "./app-server/rate-limit-cache.js";
 import { buildCodexAppServerUsageSnapshot } from "./app-server/rate-limits.js";
 import {
   readCachedCodexAppServerUsage,
   readCodexAppServerUsage,
   requestCodexAppServerJson,
 } from "./app-server/request.js";
+import { codexSubscriptionMember } from "./app-server/subscription-member.js";
 import type { ResetConfirmations } from "./reset-credit-confirmation.js";
 import {
   creditId,
   isResetCreditOffered,
   readResetCreditBalance,
-  resetAccount,
   observeResetRecord,
   spendResetCredit,
   type ResetStore,
 } from "./reset-credit.js";
+
+const quotaUnavailable = "Couldn't load this account's quota. Refresh to try again.";
 
 type OpenResetStore = (assertCurrent: () => void) => ResetStore;
 const accountParams = z.strictObject({ agentId: z.string().min(1), profileId: z.string().min(1) });
@@ -188,8 +192,12 @@ async function handleSavedAccount(
     ) => {
       const store = structuredClone(preparedStore);
       const credential = store.profiles[profileId];
-      if (!credential || credential.provider !== "openai" || credential.type === "api_key") {
-        invalid("Select a saved Codex subscription login.");
+      if (!credential || credential.provider !== "openai" || credential.setup?.replacement) {
+        invalid("Select an active Codex subscription login.");
+        return;
+      }
+      if (!supportsCodexSubscriptionAuth(credential)) {
+        invalid("This login does not provide Codex quota.");
         return;
       }
       const assertPrepared = () => {
@@ -215,16 +223,18 @@ async function handleSavedAccount(
       // Pin the identity from the exact prepared native login, never a mutable
       // profile label, email, token fingerprint, or the usage payload alone.
       const quotaOnly = "quotaOnly" in selection && selection.quotaOnly;
+      const prepareSnapshot = () =>
+        resolveCodexAppServerPreparedAuthProfileSnapshot({
+          agentDir,
+          config,
+          authProfileId: profileId,
+          authProfileStore: store,
+        });
       const snapshot =
         !quotaOnly && canSpendFromSettings(options, profileId)
-          ? await resolveCodexAppServerPreparedAuthProfileSnapshot({
-              agentDir,
-              config,
-              authProfileId: profileId,
-              authProfileStore: store,
-            })
+          ? await prepareSnapshot()
           : undefined;
-      const account = resetAccount(snapshot);
+      const account = codexSubscriptionMember(snapshot?.loginParams);
       if (
         operation.kind !== "read" &&
         operation.selection.accountBinding !== account?.accountBinding
@@ -318,16 +328,26 @@ async function handleSavedAccount(
         stale = Boolean(limits);
       } else {
         try {
-          freshOffers = limits = account
+          const selected = snapshot ?? (await prepareSnapshot());
+          const fresh = account
             ? await readLimits()
-            : (await readCodexAppServerUsage({ ...session, freshOnly: true })).rateLimits;
+            : (
+                await readCodexAppServerUsage({
+                  ...session,
+                  preparedAuth: { ...session.preparedAuth, snapshot: selected },
+                  freshOnly: true,
+                })
+              ).rateLimits;
+          if (codexRateLimitsMatchWorkspace(fresh, selected?.chatgptAccountId)) {
+            freshOffers = limits = fresh;
+          }
         } catch (error) {
           assertPrepared();
           limits = (await readCachedCodexAppServerUsage(session).catch(() => undefined))
             ?.rateLimits;
           stale = Boolean(limits);
           if (!limits && !account) {
-            throw error;
+            throw new Error(quotaUnavailable, { cause: error });
           }
         }
       }
@@ -348,8 +368,13 @@ async function handleSavedAccount(
         throw new Error("Account credentials changed. Refresh Models and try again.");
       }
       const usage = buildCodexAppServerUsageSnapshot(limits, { accountDetails: true });
-      if (account && usage.windows.length === 0 && !usage.plan && !usage.billing?.length) {
-        usage.error = "Current Codex quota is unavailable.";
+      if (
+        (account || !limits) &&
+        usage.windows.length === 0 &&
+        !usage.plan &&
+        !usage.billing?.length
+      ) {
+        usage.error = quotaUnavailable;
       }
       respond(true, {
         updatedAt: Date.now(),

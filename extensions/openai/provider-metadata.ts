@@ -30,7 +30,7 @@ export function createOpenAIProviderMetadata(): ProviderPlugin {
           id: "oauth",
           kind: "oauth",
           label: "Codex login",
-          hint: "Sign in with your ChatGPT account using a one-time code",
+          hint: "Codex models and usage. Enter a one-time code on any device.",
           credentialImport: CODEX_CHATGPT_IMPORT,
           wizard: {
             choiceId: "openai",
@@ -42,7 +42,7 @@ export function createOpenAIProviderMetadata(): ProviderPlugin {
           id: "siwc",
           kind: "oauth",
           label: "Sign in with ChatGPT",
-          hint: "Use your ChatGPT plan for eligible Responses API requests",
+          hint: "For eligible Responses API requests. Use a browser on the Gateway computer or forward its callback port.",
           wizard: {
             choiceId: "openai-token-sharing",
             assistantPriority: 0,

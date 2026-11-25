@@ -507,7 +507,20 @@ export async function runOpenAICodexLogin(ctx: OpenAICodexOAuthContext) {
   if (!creds) {
     // Mirrors Codex `run_login_with_device_code_fallback_to_browser`: only a disabled
     // device-code endpoint falls back; every other device-code failure ends this sign-in.
-    spin.stop("Device code login is not enabled; falling back to browser login.");
+    spin.stop("Device code login is not enabled.");
+    // Hosted wizards run in remote mode even on loopback. Do not silently send someone
+    // who chose a device code to a localhost callback on a different computer.
+    if (
+      ctx.isRemote &&
+      !(await ctx.prompter.confirm({
+        message:
+          "OpenAI did not offer a device code. Continue with browser sign-in and paste the final address here?",
+        initialValue: false,
+      }))
+    ) {
+      const { WizardCancelledError } = await import("openclaw/plugin-sdk/setup");
+      throw new WizardCancelledError("Codex sign-in cancelled.");
+    }
     return await runOpenAICodexOAuth(ctx);
   }
   spin.stop("OpenAI device code complete");

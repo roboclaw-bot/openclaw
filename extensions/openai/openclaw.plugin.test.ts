@@ -110,12 +110,12 @@ it("labels and orders OpenAI authentication choices", () => {
     groupHint: "Codex login, Sign in with ChatGPT, or API key",
   };
   for (const [id, choiceLabel, choiceHint] of [
-    ["openai", "Codex login", "Sign in with your ChatGPT account using a one-time code"],
+    ["openai", "Codex login", "Codex models and usage. Enter a one-time code on any device."],
     ["openai-api-key", "OpenAI API Key", "Use your OpenAI API key directly"],
     [
       "openai-token-sharing",
       "Sign in with ChatGPT",
-      "Use your ChatGPT plan for eligible Responses API requests",
+      "For eligible Responses API requests. Use a browser on the Gateway computer or forward its callback port.",
     ],
   ] as const) {
     expect(choice(id)).toMatchObject({ choiceLabel, choiceHint, ...group });

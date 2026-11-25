@@ -1,11 +1,9 @@
 /* @vitest-environment jsdom */
 
-import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
 import * as toast from "../../lib/toast.ts";
-import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import {
   click,
   expectAbsent,
@@ -23,7 +21,7 @@ import {
 } from "./profiles-view.tsx";
 import { ProviderRow } from "./provider-row.tsx";
 import { resetRegistryFor, type ResetCreditBalance } from "./reset-credit-operation.ts";
-import { card as viewCard, props, text } from "./view.test-support.tsx";
+import { card as viewCard, props, text, usageScope } from "./view.test-support.tsx";
 
 it("keeps visible sign-out success quiet and preserves warnings", () => {
   const toastSpy = vi.spyOn(toast, "showToast").mockReturnValue(true);
@@ -501,23 +499,53 @@ it.each([undefined, "auth-rejected"] as const)(
   },
 );
 
-it("moves a key across collapsed subscriptions and keeps credit and recovery details on the right account", async () => {
+const pro = { provider: "openai", displayName: "OpenAI", plan: "Pro", windows: [] };
+
+it("keeps same-email sign-ins visible and reads Codex quota only for the subscription", async () => {
+  const email = "same@example.test";
+  const sub = makeProfile("openai:codex", {
+    email,
+    authRequirement: "subscription",
+    displayName: "Codex login",
+  });
+  const app = makeProfile("openai:app", {
+    email,
+    authRequirement: "api-key",
+    displayName: "Sign in with ChatGPT",
+  });
+  const readUsage = vi.fn((_id: string) => ({
+    updatedAt: 1,
+    providers: [{ ...pro, windows: [{ label: "Week", usedPercent: 100 }] }],
+  }));
+  const { container } = mount(
+    orderedCard({ openai: [app.profileId, sub.profileId] }, { profiles: [app, sub] }),
+    { ...props(), accountUsage: usageScope(readUsage) },
+  );
+  await waitForSolid(() => expectContent(container, ["Pro"]));
+  expect(readUsage).toHaveBeenCalledExactlyOnceWith(sub.profileId);
+  expectContent(
+    rowFor(container, app.profileId),
+    [email, "Sign in with ChatGPT", "Responses API · No Codex quota"],
+    ["Pro", "100%", "Reset credits"],
+  );
+  expectContent(rowFor(container, sub.profileId), [email, "Codex login", "Pro"]);
+});
+
+it("moves credentials across collapsed subscriptions and keeps credit and recovery on the right account", async () => {
   const healthy = makeProfile("openai:other", { email: "other@example.com" });
   const key = makeProfile("openai:key", { type: "api_key", status: "static" });
-  const profiles = [failed, key, healthy];
+  const app = makeProfile("openai:app", { authRequirement: "api-key" });
+  const profiles = [failed, key, app, healthy];
   const onSignInAgain = vi.fn(),
     onRequestLogout = vi.fn(),
     onProfileOrderChange = vi.fn();
-  const client = createTestGatewayClient(async (_method, params) => {
-    const partial = (params as { profileId: string }).profileId === failed.profileId;
+  const accountUsage = usageScope((id) => {
+    const partial = id === failed.profileId;
     return {
       updatedAt: 1,
       providers: [
         {
-          provider: "openai",
-          displayName: "OpenAI",
-          windows: [],
-          plan: "Pro",
+          ...pro,
           error: partial ? "Partial reading" : undefined,
           billing: partial
             ? [{ type: "balance", amount: 0, unit: "credits" }]
@@ -526,39 +554,37 @@ it("moves a key across collapsed subscriptions and keeps credit and recovery det
       ],
     };
   });
-  const { container } = mount(
-    orderedCard(
-      { openai: profiles.map((p) => p.profileId) },
-      { profiles, logoutTargets: [{ provider: "openai", profileIds: [failed.profileId] }] },
-    ),
-    {
-      ...props(),
-      accountUsage: {
-        client,
-        agentId: "main",
-        revision: 0,
-        generation: 0,
-        cacheAvailable: false,
-        canConsume: () => false,
-      },
-      canSignInAgain: () => true,
-      onSignInAgain,
-      onRequestLogout,
-      onProfileOrderChange,
-    },
+  const ids = profiles.map((p) => p.profileId);
+  const providerCard = orderedCard(
+    { openai: ids },
+    { profiles, logoutTargets: [{ provider: "openai", profileIds: [failed.profileId] }] },
   );
+  const { container, update } = mount(providerCard, {
+    ...props(),
+    accountUsage,
+    onRequestLogout,
+    onProfileOrderChange,
+    canSignInAgain: () => true,
+    onSignInAgain,
+  });
   await waitForSolid(() => {
     const credits = container.querySelectorAll(".model-providers__credit > span:nth-child(2)");
     expect([...credits].map((cell) => cell.textContent)).toEqual(["0", "—"]);
   });
   expect(container.textContent).not.toContain("No live usage data");
-  const keyRow = rowFor(container, key.profileId);
-  const priority = keyRow.querySelector<HTMLSelectElement>("select")!;
-  expect(priority?.selectedOptions[0]?.textContent).toBe("Priority 2");
-  for (const [slot, expected] of [
-    [0, [key.profileId, failed.profileId, healthy.profileId]],
-    [2, [failed.profileId, healthy.profileId, key.profileId]],
+  const [a, k, r, b] = [failed.profileId, key.profileId, app.profileId, healthy.profileId] as const;
+  const priorityFor = (id: string) =>
+    rowFor(container, id).querySelector<HTMLSelectElement>("select");
+  expect([k, r].map((id) => priorityFor(id)?.selectedOptions[0]?.textContent)).toEqual([
+    "Priority 2",
+    "Priority 3",
+  ]);
+  for (const [id, slot, expected] of [
+    [k, 0, [k, a, r, b]],
+    [k, 3, [a, r, b, k]],
+    [r, 0, [r, a, k, b]],
   ] as const) {
+    const priority = priorityFor(id)!;
     priority.selectedIndex = slot;
     priority.dispatchEvent(new Event("change", { bubbles: true }));
     expect(onProfileOrderChange).toHaveBeenLastCalledWith("openai", "openai", expected);
@@ -566,6 +592,8 @@ it("moves a key across collapsed subscriptions and keeps credit and recovery det
   expect(rowFor(container, failed.profileId)).toBeNull();
   const name = container.querySelector<HTMLButtonElement>(".model-providers__segment-name")!;
   expect(name.textContent).toContain("Sign-in expired");
+  name.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  expect(onProfileOrderChange).toHaveBeenLastCalledWith("openai", "openai", [b, k, r, a]);
   name.click();
   flush();
   const row = rowFor(container, failed.profileId);
@@ -579,6 +607,8 @@ it("moves a key across collapsed subscriptions and keeps credit and recovery det
   );
   expectContent(row, ["Pro"], ["0 credits", "Sign-in expired", "Partial reading"]);
   expect(rowFor(container, healthy.profileId)).toBeNull();
+  update({ ...providerCard, profileOrders: { openai: [...ids, "openai:unlisted"] } });
+  expectAbsent(container, "select", "[data-movable]", '[data-profile-id="openai:unlisted"]');
 });
 
 it("keeps a reported reset count passive without a verified member, offer, journal or capability", async () => {
@@ -605,17 +635,9 @@ it("keeps a reported reset count passive without a verified member, offer, journ
     },
   };
   const ids = Object.keys(balances);
-  const client = createTestGatewayClient((_method, params) => ({
-    providers: [],
-    resetCredits: balances[String(asOptionalRecord(params)?.profileId)],
-  }));
   const providerCard = orderedCard({ openai: ids });
   const accountUsage = {
-    client,
-    agentId: "main",
-    revision: 0,
-    generation: 0,
-    cacheAvailable: false,
+    ...usageScope((id) => ({ providers: [], resetCredits: balances[id] })),
     canConsume: () => true,
     registry: resetRegistryFor({}, "ws://test.invalid", "operator"),
   };
@@ -626,9 +648,10 @@ it("keeps a reported reset count passive without a verified member, offer, journ
     ),
   ];
   await waitForSolid(() => expect(resetCells()).toHaveLength(ids.length));
-  const reviewable = () => ids.filter((_, i) => resetCells()[i]?.querySelector("button"));
+  const reviewable = () =>
+    ids.filter((_, i) => resetCells()[i]?.querySelector("[data-reset-credit-action]"));
   expect(reviewable()).toEqual(["usable", "pending"]);
-  expect(resetCells().at(-1)?.textContent).toContain("Review pending reset");
+  expect(resetCells().at(-1)?.textContent).toContain("Retry the original reset");
   update(providerCard, { ...props(), accountUsage: { ...accountUsage, canConsume: () => false } });
   expect(reviewable()).toEqual([]);
   expect(resetCells()[0]?.textContent).toContain("2");

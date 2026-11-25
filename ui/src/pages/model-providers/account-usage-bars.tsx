@@ -9,13 +9,22 @@ import { moveArrayEntry } from "../../lib/array-order.ts";
 import { formatNumber } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { createPointerDrag } from "../../lib/reactive/pointer-drag.ts";
-import { accountCreditBalance, type AccountUsageRead } from "./account-usage.tsx";
+import {
+  AccountCreditControls,
+  accountCreditBalance,
+  type AccountUsageRead,
+} from "./account-usage.tsx";
 import { neighborOffset, reorderByArrow } from "./profile-reorder.ts";
 
-function UsageTrack(props: { label?: string; children: JSX.Element }) {
+function UsageTrack(props: {
+  label?: string;
+  resetLayout?: "columns" | "rows-on-phone";
+  children: JSX.Element;
+}) {
   return (
     <div
       class="model-providers__usage-window"
+      data-reset-layout={props.resetLayout}
       role={props.label === undefined ? undefined : "group"}
       aria-label={props.label}
     >
@@ -62,6 +71,7 @@ export function AccountUsageBars(props: {
             : t("usage.providerUsage.remaining", { percent: String(percent) });
         return {
           id,
+          quota,
           percent,
           tone: window && remainingTone(window),
           detail: [
@@ -199,81 +209,6 @@ export function AccountUsageBars(props: {
       </button>
     );
   }
-  function CreditTrack(kind: { reset?: boolean }) {
-    return (
-      <UsageTrack
-        label={
-          kind.reset ? t("modelProviders.limits.resetCredits") : t("modelProviders.limits.credits")
-        }
-      >
-        <For each={props.readings}>
-          {(read, index) => {
-            const credit = createMemo(() => {
-              const amount = kind.reset
-                ? read.result().resetCredits?.availableCount
-                : accountCreditBalance(read.result().snapshot)?.amount;
-              return amount === undefined
-                ? undefined
-                : formatNumber(amount, { maximumFractionDigits: 0 });
-            });
-            const expanded = () => props.expandedAccount === read.account().profileId;
-            const canReview = () => {
-              if (!kind.reset || !read.canConsume()) {
-                return false;
-              }
-              const { resetCredits, operation, stale } = read.result();
-              // A bound reading can disclose its offers or pending reset. Details own consent.
-              return (
-                operation &&
-                !stale &&
-                resetCredits &&
-                !resetCredits.readOnly &&
-                !resetCredits.journalUnavailable &&
-                (resetCredits.pending ||
-                  ((resetCredits.availableCount ?? 0) > 0 &&
-                    (resetCredits.creditId || resetCredits.offers?.length)))
-              );
-            };
-            return (
-              <span
-                class="model-providers__credit"
-                data-grabbed={preview()?.source === index() || undefined}
-                style={{ translate: translation(index()) }}
-              >
-                <span class="settings-control__sr-label">
-                  {read.name()}:{" "}
-                  {credit() ??
-                    t(
-                      read.result().loading
-                        ? "common.loading"
-                        : "modelProviders.limits.notReported",
-                    )}
-                </span>
-                <span aria-hidden="true">{credit() ?? "—"}</span>
-                <Show when={canReview()}>
-                  <button
-                    type="button"
-                    class="btn btn--sm"
-                    aria-expanded={expanded() ? "true" : "false"}
-                    onClick={() => props.onToggleAccount(read.account().profileId)}
-                  >
-                    {t(
-                      expanded()
-                        ? "modelProviders.resetCredits.hideDetails"
-                        : read.result().resetCredits?.pending
-                          ? "modelProviders.resetCredits.reviewPending"
-                          : "modelProviders.resetCredits.review",
-                    )}
-                    <span class="settings-control__sr-label"> ({read.name()})</span>
-                  </button>
-                </Show>
-              </span>
-            );
-          }}
-        </For>
-      </UsageTrack>
-    );
-  }
   const selectedDetail = () =>
     tracks()
       .find((track) => track.label === selected()?.label)
@@ -283,6 +218,7 @@ export function AccountUsageBars(props: {
       ref={(el) => (chart = el)}
       class="model-providers__usage-bars"
       data-sorting={preview() ? true : undefined}
+      style={{ "--subscription-count": props.readings.length }}
       aria-label={t("modelProviders.limits.subscriptionLimits")}
     >
       <Loading fallback={<small>{t("common.loading")}</small>}>
@@ -341,9 +277,7 @@ export function AccountUsageBars(props: {
                         aria-hidden="true"
                         style={{ width: (segment().percent ?? 0) + "%" }}
                       />
-                      <strong>
-                        {segment().percent === undefined ? "—" : segment().percent + "%"}
-                      </strong>
+                      <strong>{segment().percent === undefined ? "—" : segment().quota}</strong>
                     </ColumnButton>
                   );
                 }}
@@ -351,14 +285,65 @@ export function AccountUsageBars(props: {
             </UsageTrack>
           )}
         </For>
-        <CreditTrack />
+        <UsageTrack label={t("modelProviders.limits.credits")}>
+          <For each={props.readings}>
+            {(read, index) => {
+              const credit = createMemo(() => {
+                const amount = accountCreditBalance(read.result().snapshot)?.amount;
+                return amount === undefined
+                  ? undefined
+                  : formatNumber(amount, { maximumFractionDigits: 0 });
+              });
+              return (
+                <span
+                  class="model-providers__credit"
+                  data-grabbed={preview()?.source === index() || undefined}
+                  style={{ translate: translation(index()) }}
+                >
+                  <span class="settings-control__sr-label">
+                    {read.name()}:{" "}
+                    {credit() ??
+                      t(
+                        read.result().loading
+                          ? "common.loading"
+                          : "modelProviders.limits.notReported",
+                      )}
+                  </span>
+                  <span aria-hidden="true">{credit() ?? "—"}</span>
+                </span>
+              );
+            }}
+          </For>
+        </UsageTrack>
         <Show
           when={props.readings.some((read) => {
             const credits = read.result().resetCredits;
-            return credits?.availableCount !== undefined || credits?.pending;
+            return (
+              credits?.availableCount !== undefined ||
+              credits?.pending ||
+              credits?.lastReset ||
+              credits?.journalUnavailable ||
+              read.result().confirmed
+            );
           })}
         >
-          <CreditTrack reset />
+          <UsageTrack
+            label={t("modelProviders.limits.resetCredits")}
+            resetLayout={props.readings.length > 2 ? "rows-on-phone" : "columns"}
+          >
+            <For each={props.readings}>
+              {(read, index) => (
+                <AccountCreditControls
+                  read={read}
+                  column={{
+                    name: read.name(),
+                    grabbed: preview()?.source === index(),
+                    translate: translation(index()),
+                  }}
+                />
+              )}
+            </For>
+          </UsageTrack>
         </Show>
         <For each={props.readings}>
           {(read) => {
@@ -370,9 +355,7 @@ export function AccountUsageBars(props: {
                   ? loading
                     ? t("common.loading")
                     : undefined
-                  : failure
-                    ? t("modelProviders.limits.readFailed", { error: failure })
-                    : t("usage.providerUsage.unavailable");
+                  : failure || t("usage.providerUsage.unavailable");
               return [stale && t("modelProviders.resetCredits.cachedQuota"), status]
                 .filter(Boolean)
                 .join(" · ");

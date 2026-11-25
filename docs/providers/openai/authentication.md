@@ -156,9 +156,15 @@ still apply. See [per-person model accounts](/concepts/multi-user#per-person-mod
 ## Set up an agent's credential
 
 In **Settings → Models**, select the agent, choose **Connect provider → OpenAI**,
-then choose a sign-in method. For SIWC, choose **Sign in with ChatGPT** and approve
-token sharing in your browser. When the account is connected, choose a model and
-use **Test & use** to verify a reply and select it.
+then choose a sign-in method. For **Codex models and usage**, choose **Codex login**.
+On a phone or another computer, enter the one-time code on OpenAI's device page;
+the Gateway completes sign-in without a callback to your device. This does not grant
+access to OpenAI-hosted plugins.
+
+**Sign in with ChatGPT** is a separate method for Responses API access, not Codex
+usage. To approve token sharing, use a browser on the Gateway computer or
+[forward the callback port](/providers/openai/setup#sign-in-with-chatgpt).
+Once connected, choose a model and use **Test & use** to verify a reply and select it.
 
 Run the command on the machine running the OpenClaw installation you want to
 configure:
@@ -177,7 +183,10 @@ openclaw models auth login --provider openai --method api-key
 Codex login requests a device code first, so you can approve it in a browser on
 another machine. It falls back to the localhost browser flow only when OpenAI
 reports that device-code login is not enabled; other device-code errors are
-shown instead. Without `--method`, OpenAI login defaults to Codex login.
+shown instead. In Settings, OpenClaw asks before switching
+to browser sign-in. If you continue, you can paste the final address back into
+the sign-in prompt even if the localhost page does not load. Without `--method`,
+OpenAI login defaults to Codex login.
 
 Use `--agent <agentId>` to target a configured agent and `--profile-id <profileId>`
 to name the saved credential. Login saves and prioritizes that credential for the

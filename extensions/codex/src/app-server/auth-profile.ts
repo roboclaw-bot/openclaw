@@ -6,6 +6,7 @@ import {
 import {
   ensureAuthProfileStoreAsync,
   resolveAuthProfileOrder,
+  type AuthProfileStore,
 } from "openclaw/plugin-sdk/provider-auth";
 import { resolveProviderIdForAuth } from "openclaw/plugin-sdk/provider-auth-aliases";
 import {
@@ -59,6 +60,16 @@ export function codexClientAuthMode(prepared: CodexAppServerPreparedAuth | undef
     : "profile";
 }
 
+/** Only native subscription credentials may enter Codex account APIs. */
+export function supportsCodexSubscriptionAuth(credential: AuthProfileStore["profiles"][string]) {
+  return (
+    credential.type === "token" ||
+    (credential.type === "oauth" &&
+      credential.authFlow !== "chatgpt-token-sharing" &&
+      credential.authFlow !== "chatgpt-identity")
+  );
+}
+
 /** Returns true when an auth profile uses native Codex/OpenAI app-server auth. */
 export async function isCodexAppServerNativeAuthProfile(
   lookup: CodexAppServerAuthProfileLookup,
@@ -80,13 +91,7 @@ export async function isCodexAppServerNativeAuthProfile(
         },
       ));
     const credential = store.profiles[authProfileId];
-    if (
-      !credential ||
-      credential.type === "api_key" ||
-      (credential.type === "oauth" &&
-        (credential.authFlow === "chatgpt-token-sharing" ||
-          credential.authFlow === "chatgpt-identity"))
-    ) {
+    if (!credential || !supportsCodexSubscriptionAuth(credential)) {
       return false;
     }
     const provider = credential.provider?.trim();

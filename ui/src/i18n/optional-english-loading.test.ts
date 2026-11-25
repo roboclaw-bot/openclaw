@@ -527,6 +527,26 @@ it("loads optional English copy at each view boundary while keeping shared label
   }
 });
 
+it("loads quota window labels without starting the composer and keeps them locale-aware", async () => {
+  await loadI18n({ chat: { composer: { contextUsage: { limitWeekly: "Wöchentlich" } } } });
+  const { i18n } = await import("./lib/translate.ts");
+  expect(i18n.t("chat.composer.contextUsage.limitWeekly")).toBe(
+    "chat.composer.contextUsage.limitWeekly",
+  );
+
+  const { formatUsageWindowLabel } = await import("../lib/provider-quota-summary.ts");
+  expect(["5h", "Week", "24h", "Opus"].map(formatUsageWindowLabel)).toEqual([
+    "5-hour",
+    "Weekly",
+    "24-hour",
+    "Opus",
+  ]);
+  await i18n.setLocale("de");
+  expect(formatUsageWindowLabel("Week")).toBe("Wöchentlich");
+  expect(formatUsageWindowLabel("Day")).toBe("Daily");
+  expect(i18n.t("chat.composer.contextUsage.title")).toBe("chat.composer.contextUsage.title");
+});
+
 it("loads optional chat copy with its view while keeping admission errors synchronous", async () => {
   const { en, manager } = await loadI18n({
     chat: { composer: { menu: { back: "Zurück" } } },

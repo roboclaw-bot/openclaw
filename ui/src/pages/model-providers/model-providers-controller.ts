@@ -616,13 +616,13 @@ export function createModelProviders(
     gatewayState.read();
     selection.read();
     overlays.read();
-    const gatewaySnapshot = context.gateway.snapshot;
+    const snapshot = context.gateway.snapshot;
     const data = {
       ...(state.data ?? EMPTY_MODEL_PROVIDERS_DATA),
       authStatus: mutations.authStatus(),
     };
     const catalog = modelCatalog.readAgentModelCatalog(
-      readAccess ? gatewaySnapshot.client : null,
+      readAccess ? snapshot.client : null,
       state.selectedAgentId,
     );
     const { configuredDefaults, cards, noSelectableAgents, rosterError, agentLabel, values } =
@@ -638,11 +638,11 @@ export function createModelProviders(
       setMessage("defaults", null);
       void saveDefaults(field);
     };
-    const advertised = isGatewayMethodAdvertised(gatewaySnapshot, "models.probe");
     const props = {
       providerQuery: providerQuery(),
       accountUsage: accounts.scope(core.loading),
-      connected: gatewaySnapshot.phase === "connected",
+      codexUsageMissing: isGatewayMethodAdvertised(snapshot, "codex.accountUsage") === false,
+      connected: snapshot.phase === "connected",
       loading: state.data === null && !rosterError && !noSelectableAgents,
       refreshing: core.loading,
       error: rosterError ?? (noSelectableAgents ? t("agents.noAgents") : data.error),
@@ -663,7 +663,7 @@ export function createModelProviders(
       mutationBlockedReason: mutationBlockedReason(),
       defaultsMutationBlockedReason: modelProviderConfigMutationBlockedReason(context),
       providerUsageStalled: refreshPolicy.incompleteUsageExhausted,
-      probeAvailable: advertised !== false,
+      probeAvailable: isGatewayMethodAdvertised(snapshot, "models.probe") !== false,
       busy: state.busy,
       messages: state.messages,
       probeResults: state.probeResults,

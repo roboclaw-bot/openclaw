@@ -148,7 +148,7 @@ it.each<[string, CardsInput, unknown[]]>([
         provider("claude-cli", {
           displayName: "Claude",
           profiles: [profile("p1")],
-          usage: usage("anthropic", 40, "Max"),
+          usage: { ...usage("anthropic", 40, "Max"), authProfileId: "p1" },
         }),
       ],
       { models: [model("anthropic/model", { provider: "anthropic", available: true })] },
@@ -162,6 +162,7 @@ it.each<[string, CardsInput, unknown[]]>([
         usage: {
           provider: "anthropic",
           plan: "Max",
+          authProfileId: "p1",
           windows: [{ label: "5h", usedPercent: 40 }],
         },
       },

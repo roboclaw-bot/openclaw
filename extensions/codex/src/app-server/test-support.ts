@@ -123,6 +123,22 @@ export function createCodexTestOAuthProfile(accountId: string) {
   };
 }
 
+export function createCodexTestMemberAccess(
+  member: string | null = "alex",
+  rotation = "first",
+  workspace = "alex-account",
+) {
+  const payload = {
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: workspace,
+      chatgpt_account_user_id: member ?? undefined,
+      chatgpt_user_id: "same-global-user",
+    },
+    "https://api.openai.com/profile": { email: "current@example.test" },
+  };
+  return `e30.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${rotation}`;
+}
+
 /** Builds a representative Codex-capable model fixture for app-server tests. */
 export function createCodexTestModel(provider = "openai", input = ["text"]): Model {
   return {
