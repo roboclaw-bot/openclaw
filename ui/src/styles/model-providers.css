@@ -508,18 +508,19 @@
 }
 .model-providers__reset-dialog {
   text-align: start;
-  .settings-kv {
-    grid-template-columns: fit-content(32%) minmax(0, 1fr);
-    gap: var(--space-2) var(--space-3);
-    padding-inline: 0;
-    dd + dt {
-      margin-top: 0;
+  overflow-wrap: anywhere;
+
+  p {
+    margin: 0;
+  }
+  .model-providers__credit-choice {
+    font-size: var(--control-ui-text-sm);
+
+    > :not(summary) {
+      margin-block-start: var(--space-2);
+      max-width: 100%;
     }
   }
-}
-.model-providers__credit-choice select {
-  margin-block-start: var(--space-1);
-  max-width: 100%;
 }
 
 .model-providers__reset-status {
@@ -529,10 +530,22 @@
     padding-inline-start: var(--space-2);
     overflow-wrap: anywhere;
   }
+}
 
-  [data-confirmed] {
-    color: var(--ok);
-    font-weight: 600;
+.model-providers__reset-receipt {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  overflow-wrap: anywhere;
+
+  > summary {
+    cursor: pointer;
+  }
+}
+
+@media (max-width: 560px) {
+  [data-reset-layout="rows-on-phone"] .model-providers__credit {
+    flex-wrap: wrap;
   }
 }
 

@@ -51,6 +51,9 @@ type ResetTarget = ResetIntent & { afterReset?: string | null };
 export type ResetAttempt = ResetTarget & {
   phase: Outcome | "pending" | "uncertain" | "denied";
 };
+export function resetReceiptOutcome(phase?: ResetAttempt["phase"]) {
+  return phase === "pending" || phase === "uncertain" || phase === "denied" ? undefined : phase;
+}
 export type ResetOperation = ReturnType<typeof createOperation>;
 export type ResetRegistry = ReturnType<typeof createRegistry>;
 const applications = new WeakMap<object, Map<string, ResetRegistry>>();
@@ -187,7 +190,7 @@ function createOperation(accountBinding: string, storageKey: string, advance: ()
       retry: boolean,
     ) {
       if (retryingShared || current !== observed || current?.phase === "pending") {
-        return;
+        return undefined;
       }
       const admitted = { ...target, phase: "pending" } as const;
       // A shared retry already has a Gateway journal entry. Keep our unknown request
@@ -249,7 +252,13 @@ function createOperation(accountBinding: string, storageKey: string, advance: ()
       } else if (current === admitted) {
         publish({ ...target, phase });
         completions.publish();
+      } else {
+        return current?.creditId === target.creditId &&
+          current.idempotencyKey === target.idempotencyKey
+          ? resetReceiptOutcome(current.phase)
+          : undefined;
       }
+      return resetReceiptOutcome(phase);
     },
   };
 }

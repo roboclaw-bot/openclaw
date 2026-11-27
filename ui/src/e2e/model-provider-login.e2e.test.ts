@@ -268,9 +268,7 @@ suite.define(() => {
         await dialog.locator('[data-models-login-provider="openai"]').waitFor();
         expect(
           (await dialog.locator(".oc-dialog__description p").first().textContent())?.trim(),
-        ).toBe(
-          "Choose how to connect. Verifying an API key or token can also set this agent's active model.",
-        );
+        ).toBe("Verifying a key or token may set this agent’s active model.");
         if (recordVisuals) {
           await writeFile(
             path.join(suite.artifactDir, "first-run-provider-picker.png"),
@@ -731,7 +729,7 @@ suite.define(() => {
           expect(await primary.locator("strong").textContent()).toBe(
             "Sign in to Codex with a code",
           );
-          expect(await primary.textContent()).toContain("ChatGPT subscription");
+          expect(await primary.locator("small").textContent()).toBe("ChatGPT subscription");
           expect(await dialog.getByRole("button", { name: /Sign in with ChatGPT/ }).count()).toBe(
             0,
           );

@@ -401,7 +401,11 @@ suite.define(() => {
         idempotencyKey,
         confirmationId,
       });
-      await card.getByText(/Updating limits/).waitFor();
+      const toast = page
+        .locator(".app-toast--success")
+        .filter({ hasText: "Limits reset. 1 credit spent." });
+      await toast.waitFor();
+      expect(await toast.textContent()).toContain("2 · shared@example.test");
       await gateway.resolveDeferred("codex.accountUsage", {
         ...usage(5, 12.75, "Business"),
         resetCredits: { ...studio, availableCount: 1, offers: studio.offers.slice(0, 1) },
@@ -409,11 +413,15 @@ suite.define(() => {
       await expect.poll(counts).toEqual(["0", "2", "1", "—"]);
       expect(await weekly.nth(2).textContent()).toBe("95% left");
       expect(await weekly.nth(1).textContent()).toBe("100% left");
-      const status = card.getByRole("status").filter({ hasText: "1 credit spent" });
-      expect(await status.textContent()).toContain("2 · shared@example.test");
-      expect(await status.textContent()).not.toMatch(
-        /Updating limits|Incomplete usage|opaqueopaque/,
-      );
+      const receipt = cells.nth(2).locator(".model-providers__reset-receipt");
+      const summary = receipt.locator("summary");
+      expect(await summary.textContent()).toContain("2 · shared@example.test");
+      expect(await receipt.getByText("Limits reset. 1 credit spent.").isVisible()).toBe(false);
+      await toast.getByRole("button", { name: "Dismiss" }).click();
+      await toast.waitFor({ state: "detached" });
+      await summary.click();
+      expect(await receipt.getByText("Limits reset. 1 credit spent.").isVisible()).toBe(true);
+      expect(await page.locator(".app-toast--success").count()).toBe(0);
       expect(
         await card.getByRole("status").filter({ hasText: "Incomplete usage" }).textContent(),
       ).toContain("1 · shared@example.test:");

@@ -690,7 +690,7 @@ The detailed reading belongs to the selected subscription login. A cached quota 
 The request requires `operator.admin` and rejects changed or removed credentials.
 Proxy launch arguments are rejected to avoid changing a shared daemon's login.
 
-In **Settings → Models → Provider access → OpenAI**, select a quota segment to see
+In **Settings → Models → OpenAI**, select a quota segment to see
 when it resets automatically. Waiting uses no credit. Earned **Reset credits**
 are separate from the ordinary **Credits** balance. If the account-usage method
 is unavailable, administrators with a saved subscription can open **Codex settings**
@@ -699,8 +699,9 @@ from the account card to check whether the plugin is installed and enabled.
 Choose **Use reset credit** beside the account’s balance. The confirmation defaults
 to the credit expiring soonest. If another credit has a different expiry or title,
 you can choose it there. After five seconds, **Spend 1 credit** resets eligible
-limits for that subscription. Opening the dialog, waiting, or
-canceling never spends a credit. A count without individual credit details is
+limits for that subscription. A toast confirms the result; the account’s balance
+and limits update in place. Opening the dialog, waiting, or canceling never
+spends a credit. A count without individual credit details is
 read-only. Agents have no reset-credit tool.
 
 If a reply is lost, refresh the account. A confirmed retry of a pending request

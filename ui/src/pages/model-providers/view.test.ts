@@ -618,7 +618,7 @@ describe("renderModelProviders", () => {
       }),
     );
     const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(container)).toContain("Accounts for Writer");
+    expect(text(container)).toContain("Providers for Writer");
     expect(text(provider)).toContain("From environment (OPENAI_API_KEY)");
     expect(text(provider?.querySelector(".model-providers__probe-summary") ?? null)).toBe(
       "Access verified",

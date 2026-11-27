@@ -165,7 +165,7 @@ it("updates rendered facts from accepted catalog, auth, and notified mutable own
   settingsAgentSelection.state.selectedId = "writer";
   notifySelection();
   await waitForSolid(() => {
-    expect(page.renderRoot.textContent).toContain("Accounts for Writer");
+    expect(page.renderRoot.textContent).toContain("Providers for Writer");
     expect(page.renderRoot.textContent).not.toContain("Renamed Main");
   });
 });

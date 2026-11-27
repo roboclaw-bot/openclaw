@@ -288,7 +288,6 @@ function PickerDialog(props: {
                       <LoginOption
                         buttonRef={props.controller.setApiKeyChoice.bind(props.controller)}
                         label={t("modelProviders.status.apiKey")}
-                        hint={t("modelProviders.login.apiKeyHint")}
                         apiKey
                         card
                         disabled={current().disabled}

@@ -11,4 +11,6 @@
 # callback, a single consent click, and rendering fresh or missing per-account quotas.
 # A retained provider sample has no member; a native read can explicitly name a different
 # workspace. Separate fixtures verify that neither is attributed to the remaining login.
-2173
+# The transient toast is local to a confirmed action, unlike a persistent receipt. Cover
+# cancellation, late credential changes and failed quota refresh without losing recovery.
+2275

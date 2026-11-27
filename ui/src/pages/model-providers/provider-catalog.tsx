@@ -79,8 +79,8 @@ export function ProviderCatalog(props: {
         )}
         description={
           props.first
-            ? t("modelProviders.catalog.firstDescription")
-            : t("modelProviders.catalog.description", { agent: props.agentLabel })
+            ? t("modelProviders.catalog.description", { agent: props.agentLabel })
+            : undefined
         }
         actions={
           <button

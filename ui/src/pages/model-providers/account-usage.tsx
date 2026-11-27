@@ -19,7 +19,12 @@ import { formatUsageWindowLabel } from "../../lib/provider-quota-summary.ts";
 import { formatDateTimeMs, formatTimeMs } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { createTimeout } from "../../lib/reactive/timers.ts";
-import { AccountResetCredits, type CreditColumn } from "./account-reset-credits.tsx";
+import { showToast } from "../../lib/toast.ts";
+import {
+  AccountResetCredits,
+  type CreditColumn,
+  type SubmitReset,
+} from "./account-reset-credits.tsx";
 import type { ModelProvidersData } from "./load.ts";
 import type { ModelProvidersState } from "./page-state.ts";
 import {
@@ -226,7 +231,8 @@ type Reading = {
   account: AccountKey;
   loading?: true;
   refreshing?: boolean;
-  confirmed?: "reset" | "alreadyRedeemed";
+  // Presentation only: status of a user-confirmed request if the next quota read fails.
+  confirmed?: ResetAttempt["phase"];
   stale?: boolean;
   snapshot?: ProviderUsageSnapshot;
   error?: string;
@@ -311,12 +317,14 @@ export function createAccountUsage(scope: () => AccountUsageScope, readProfileId
       }
       const final = early.kind === "cache" ? await detail : early;
       if (final.kind === "error") {
-        const outcome = prior?.operation?.current?.phase ?? prior?.confirmed;
+        const operation = prior?.operation;
+        const outcome = operation?.current?.phase ?? prior?.confirmed;
         yield {
           account: key,
           error: final.error,
-          // Keep this profile’s completed request, never its old offers or authority.
-          confirmed: outcome === "reset" || outcome === "alreadyRedeemed" ? outcome : undefined,
+          // A failed quota read has no offers. Keep listening for an in-flight reply for this member.
+          operation: outcome === "pending" || operation?.retryingShared ? operation : undefined,
+          confirmed: outcome,
           snapshot: cache,
           stale: Boolean(cache),
         };
@@ -368,17 +376,53 @@ export type AccountUsageRead = ReturnType<typeof createAccountUsage>;
 export function AccountCreditControls(props: { read: AccountUsageRead; column?: CreditColumn }) {
   return (
     <Show when={props.read.account()} keyed>
-      {(target) => (
-        <AccountResetCredits
-          account={target}
-          summary={props.read.result()}
-          column={props.column}
-          canConsume={props.read.canConsume}
-          refresh={props.read.refresh}
-        >
-          <WindowResetHint next={props.read.result().nextReset} />
-        </AccountResetCredits>
-      )}
+      {(target) => {
+        const feedback = new AbortController();
+        onSettled(() => () => feedback.abort());
+        const spend: SubmitReset = async (selection, ticket, observed, creditId) => {
+          const op = props.read.result().operation;
+          const retry = selection.action === "retry";
+          const outcome = await op?.spend(
+            target.client,
+            target,
+            { creditId, idempotencyKey: ticket.idempotencyKey, afterReset: selection.afterReset },
+            ticket.confirmationId,
+            observed,
+            retry,
+          );
+          // Only this account's initiating action notifies, never a journal read or a peer.
+          if (
+            !outcome ||
+            feedback.signal.aborted ||
+            !props.read.canConsume() ||
+            op !== props.read.result().operation
+          ) {
+            return;
+          }
+          showToast({
+            severity: outcome === "reset" ? "success" : "info",
+            message: t(
+              retry && outcome === "reset"
+                ? "modelProviders.resetCredits.retryConfirmed"
+                : `modelProviders.resetCredits.${outcome}`,
+            ),
+            description: props.column?.name ?? selection.accountEmail ?? selection.accountLabel,
+            signal: feedback.signal,
+          });
+        };
+        return (
+          <AccountResetCredits
+            account={target}
+            summary={props.read.result()}
+            column={props.column}
+            canConsume={props.read.canConsume}
+            refresh={props.read.refresh}
+            onSpend={spend}
+          >
+            <WindowResetHint next={props.read.result().nextReset} />
+          </AccountResetCredits>
+        );
+      }}
     </Show>
   );
 }

@@ -5,8 +5,7 @@ import { en } from "./en.ts";
 const catalog = {
   modelProviderLogin: {
     remoteCodex: {
-      description:
-        "Use your ChatGPT subscription for Codex models, usage, and available reset credits.",
+      description: "ChatGPT subscription",
       action: "Sign in to Codex with a code",
       responses: "Browser sign-in for the Responses API",
     },

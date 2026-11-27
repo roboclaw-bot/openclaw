@@ -301,8 +301,7 @@ function ProviderAccess(props: ModelProvidersViewProps) {
   return (
     <SettingsSection
       carapace
-      title={t("modelProviders.accessTitle")}
-      description={t("modelProviders.accessDescription", { agent: props.credentialAgentLabel })}
+      title={t("modelProviders.providersForAgent", { agent: props.credentialAgentLabel })}
       actions={
         <>
           <button type="button" class="btn btn--sm btn--ghost" onClick={() => props.onOpenUsage()}>
