@@ -523,30 +523,11 @@
   }
 }
 
-.model-providers__reset-status {
-  &:not(.sr-only) {
-    grid-column: 1 / -1;
-    border-inline-start: 2px solid var(--border);
-    padding-inline-start: var(--space-2);
-    overflow-wrap: anywhere;
-  }
-}
-
-.model-providers__reset-receipt {
-  flex-basis: 100%;
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
+.model-providers__reset-status:not(.sr-only) {
+  grid-column: 1 / -1;
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: var(--space-2);
   overflow-wrap: anywhere;
-
-  > summary {
-    cursor: pointer;
-  }
-}
-
-@media (max-width: 560px) {
-  [data-reset-layout="rows-on-phone"] .model-providers__credit {
-    flex-wrap: wrap;
-  }
 }
 
 .model-providers__account-plan {

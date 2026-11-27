@@ -15,6 +15,7 @@ import {
   type AccountUsageRead,
 } from "./account-usage.tsx";
 import { neighborOffset, reorderByArrow } from "./profile-reorder.ts";
+import { resetNeedsAttention } from "./reset-credit-operation.ts";
 
 function UsageTrack(props: {
   label?: string;
@@ -317,13 +318,14 @@ export function AccountUsageBars(props: {
         </UsageTrack>
         <Show
           when={props.readings.some((read) => {
-            const credits = read.result().resetCredits;
+            const result = read.result();
+            const credits = result.resetCredits;
             return (
               credits?.availableCount !== undefined ||
               credits?.pending ||
-              credits?.lastReset ||
               credits?.journalUnavailable ||
-              read.result().confirmed
+              resetNeedsAttention(result.operation?.current?.phase) ||
+              result.confirmed
             );
           })}
         >

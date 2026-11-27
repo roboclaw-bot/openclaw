@@ -29,6 +29,7 @@ import type { ModelProvidersData } from "./load.ts";
 import type { ModelProvidersState } from "./page-state.ts";
 import {
   CODEX_ACCOUNT_REQUEST_TIMEOUT_MS,
+  resetNeedsAttention,
   resetRegistryFor,
   type ResetCreditBalance,
   type ResetRegistry,
@@ -316,14 +317,22 @@ export function createAccountUsage(scope: () => AccountUsageScope, readProfileId
         yield { ...initial, loading: undefined, snapshot: cache, stale: true, refreshing: true };
       }
       const final = early.kind === "cache" ? await detail : early;
+      // A fresh reading has already reflected its observed attempt. A later, unrelated
+      // quota outage must not turn that old success back into account-row feedback.
+      const unrefreshedOutcome = () => {
+        const local = prior?.operation?.current;
+        return local && (local !== prior?.observed || resetNeedsAttention(local.phase))
+          ? local.phase
+          : prior?.confirmed;
+      };
       if (final.kind === "error") {
         const operation = prior?.operation;
-        const outcome = operation?.current?.phase ?? prior?.confirmed;
+        const outcome = unrefreshedOutcome();
         yield {
           account: key,
           error: final.error,
-          // A failed quota read has no offers. Keep listening for an in-flight reply for this member.
-          operation: outcome === "pending" || operation?.retryingShared ? operation : undefined,
+          // Retain only the member and outstanding result, never offers from the failed read.
+          operation: outcome || operation?.retryingShared ? operation : undefined,
           confirmed: outcome,
           snapshot: cache,
           stale: Boolean(cache),
@@ -342,13 +351,22 @@ export function createAccountUsage(scope: () => AccountUsageScope, readProfileId
                 .join(" · "),
             }
           : undefined;
+      const observed = !controller.signal.aborted
+        ? registry?.observe(resetCredits, readAt)
+        : undefined;
       yield {
         account: key,
         snapshot: providers[0],
         stale,
         nextReset,
         resetCredits,
-        ...(!controller.signal.aborted && registry?.observe(resetCredits, readAt)),
+        ...observed,
+        confirmed:
+          (stale || providers[0]?.error !== undefined) &&
+          observed?.operation &&
+          observed.operation === prior?.operation
+            ? unrefreshedOutcome()
+            : undefined,
       };
     })();
   });

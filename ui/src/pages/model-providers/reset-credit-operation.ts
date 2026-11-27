@@ -51,8 +51,11 @@ type ResetTarget = ResetIntent & { afterReset?: string | null };
 export type ResetAttempt = ResetTarget & {
   phase: Outcome | "pending" | "uncertain" | "denied";
 };
-export function resetReceiptOutcome(phase?: ResetAttempt["phase"]) {
-  return phase === "pending" || phase === "uncertain" || phase === "denied" ? undefined : phase;
+export function resetNeedsAttention(phase?: ResetAttempt["phase"]) {
+  return phase === "pending" || phase === "uncertain" || phase === "denied";
+}
+function resetReceiptOutcome(phase?: ResetAttempt["phase"]) {
+  return resetNeedsAttention(phase) ? undefined : phase;
 }
 export type ResetOperation = ReturnType<typeof createOperation>;
 export type ResetRegistry = ReturnType<typeof createRegistry>;

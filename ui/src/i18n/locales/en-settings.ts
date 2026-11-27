@@ -1190,8 +1190,6 @@ const enSettings = {
       noExpiry: "No expiry",
       unknownExpiry: "Expiry unknown",
       journalUnavailable: "Reset history is unavailable. Try again later.",
-      receipt: "Reset receipt",
-      accountReceipt: "Latest account receipt",
       retryConfirmed: "Reset confirmed.",
       accountPending: "Account reset pending.",
       spend: "Spend 1 credit",

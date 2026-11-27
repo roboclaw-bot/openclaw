@@ -697,9 +697,9 @@ is unavailable, administrators with a saved subscription can open **Codex settin
 from the account card to check whether the plugin is installed and enabled.
 
 Choose **Use reset credit** beside the account’s balance. The confirmation defaults
-to the credit expiring soonest. If another credit has a different expiry or title,
-you can choose it there. After five seconds, **Spend 1 credit** resets eligible
-limits for that subscription. A toast confirms the result; the account’s balance
+to the credit expiring soonest. If the offers differ, open **Change credit** to
+pick another one. Changing the selection restarts the five-second wait without
+spending anything. **Spend 1 credit** resets eligible limits for that subscription. A toast confirms the result; the account’s balance
 and limits update in place. Opening the dialog, waiting, or canceling never
 spends a credit. A count without individual credit details is
 read-only. Agents have no reset-credit tool.

@@ -366,9 +366,10 @@ suite.define(() => {
       expect(await dialog.textContent()).not.toContain("other-workspace");
       expect(await dialog.textContent()).toContain("studio-workspace");
       const confirmationId = "10000000-0000-4000-a000-000000000001";
-      const ticket = { confirmationId, waitMs: 5000, expiresInMs: 30_000 };
+      const ticket = { waitMs: 5000, expiresInMs: 30_000 };
       await gateway.resolveDeferred(prepare, {
         ...ticket,
+        confirmationId: "10000000-0000-4000-a000-000000000002",
         idempotencyKey: asOptionalRecord(first.params)?.idempotencyKey,
       });
       await dialog.getByText("Change credit", { exact: true }).click();
@@ -385,7 +386,8 @@ suite.define(() => {
       expect(second.params).toMatchObject({ ...selected, creditId: ids[1] });
       const idempotencyKey = asOptionalRecord(second.params)?.idempotencyKey;
       const started = performance.now();
-      await gateway.resolveDeferred(prepare, { ...ticket, idempotencyKey });
+      expect(idempotencyKey).not.toBe(asOptionalRecord(first.params)?.idempotencyKey);
+      await gateway.resolveDeferred(prepare, { ...ticket, confirmationId, idempotencyKey });
       expect(await dialog.getByRole("button", { name: /Confirm in/ }).isDisabled()).toBe(true);
       const spend = dialog.getByRole("button", { name: "Spend 1 credit" });
       await spend.waitFor();
@@ -413,15 +415,14 @@ suite.define(() => {
       await expect.poll(counts).toEqual(["0", "2", "1", "—"]);
       expect(await weekly.nth(2).textContent()).toBe("95% left");
       expect(await weekly.nth(1).textContent()).toBe("100% left");
-      const receipt = cells.nth(2).locator(".model-providers__reset-receipt");
-      const summary = receipt.locator("summary");
-      expect(await summary.textContent()).toContain("2 · shared@example.test");
-      expect(await receipt.getByText("Limits reset. 1 credit spent.").isVisible()).toBe(false);
+      expect(await page.locator(".app-toast--success").count()).toBe(1);
       await toast.getByRole("button", { name: "Dismiss" }).click();
       await toast.waitFor({ state: "detached" });
-      await summary.click();
-      expect(await receipt.getByText("Limits reset. 1 credit spent.").isVisible()).toBe(true);
       expect(await page.locator(".app-toast--success").count()).toBe(0);
+      expect(await row.locator("details").count()).toBe(0);
+      expect(
+        await card.getByText(/Reset receipt|Latest account receipt|Limits reset\./i).count(),
+      ).toBe(0);
       expect(
         await card.getByRole("status").filter({ hasText: "Incomplete usage" }).textContent(),
       ).toContain("1 · shared@example.test:");

@@ -13,4 +13,6 @@
 # workspace. Separate fixtures verify that neither is attributed to the remaining login.
 # The transient toast is local to a confirmed action, unlike a persistent receipt. Cover
 # cancellation, late credential changes and failed quota refresh without losing recovery.
-2275
+# Selecting another offer restarts consent; a fresh balance retires success feedback even
+# if a later independent read fails. Exercise both at their caller-visible boundaries.
+2331

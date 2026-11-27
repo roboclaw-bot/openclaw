@@ -13,7 +13,7 @@ import type { AccountUsageRead } from "./account-usage.tsx";
 import {
   CODEX_ACCOUNT_REQUEST_TIMEOUT_MS,
   hasResetIdentity,
-  resetReceiptOutcome,
+  resetNeedsAttention,
   type ResetAttempt,
   type ResetIntent,
 } from "./reset-credit-operation.ts";
@@ -80,9 +80,8 @@ export function AccountResetCredits(props: {
   const activity = () =>
     Boolean(
       props.summary.confirmed ||
-      attempt() ||
+      resetNeedsAttention(attempt()?.phase) ||
       journal()?.pending ||
-      journal()?.lastReset ||
       journal()?.journalUnavailable,
     );
   // The registry has already checked for an exact receipt. A different journal head
@@ -186,12 +185,9 @@ export function AccountResetCredits(props: {
         a?.unresolved === b?.unresolved,
     },
   );
-  const localPhase = () => attempt()?.phase ?? props.summary.confirmed;
-  const localReceipt = () => resetReceiptOutcome(localPhase());
-  const attention = () => !localReceipt() && localPhase();
-  const accountReceipt = () => {
-    const last = journal()?.lastReset;
-    return last && (!own(last) || last.outcome !== localReceipt()) ? last : undefined;
+  const attention = () => {
+    const phase = attempt()?.phase;
+    return resetNeedsAttention(phase) ? phase : props.summary.confirmed;
   };
   const accountPending = () => {
     const pending = journal()?.pending;
@@ -199,7 +195,7 @@ export function AccountResetCredits(props: {
   };
   const needsRefresh = () =>
     Boolean(
-      (props.summary.error && activity()) ||
+      (!props.summary.refreshing && props.summary.confirmed) ||
       attention() === "uncertain" ||
       attention() === "denied" ||
       journal()?.pending ||
@@ -280,33 +276,6 @@ export function AccountResetCredits(props: {
                 {props.children}
               </CreditAction>
             )}
-          </Show>
-          <Show when={localReceipt() || accountReceipt()}>
-            <details class="model-providers__reset-receipt">
-              <summary>
-                {t(
-                  localReceipt()
-                    ? "modelProviders.resetCredits.receipt"
-                    : "modelProviders.resetCredits.accountReceipt",
-                )}
-                <Show when={props.column}>
-                  {(column) => <span class="settings-control__sr-label"> ({column().name})</span>}
-                </Show>
-              </summary>
-              <Show when={localReceipt()}>
-                {(phase) => <div>{t(`modelProviders.resetCredits.${phase()}`)}</div>}
-              </Show>
-              <Show when={accountReceipt()}>
-                {(last) => (
-                  <div>
-                    <Show when={localReceipt()}>
-                      {t("modelProviders.resetCredits.accountReceipt")}:{" "}
-                    </Show>
-                    {t(`modelProviders.resetCredits.${last().outcome}`)}
-                  </div>
-                )}
-              </Show>
-            </details>
           </Show>
         </div>
       </Show>
