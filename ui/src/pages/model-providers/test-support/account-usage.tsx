@@ -64,7 +64,9 @@ export async function openReset(
   });
   trigger.click();
   const dialog = await waitForSolid(() => view.getByRole("dialog"));
-  const button = dialog.querySelector<HTMLButtonElement>("button.danger")!;
+  const button = view.getByRole<HTMLButtonElement>("button", {
+    name: /^(Checking credit…|Confirm in \d+s|Spend 1 credit|Retry reset)$/u,
+  });
   const cancel = view.getByRole<HTMLButtonElement>("button", { name: "Cancel" });
   return { dialog, button, cancel, trigger };
 }

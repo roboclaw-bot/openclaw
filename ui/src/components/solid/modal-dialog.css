@@ -363,6 +363,38 @@ openclaw-modal-dialog.drawer--floating > .oc-modal-dialog {
   }
 }
 
+/* Same native dialog and focus owner across rotation; only its frame changes. */
+@media (max-width: 640px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  openclaw-modal-dialog.mobile-bottom-sheet {
+    --openclaw-modal-height-limit: calc(
+      var(--shell-canvas-height, 100dvh) - var(--safe-area-top, 0px) - var(--space-4)
+    );
+  }
+
+  openclaw-modal-dialog.mobile-bottom-sheet > .oc-modal-dialog {
+    inset: auto 0 calc(100dvh - var(--shell-canvas-height, 100dvh));
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-radius: var(--overlay-modal-radius) var(--overlay-modal-radius) 0 0;
+    scale: none;
+    translate: 0 100%;
+    transition-property: opacity, translate, display, overlay;
+  }
+
+  openclaw-modal-dialog.mobile-bottom-sheet > .oc-modal-dialog[open] {
+    translate: none;
+
+    @starting-style {
+      translate: 0 100%;
+    }
+  }
+
+  .mobile-bottom-sheet .oc-dialog {
+    padding: 0 var(--safe-area-right) var(--shell-safe-area-bottom) var(--safe-area-left);
+  }
+}
+
 @media (max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
   openclaw-modal-dialog.mobile-edge-to-edge > .oc-modal-dialog {
     width: 100vw;

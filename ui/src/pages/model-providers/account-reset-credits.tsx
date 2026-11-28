@@ -1,7 +1,8 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, onSettled, Show } from "solid-js";
 import { ModalDialog, type OpenClawModalDialog } from "../../components/modal-dialog.tsx";
 import { DialogHeader } from "../../components/solid/dialog-header.tsx";
+import { Radio } from "../../components/solid/radio.tsx";
 import { formatDateTimeMs, formatNumber } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { listen } from "../../lib/reactive/listener.ts";
@@ -456,26 +457,22 @@ function CreditAction(props: {
             ? "modelProviders.resetCredits.retryWarning"
             : "modelProviders.resetCredits.warning",
         );
-  // Codex orders offers by earliest expiry. IDs identify the charge, never its label.
+  const groupName = `reset-credit-${createUniqueId()}`;
+  // Codex orders offers by earliest expiry. Indistinguishable offers use the first exact ID.
   const options = createMemo(() => {
-    const offers = props.selection.choices;
-    const titles = offers.map(({ title, creditId }) =>
-      title && !title.includes(creditId) && title.length <= 64 && !/[\p{C}]|\S{32}/u.test(title)
-        ? title
-        : undefined,
-    );
-    return offers.map((offer, index) => {
-      const title = titles[index];
-      const label =
-        title && titles.indexOf(title) === titles.lastIndexOf(title)
+    const seen = new Set<string>();
+    return props.selection.choices.flatMap(({ creditId, expiresAt, title }, index) => {
+      const name =
+        title && title.length <= 64 && !title.includes(creditId) && !/[\p{C}]|\S{32}/u.test(title)
           ? title
-          : offers.length > 1
-            ? t("modelProviders.resetCredits.ordinal", {
-                number: formatNumber(index + 1),
-                count: formatNumber(offers.length),
-              })
-            : undefined;
-      return { title, label: [label, creditExpiry(offer.expiresAt)].filter(Boolean).join(" · ") };
+          : undefined;
+      const expiryLabel = creditExpiry(expiresAt);
+      const label = name ? `${name} · ${expiryLabel}` : expiryLabel;
+      if (seen.has(label)) {
+        return [];
+      }
+      seen.add(label);
+      return [{ index, name, expiryLabel, label }];
     });
   });
   const accountScope = () => {
@@ -489,12 +486,6 @@ function CreditAction(props: {
       workspace: props.selection.workspaceId,
     });
   };
-  const canChoose = () =>
-    options().some(
-      (option, index) =>
-        option.title !== options()[0]?.title ||
-        props.selection.choices[index]?.expiresAt !== props.selection.choices[0]?.expiresAt,
-    );
   return (
     <>
       <Show when={props.selection.unresolved}>
@@ -539,48 +530,57 @@ function CreditAction(props: {
             modal = node;
             node.setReturnFocusTarget(trigger);
           }}
+          class="mobile-bottom-sheet"
           label={dialogTitle()}
           description={`${accountScope()}. ${warning()}`}
           initialFocus={() => cancel}
           onModal-cancel={dismiss}
         >
           <div class="oc-dialog confirm-dialog model-providers__reset-dialog">
-            <DialogHeader title={dialogTitle()} description={<p>{accountScope()}</p>} />
+            <DialogHeader title={dialogTitle()} />
             <div class="oc-dialog__body">
-              <div>
-                <p>{warning()}</p>
-                {props.children}
-              </div>
-              <details class="model-providers__credit-choice">
-                <summary>
-                  {t(
-                    canChoose()
-                      ? "modelProviders.resetCredits.changeCredit"
-                      : "modelProviders.resetCredits.creditDetails",
-                  )}
-                </summary>
-                <Show when={canChoose()} fallback={<p>{options()[dialog.read().index]!.label}</p>}>
-                  <select
-                    aria-label={t("modelProviders.resetCredits.chooseCredit")}
-                    value={String(dialog.read().index)}
-                    disabled={!props.ready()}
-                    onChange={(e) => {
-                      if (dialog.state.open) {
-                        void prepare(e.currentTarget.selectedIndex);
-                      }
-                    }}
-                  >
-                    <For each={options()}>
-                      {(option, index) => <option value={String(index())}>{option.label}</option>}
-                    </For>
-                  </select>
-                </Show>
-                <Show when={props.selection.accountEmail}>
+              <Show
+                when={props.selection.accountEmail}
+                fallback={<p class="model-providers__reset-scope">{accountScope()}</p>}
+              >
+                <details class="model-providers__reset-scope">
+                  <summary>{accountScope()}</summary>
                   <p>
                     {t("modelProviders.resetCredits.memberId")}: {props.selection.memberId}
                   </p>
-                </Show>
-              </details>
+                </details>
+              </Show>
+              <div class="model-providers__reset-notice">
+                {props.children}
+                <p>{warning()}</p>
+              </div>
+              <Show
+                when={options().length > 1}
+                fallback={<p class="oc-dialog__row-note">{options()[0]!.label}</p>}
+              >
+                <fieldset class="model-providers__credit-choice">
+                  <legend>{t("modelProviders.resetCredits.chooseCredit")}</legend>
+                  <div class="model-providers__credit-list">
+                    <For each={options()}>
+                      {(option) => (
+                        <Radio
+                          name={groupName}
+                          checked={dialog.read().index === option.index}
+                          disabled={!props.ready()}
+                          onChange={() => {
+                            if (dialog.state.open && dialog.state.index !== option.index) {
+                              void prepare(option.index);
+                            }
+                          }}
+                        >
+                          <Show when={option.name}>{(name) => <strong>{name()}</strong>}</Show>
+                          <span>{option.expiryLabel}</span>
+                        </Radio>
+                      )}
+                    </For>
+                  </div>
+                </fieldset>
+              </Show>
               <div
                 class={[{ "sr-only": !dialog.read().expired && !dialog.read().error }]}
                 aria-live="polite"

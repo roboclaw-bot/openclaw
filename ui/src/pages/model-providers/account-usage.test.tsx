@@ -200,16 +200,21 @@ it("opens a non-spending preparation; after its reply five full seconds enable o
   const { io, request, previews, writes } = fixture();
   const view = mount(request);
   const deferred = createDeferredCore<Awaited<ReturnType<typeof io.prepare>>>();
+  io.balance.offers = ["A", "B"].map((creditId, i) => ({
+    creditId,
+    expiresAt: null,
+    title: `Unhelpfully verbose provider description ${"for this credit ".repeat(4)}${i}`,
+  }));
   io.prepare = () => deferred.promise;
   const first = await open(view);
   expect(first.dialog.querySelector("input")).toBeNull();
   const target = `${account.accountEmail} · Workspace: ${account.workspaceId}`;
   expect(first.dialog.getAttribute("aria-description")).toContain(target);
-  expect(view.getByText(target).closest("details")).toBeNull();
-  const details = first.dialog.querySelector("details")!;
+  const scope = view.getByText(target, { selector: "summary" });
+  const details = scope.closest("details")!;
   expect(details.open).toBe(false);
-  expect(details.querySelector("summary")?.textContent).toBe("Credit details");
-  expectContent(details, [account.memberId, "Expiry unknown"]);
+  expectContent(details, [account.memberId], ["No expiry"]);
+  expect(view.getByText("No expiry").closest("details")).toBeNull();
   expect(first.dialog.textContent).not.toContain(account.accountLabel);
   expect(document.activeElement).toBe(first.cancel);
   expect(previews()).toEqual([
@@ -616,6 +621,7 @@ it("reload preserves unknown A across a shared B retry; only A’s journal can a
   await waitForStatus(recovered, "Account reset pending.");
   const retry = await open(recovered, retryName);
   expectContent(recovered.container, ["Quota unavailable"], ["Reset credits:"]);
+  expect(retry.dialog.querySelector("input, select")).toBeNull();
   expectContent(retry.dialog, [
     "Expiry unknown",
     "can spend 1 credit",
@@ -773,8 +779,8 @@ it("lists offers in server order, starts fresh consent on selection changes, and
     accountEmail: undefined,
     availableCount: 2,
     offers: [
-      { creditId: "first", expiresAt: expiry },
-      { creditId: "second", expiresAt: null },
+      { creditId: "first", expiresAt: expiry, title: "first" },
+      { creditId: "second", expiresAt: null, title: "Service award" },
     ],
   };
   io.quotas.providers[0]!.windows = [
@@ -783,25 +789,21 @@ it("lists offers in server order, starts fresh consent on selection changes, and
   ];
   const view = mount(request);
   const first = await open(view);
-  const disclosures = first.dialog.querySelectorAll("details");
-  expect(disclosures).toHaveLength(1);
-  const details = disclosures[0]!;
-  expect(details.open).toBe(false);
-  expectContent(details, ["Credit 1 of 2", "2039"]);
+  const group = view.getByRole("group", { name: "Choose a credit" });
+  expect(group.closest("details")).toBeNull();
+  const earliest = view.getByRole<HTMLInputElement>("radio", { name: /Expires .*2039/ });
+  const alternate = view.getByRole<HTMLInputElement>("radio", { name: /Service award.*No expiry/ });
+  expect(earliest.checked).toBe(true);
+  expect(alternate.checked).toBe(false);
+  expectContent(group, [], ["first", "second", "Credit 1 of 2"]);
   const memberScope = `${account.memberId} · Workspace: ${account.workspaceId}`;
   expect(view.getByText(memberScope).closest("details")).toBeNull();
   expect(first.dialog.textContent).toMatch(/5-hour limit resets for free (at|on) /);
-  details.querySelector("summary")!.click();
-  expect(details.open).toBe(true);
-  const chooser = first.dialog.querySelector("select")!;
-  expect([...chooser.options].map((o) => o.textContent)).toEqual([
-    expect.stringContaining("Credit 1 of 2"),
-    expect.stringContaining("Credit 2 of 2"),
-  ]);
+  earliest.click();
+  expect(previews()).toHaveLength(1);
   await tick(5000);
   expect(first.dialog.textContent).not.toContain("5-hour limit resets for free");
-  chooser.selectedIndex = 1;
-  chooser.dispatchEvent(new Event("change", { bubbles: true }));
+  alternate.click();
   flush();
   expect(first.dialog.isConnected).toBe(true);
   first.button.click();
@@ -812,6 +814,8 @@ it("lists offers in server order, starts fresh consent on selection changes, and
   const other = mount(request);
   const otherDialog = await open(other);
   expect(otherDialog.button.disabled).toBe(true);
+  expect(other.getByRole<HTMLInputElement>("radio", { name: /Expires .*2039/ }).checked).toBe(true);
+  expect(alternate.checked).toBe(true);
   expect(previews()[2]!.creditId).toBe("first");
   expect(first.dialog.isConnected).toBe(true);
   expect(previews()[1]).toMatchObject({ creditId: "second" });
@@ -993,7 +997,7 @@ it("keeps reset counts, review and completion on the selected account across reo
   const { dialog, button } = await open(view, /Use reset credit/);
   expectContent(dialog, [account.memberId, account.workspaceId], ["credit-b"]);
   const identity = `${b} · ${account.accountEmail} · Workspace: ${account.workspaceId}`;
-  expect(view.getByText(identity).closest("details")).toBeNull();
+  expect(view.getByText(identity, { selector: "summary" })).toBeTruthy();
   refreshing = true;
   setOrder([b, ids[0]!, ids[2]!]);
   refreshView(view);

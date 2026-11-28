@@ -15,4 +15,6 @@
 # cancellation, late credential changes and failed quota refresh without losing recovery.
 # Selecting another offer restarts consent; a fresh balance retires success feedback even
 # if a later independent read fails. Exercise both at their caller-visible boundaries.
-2331
+# Verify the same active credit confirmation across portrait, landscape and desktop without
+# re-preparing the offer; keyboard focus, a full-row tap and the actual debit are independent.
+2365

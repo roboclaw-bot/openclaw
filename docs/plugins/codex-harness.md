@@ -696,13 +696,15 @@ are separate from the ordinary **Credits** balance. If the account-usage method
 is unavailable, administrators with a saved subscription can open **Codex settings**
 from the account card to check whether the plugin is installed and enabled.
 
-Choose **Use reset credit** beside the account’s balance. The confirmation defaults
-to the credit expiring soonest. If the offers differ, open **Change credit** to
-pick another one. Changing the selection restarts the five-second wait without
-spending anything. **Spend 1 credit** resets eligible limits for that subscription. A toast confirms the result; the account’s balance
-and limits update in place. Opening the dialog, waiting, or canceling never
-spends a credit. A count without individual credit details is
-read-only. Agents have no reset-credit tool.
+Choose **Use reset credit** beside the account’s balance. The confirmation opens
+as a bottom sheet on phones and a centered dialog on larger screens. When there
+are different credits to choose from, the list shows their expiry dates with the
+soonest selected. Choosing another row restarts the five-second wait; it does not
+spend a credit. Only **Spend 1 credit** resets the eligible limits. A toast
+confirms the result, and the balance and limits update in place.
+
+Canceling spends nothing. A count without individual credit details is read-only.
+Agents have no reset-credit tool.
 
 If a reply is lost, refresh the account. A confirmed retry of a pending request
 reuses its original account, credit, and key; it never substitutes another credit.

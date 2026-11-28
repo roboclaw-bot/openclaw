@@ -306,8 +306,12 @@ suite.define(() => {
   });
 
   it("confirms one exact reset from the mobile comparison and refreshes only that account’s quotas", async () => {
+    const phone = {
+      viewport: { width: 375, height: 667 },
+      hasTouch: true,
+      reducedMotion: "reduce",
+    } as const;
     await withPage(async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 667 });
       const ids = ["first-", "second-"].map((prefix) => prefix + "opaque".repeat(30));
       const studio = {
         availableCount: 2,
@@ -318,7 +322,7 @@ suite.define(() => {
         workspaceId: "studio-workspace",
         offers: ids.map((creditId, index) => ({
           creditId,
-          expiresAt: 2_200_000_000,
+          expiresAt: 2_200_000_000 + index * 86_400,
           title: index ? "Service award" : undefined,
         })),
       };
@@ -372,15 +376,39 @@ suite.define(() => {
         confirmationId: "10000000-0000-4000-a000-000000000002",
         idempotencyKey: asOptionalRecord(first.params)?.idempotencyKey,
       });
-      await dialog.getByText("Change credit", { exact: true }).click();
-      const picker = dialog.getByRole("combobox");
-      const labels = await picker.getByRole("option").allTextContents();
-      expect(labels[0]).toContain("Credit 1 of 2");
-      expect(labels[1]).toContain("Service award");
+      const cancel = dialog.getByRole("button", { name: "Cancel" });
+      expect(await cancel.evaluate((el) => el === document.activeElement)).toBe(true);
+      const sheet = await layoutBox(dialog);
+      expect(sheet.x).toBeCloseTo(0, 0);
+      expect(sheet.width).toBeCloseTo(375, 0);
+      expect(sheet.y + sheet.height).toBeCloseTo(667, 0);
+      const choices = dialog.getByRole("group", { name: "Choose a credit" });
+      const notice = await layoutBox(dialog.locator(".model-providers__reset-notice"));
+      expect(notice.y + notice.height).toBeLessThanOrEqual((await layoutBox(choices)).y + 1);
+      const earliest = choices.getByRole("radio", { name: /^Expires / });
+      const award = choices.getByRole("radio", { name: /Service award.*Expires/ });
+      expect(await earliest.isChecked()).toBe(true);
+      const awardRow = choices.locator("label").filter({ hasText: "Service award" });
+      expect((await layoutBox(awardRow)).height).toBeGreaterThanOrEqual(44);
+      expect((await layoutBox(cancel)).height).toBeGreaterThanOrEqual(44);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const desktop = await layoutBox(dialog);
+      expect(desktop.x + desktop.width / 2).toBeCloseTo(640, 0);
+      expect(desktop.y + desktop.height / 2).toBeCloseTo(450, 0);
+      expect(desktop.width).toBeLessThan(640);
+      await page.keyboard.press("Shift+Tab");
+      expect(await earliest.evaluate((el) => el === document.activeElement)).toBe(true);
+      await page.setViewportSize({ width: 844, height: 390 });
+      const landscape = await layoutBox(dialog);
+      expect(landscape.width).toBeCloseTo(844, 0);
+      expect(landscape.y + landscape.height).toBeCloseTo(390, 0);
+      expect(await gateway.getRequests(prepare)).toHaveLength(1);
       expect(await dialog.ariaSnapshot()).not.toContain("opaqueopaque");
       expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       await gateway.deferNext(prepare);
-      await picker.selectOption({ index: 1 });
+      await awardRow.tap();
+      expect(await award.isChecked()).toBe(true);
+      await page.setViewportSize({ width: 375, height: 667 });
       await expect.poll(async () => (await gateway.getRequests(prepare)).length).toBe(2);
       const second = (await gateway.getRequests(prepare))[1]!;
       expect(second.params).toMatchObject({ ...selected, creditId: ids[1] });
@@ -433,7 +461,7 @@ suite.define(() => {
           .map((r) => asOptionalRecord(r.params)?.profileId),
       ).toEqual(["openai:studio", "openai:studio"]);
       expect(await gateway.getRequests(consume)).toHaveLength(1);
-    });
+    }, phone);
   });
 
   it("moves the focused allowance left in a right-to-left chart", async () => {
